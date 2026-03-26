@@ -5,7 +5,7 @@ True loop: profile → infer → write → execute → REAL metrics → decide �
 Auto-fix on failure. Updates objective.md every round. Packages best model for deployment.
 """
 
-import os, sys, json, subprocess, tempfile, time, shutil, pathlib, re, ast, threading
+import os, sys, json, subprocess, tempfile, time, shutil, pathlib, re, ast, threading, math
 import pandas as pd
 from anthropic import Anthropic
 try:
@@ -255,14 +255,14 @@ def git_commit_experiment(ws, exp_num, description):
         return ""
 
 def git_discard_uncommitted(ws):
-    """Restore all tracked files to HEAD state (discard uncommitted changes).
-    This does NOT reset HEAD — failed experiments are never committed,
-    so we just need to clean the working tree back to the last KEEP commit."""
+    """Restore all tracked files to HEAD state (discard uncommitted changes)."""
     ws = pathlib.Path(ws)
     try:
-        _git(ws, "checkout", "--", ".", check=False)
-        _git(ws, "clean", "-fd", check=False)
-        return True
+        r1 = subprocess.run(["git", "checkout", "--", "."], cwd=str(ws),
+                            capture_output=True, timeout=15)
+        r2 = subprocess.run(["git", "clean", "-fd"], cwd=str(ws),
+                            capture_output=True, timeout=15)
+        return r1.returncode == 0 and r2.returncode == 0
     except Exception:
         return False
 
@@ -275,7 +275,17 @@ def git_get_commit_hash(ws):
 
 # ── PROFILE ────────────────────────────────────────────────────
 def profile_dataset(csv_path):
-    df = pd.read_csv(csv_path)
+    try:
+        df = pd.read_csv(csv_path, encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            df = pd.read_csv(csv_path, encoding="latin-1")
+        except Exception as e:
+            raise RuntimeError(f"Cannot read CSV: {e}") from e
+    except Exception as e:
+        raise RuntimeError(f"Cannot read CSV: {e}") from e
+    if df.empty:
+        raise RuntimeError("CSV file is empty (0 rows). Please upload a dataset with data.")
     cols = []
     for col in df.columns:
         s = df[col].dropna()
@@ -567,8 +577,15 @@ def ask(system, user, max_tokens=3000):
     raise RuntimeError(clean or f"LLM request failed after 3 attempts ({_provider}): {last_err}")
 
 def extract_code(txt):
-    if "```python" in txt: return txt.split("```python")[1].split("```")[0].strip()
-    if "```"        in txt: return txt.split("```")[1].split("```")[0].strip()
+    if not txt:
+        return ""
+    try:
+        if "```python" in txt:
+            return txt.split("```python", 1)[1].split("```", 1)[0].strip()
+        if "```" in txt:
+            return txt.split("```", 1)[1].split("```", 1)[0].strip()
+    except Exception:
+        pass
     return txt.strip()
 
 def classify_failure_reason(error_text: str) -> str:
@@ -678,7 +695,7 @@ HYPOTHESES:
 3. <Specific model> — <specific reason from domain analysis>""", 700)
 
     def g(k):
-        m = re.search(rf"^{k}:\s*(.+)", resp, re.MULTILINE)
+        m = re.search(rf"^{k}\s*:\s*(.+)", resp, re.MULTILINE | re.IGNORECASE)
         return m.group(1).strip() if m else ""
 
     tc = profile["target_candidates"]
@@ -1045,7 +1062,7 @@ def revise_after_iteration(program_md, train_py, score, error, history, domain_a
         f"""Given the current program.md, train.py, run result, and expert domain analysis — decide KEEP/DISCARD and write the next experiment.
 
 EXPERT DOMAIN ANALYSIS (use this to guide your next approach):
-{domain_analysis[:1500] if domain_analysis else "(not available)"}
+{domain_analysis[:3000] if domain_analysis else "(not available)"}
 
 KEEP CRITERIA:
 - KEEP if the primary metric improved vs previous best in history.
@@ -1113,22 +1130,33 @@ CURRENT TRAIN.PY:
         7000
     )
 
-    keep = bool(re.search(r"KEEP:\s*YES", review, re.IGNORECASE))
-    reason_match = re.search(r"REASONING:\s*(.+)", review)
+    keep = bool(re.search(r"KEEP\s*:\s*YES", review, re.IGNORECASE))
+    reason_match = re.search(r"REASONING\s*:\s*(.+)", review, re.IGNORECASE)
     reasoning = reason_match.group(1).strip() if reason_match else ""
 
     pm = ""
     tm = ""
-    if "PROGRAM_MD:" in review and "TRAIN_PY:" in review:
-        pm_part = review.split("PROGRAM_MD:", 1)[1].split("TRAIN_PY:", 1)[0]
-        tm_part = review.split("TRAIN_PY:", 1)[1]
-        pm = extract_code(pm_part)
-        tm = extract_code(tm_part)
+    review_upper = review.upper()
+    if "PROGRAM_MD:" in review_upper and "TRAIN_PY:" in review_upper:
+        try:
+            pm_part = review.split("PROGRAM_MD:", 1)[1].split("TRAIN_PY:", 1)[0]
+            tm_part = review.split("TRAIN_PY:", 1)[1]
+            pm = extract_code(pm_part)
+            tm = extract_code(tm_part)
+        except Exception:
+            pass
 
+    used_fallback = []
     if not pm:
         pm = program_md
+        used_fallback.append("program_md")
     if not tm:
         tm = train_py
+        used_fallback.append("train_py")
+    if used_fallback:
+        # Log that LLM didn't produce structured output — caller will detect stale code
+        import sys as _sys
+        print(f"[engine] revise_after_iteration: LLM fallback for {used_fallback} — response may be malformed", file=_sys.stderr)
     tm, _ = apply_code_guardrails(tm)
 
     return {
@@ -1961,26 +1989,41 @@ def run_research(
         what_worked = ""
         all_metrics = {}
 
+        # Keys that look like metrics but aren't (row IDs, indices, counts)
+        _NON_METRIC_KEYS = {"id", "row_id", "index", "count", "n", "epoch", "step",
+                            "batch", "iter", "iteration", "size", "total", "num"}
+
+        def _is_valid_metric(k, v):
+            """Return True if (k, v) looks like a real ML metric."""
+            if not isinstance(v, (int, float)):
+                return False
+            fv = float(v)
+            if math.isnan(fv) or math.isinf(fv):
+                return False
+            if k.lower() in _NON_METRIC_KEYS:
+                return False
+            if k.lower() == "model":
+                return False
+            return True
+
         if res["success"]:
             consecutive_crashes = 0
             m = res["metrics"]
             score = m
             for k in [metric_name, metric_name.upper(), "rmse", "r2", "mape", "mae", "nse", "auc", "f1", "accuracy"]:
-                if k in m and isinstance(m[k], (int, float)):
+                if k in m and _is_valid_metric(k, m[k]):
                     metric_name = k
                     metric_val = float(m[k])
                     break
             else:
+                # Fallback: pick first key that looks like a real metric
                 for k, v in m.items():
-                    if isinstance(v, (int, float)) and k not in ("model",):
+                    if _is_valid_metric(k, v):
                         metric_name = k
                         metric_val = float(v)
                         break
             # Collect ALL numeric metrics for multi-metric display
-            all_metrics = {}
-            for k, v in m.items():
-                if isinstance(v, (int, float)) and k not in ("model",):
-                    all_metrics[k] = float(v)
+            all_metrics = {k: float(v) for k, v in m.items() if _is_valid_metric(k, v)}
             model_name = m.get("model") or _infer_model_name(train_py)
             what_worked = m.get("what_worked", "")
 
@@ -1990,12 +2033,15 @@ def run_research(
                 r'(?:FileNotFoundError|KeyError|ValueError|ModuleNotFoundError|Exception|Error|Traceback)',
                 stdout_text[-1000:], re.IGNORECASE
             ))
-            is_known_sentinel = metric_val in (999, 999.0, 999.9, 999.99, 9999, 99999, -1, -999, 0)
+            is_nan_or_inf = math.isnan(metric_val) or math.isinf(metric_val)
+            is_known_sentinel = metric_val in (999, 999.0, 999.9, 999.99, 9999, 99999,
+                                               1000, 10000, -1, -999, -9999, 0)
             is_suspicious_extreme = (
-                (lower and metric_val >= 100 and has_error_in_log) or
-                (not lower and metric_val <= 0.01 and has_error_in_log)
+                (lower and metric_val >= 500) or
+                (lower and metric_val >= 50 and has_error_in_log) or
+                (not lower and metric_val <= 0.001 and has_error_in_log)
             )
-            is_sentinel = is_known_sentinel or is_suspicious_extreme
+            is_sentinel = is_nan_or_inf or is_known_sentinel or is_suspicious_extreme
             if is_sentinel:
                 log_tail = res.get("stdout", "")[-500:]
                 log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f} (SENTINEL — treating as failure)")
@@ -2034,17 +2080,17 @@ def run_research(
                         m = res["metrics"]
                         score = m
                         for k in [metric_name, metric_name.upper(), "rmse", "r2", "mape", "mae", "nse", "auc", "f1", "accuracy"]:
-                            if k in m and isinstance(m[k], (int, float)):
+                            if k in m and _is_valid_metric(k, m[k]):
                                 metric_name = k
                                 metric_val = float(m[k])
                                 break
                         else:
                             for k, v in m.items():
-                                if isinstance(v, (int, float)) and k not in ("model",):
+                                if _is_valid_metric(k, v):
                                     metric_name = k
                                     metric_val = float(v)
                                     break
-                        all_metrics = {k: float(v) for k, v in m.items() if isinstance(v, (int, float)) and k != "model"}
+                        all_metrics = {k: float(v) for k, v in m.items() if _is_valid_metric(k, v)}
                         model_name = m.get("model") or _infer_model_name(repaired)
                         what_worked = m.get("what_worked", "") or "Recovered from auto-repair"
                         error = None
@@ -2079,6 +2125,12 @@ def run_research(
         reasoning = revision["reasoning"]
 
         if res.get("success"):
+            # Guard: treat NaN/inf metric as failure even if success=True
+            if math.isnan(metric_val) or math.isinf(metric_val):
+                res["success"] = False
+                error = f"Metric value is {metric_val} — treating as failure"
+                failure_reason = "bad_output_format"
+                consecutive_crashes += 1
             is_first_success = best_val is None
             is_new_best = best_val is not None and (
                 (lower and metric_val < best_val) or
@@ -2164,8 +2216,14 @@ def run_research(
 
             # GIT: revert to last known good state (Karpathy: git reset --hard)
             if git_ok and best_train_py:
-                git_discard_uncommitted(ws)
-                log.engine(f"Git discard: reverted working tree to {git_get_commit_hash(ws)}")
+                discard_ok = git_discard_uncommitted(ws)
+                if discard_ok:
+                    log.engine(f"Git discard: reverted working tree to {git_get_commit_hash(ws)}")
+                else:
+                    log.engine("Git discard failed — restoring train.py from memory")
+                    (ws / "train.py").write_text(
+                        f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{best_train_py}"
+                    )
 
             train_py = train_py_candidate or (best_train_py if best_train_py else train_py)
             log.engine(f"DISCARD — {reasoning}")
