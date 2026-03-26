@@ -1,0 +1,2076 @@
+#!/usr/bin/env python3
+"""
+19Labs Autoresearch Engine
+True loop: profile → infer → write → execute → REAL metrics → decide → rewrite → iterate
+Auto-fix on failure. Updates objective.md every round. Packages best model for deployment.
+"""
+
+import os, sys, json, subprocess, tempfile, time, shutil, pathlib, re, ast, threading
+import pandas as pd
+from anthropic import Anthropic
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+def detect_packages():
+    import importlib
+    candidates = [
+        'sklearn', 'numpy', 'pandas', 'scipy', 'joblib', 'statsmodels',
+        'xgboost', 'lightgbm', 'catboost', 'torch', 'tensorflow',
+        'prophet', 'shap', 'optuna',
+    ]
+    available = []
+    for pkg in candidates:
+        try:
+            importlib.import_module(pkg)
+            available.append(pkg)
+        except ImportError:
+            pass
+        except Exception:
+            # Native runtime/ABI issues should mark package unavailable, not crash startup.
+            pass
+    return available
+
+AVAILABLE_PKGS = detect_packages()
+AUTORESEARCH_DIR = pathlib.Path(__file__).parent / "autoresearch-master"
+
+MODULE_TO_PIP = {
+    "sklearn": "scikit-learn",
+    "dotenv": "python-dotenv",
+}
+
+MIN_REQUIREMENTS = {
+    "anthropic": "anthropic>=0.44",
+    "catboost": "catboost>=1.2",
+    "fastapi": "fastapi>=0.115",
+    "joblib": "joblib>=1.3",
+    "lightgbm": "lightgbm>=4.0",
+    "numpy": "numpy>=1.26",
+    "optuna": "optuna>=3.0",
+    "pandas": "pandas>=2.2",
+    "prophet": "prophet>=1.1",
+    "pydantic": "pydantic>=2.9",
+    "python-dotenv": "python-dotenv>=1.0",
+    "scikit-learn": "scikit-learn>=1.3",
+    "scipy": "scipy>=1.10",
+    "shap": "shap>=0.45",
+    "statsmodels": "statsmodels>=0.14",
+    "tensorflow": "tensorflow>=2.15",
+    "torch": "torch>=2.2",
+    "uvicorn": "uvicorn>=0.32",
+    "xgboost": "xgboost>=2.0",
+}
+
+def detect_imported_modules(code):
+    modules = set()
+    try:
+        tree = ast.parse(code)
+    except Exception:
+        return modules
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                modules.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module.split(".")[0])
+    return modules
+
+def build_requirements_from_code(*codes, extra_modules=None):
+    modules = set(extra_modules or [])
+    for code in codes:
+        if code:
+            modules.update(detect_imported_modules(code))
+    # Core tabular stack defaults for robustness.
+    modules.update({"pandas", "numpy", "joblib"})
+
+    pip_pkgs = set()
+    for mod in modules:
+        pip_pkgs.add(MODULE_TO_PIP.get(mod, mod))
+
+    lines = []
+    for pkg in sorted(pip_pkgs):
+        if pkg in MIN_REQUIREMENTS:
+            lines.append(MIN_REQUIREMENTS[pkg])
+    return "\n".join(lines) + "\n"
+
+def write_workspace_requirements(ws, train_py_code):
+    ws = pathlib.Path(ws)
+    req_text = build_requirements_from_code(train_py_code)
+    (ws / "requirements.txt").write_text(req_text)
+    return req_text
+
+# ── CONFIG ─────────────────────────────────────────────────────
+CLAUDE_MODEL = "claude-sonnet-4-5"
+OPENAI_MODEL = "gpt-4o"
+EXEC_TIMEOUT = 180          # hard wall-clock kill per experiment
+TIME_BUDGET  = 120          # target training budget (seconds) injected into scripts
+STAGNATION_LIMIT = 3
+GOOD_ENOUGH  = {"r2": 0.90, "auc": 0.92, "f1": 0.88, "accuracy": 0.90, "mape": 0.10, "rmse": 5000, "mae": 3000, "nse": 0.85}
+SECONDARY_METRICS = ["r2", "mape", "mae", "rmse", "nse"]  # always request these alongside primary
+MAX_CONTINUOUS_EXPERIMENTS = 200   # hard cap for continuous mode safety
+
+RELIABILITY_PROFILES = {
+    "demo_safe": {
+        "budget_cap": 6,
+        "stagnation_limit": 4,
+        "continuous_cap": 20,
+        "policy": (
+            "Prioritize robust, deterministic baselines. Use stable sklearn models and simple feature engineering. "
+            "Avoid fragile complexity and path-sensitive code."
+        ),
+    },
+    "balanced": {
+        "budget_cap": 12,
+        "stagnation_limit": 5,
+        "continuous_cap": 100,
+        "policy": (
+            "Balance reliability and performance. Start from strong baseline, then iterate with controlled complexity."
+        ),
+    },
+    "aggressive": {
+        "budget_cap": 20,
+        "stagnation_limit": 7,
+        "continuous_cap": 200,
+        "policy": (
+            "Push for best metric with broader search and higher complexity while preserving correctness and reproducibility."
+        ),
+    },
+}
+
+_client = None
+_provider = "claude"
+
+# ── LOGGER ─────────────────────────────────────────────────────
+class Logger:
+    def __init__(self, ws, cb=None):
+        self.ws = pathlib.Path(ws)
+        self.cb = cb
+        self.log_path = self.ws / "research.log"
+    def _w(self, tag, msg):
+        line = f"[{time.strftime('%H:%M:%S')}][{tag}] {msg}"
+        with open(self.log_path, "a") as f: f.write(line + "\n")
+        if self.cb: self.cb(tag.lower(), msg)
+        print(line, flush=True)
+    def engine(self, m): self._w("ENGINE", m)
+    def claude(self, m): self._w("CLAUDE", m)
+    def result(self, m): self._w("RESULT", m)
+    def err(self,    m): self._w("ERROR",  m)
+    def sys(self,    m): self._w("SYS",    m)
+
+# ── GIT-BASED STATE MANAGEMENT (Karpathy protocol) ────────────
+def _git(ws, *args, check=True):
+    """Run a git command in the workspace. Returns stdout."""
+    r = subprocess.run(
+        ["git"] + list(args),
+        cwd=str(ws), capture_output=True, text=True, timeout=30,
+    )
+    if check and r.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {r.stderr[:300]}")
+    return r.stdout.strip()
+
+def git_init_workspace(ws, run_tag):
+    """Initialize a git repo in the workspace for experiment tracking."""
+    ws = pathlib.Path(ws)
+    try:
+        _git(ws, "init")
+        _git(ws, "checkout", "-b", f"autoresearch/{run_tag}")
+        gitignore = ws / ".gitignore"
+        gitignore.write_text("__pycache__/\n*.pyc\nmodel.pkl\nrun.log\n*.zip\n")
+        _git(ws, "add", "-A")
+        _git(ws, "commit", "-m", "init: workspace setup", "--allow-empty")
+        return True
+    except Exception:
+        return False
+
+def git_commit_experiment(ws, exp_num, description):
+    """Commit the current state of train.py after an experiment."""
+    ws = pathlib.Path(ws)
+    try:
+        _git(ws, "add", "-A")
+        _git(ws, "commit", "-m", f"exp {exp_num:02d}: {description[:120]}", "--allow-empty")
+        return _git(ws, "rev-parse", "--short", "HEAD")
+    except Exception:
+        return ""
+
+def git_discard_uncommitted(ws):
+    """Restore all tracked files to HEAD state (discard uncommitted changes).
+    This does NOT reset HEAD — failed experiments are never committed,
+    so we just need to clean the working tree back to the last KEEP commit."""
+    ws = pathlib.Path(ws)
+    try:
+        _git(ws, "checkout", "--", ".", check=False)
+        _git(ws, "clean", "-fd", check=False)
+        return True
+    except Exception:
+        return False
+
+def git_get_commit_hash(ws):
+    """Get current short commit hash."""
+    try:
+        return _git(pathlib.Path(ws), "rev-parse", "--short", "HEAD")
+    except Exception:
+        return ""
+
+# ── PROFILE ────────────────────────────────────────────────────
+def profile_dataset(csv_path):
+    df = pd.read_csv(csv_path)
+    cols = []
+    for col in df.columns:
+        s = df[col].dropna()
+        nr = pd.to_numeric(s, errors='coerce').notna().mean()
+        is_date = False
+        if nr < 0.7:  # only check dates for non-numeric columns
+            try:
+                pd.to_datetime(s.iloc[:5])
+                # Extra check: values must look like dates
+                if any(str(v) for v in s.iloc[:3] if "-" in str(v) or "/" in str(v)):
+                    is_date = True
+            except: pass
+        typ = ("datetime" if is_date else "numeric" if nr > 0.8
+               else "categorical" if s.nunique()/max(len(s),1) < 0.05 else "text")
+        cols.append(dict(name=col, type=typ, unique=int(s.nunique()),
+            nulls=int(df[col].isna().sum()), sample=str(list(s.dropna().iloc[:3].values)),
+            mean=float(pd.to_numeric(s, errors='coerce').mean()) if typ=="numeric" else None,
+            std =float(pd.to_numeric(s, errors='coerce').std())  if typ=="numeric" else None))
+    return dict(path=str(csv_path), rows=len(df), cols=len(df.columns),
+        headers=list(df.columns), columns=cols,
+        numeric    =[c["name"] for c in cols if c["type"]=="numeric"],
+        categorical=[c["name"] for c in cols if c["type"]=="categorical"],
+        datetime   =[c["name"] for c in cols if c["type"]=="datetime"],
+        target_candidates=[c["name"] for c in cols if c["type"]=="numeric" and c["unique"]>10][:5])
+
+def _safe_float(s, default=0.0):
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+
+# ── TOKEN TRACKING ─────────────────────────────────────────────
+_token_usage = {"input": 0, "output": 0, "calls": 0}
+
+def get_token_usage():
+    return dict(_token_usage)
+
+def reset_token_usage():
+    _token_usage["input"] = 0
+    _token_usage["output"] = 0
+    _token_usage["calls"] = 0
+
+# ── LLM (multi-provider) ───────────────────────────────────────
+def _init_client(api_key, provider="claude"):
+    global _client, _provider
+    _provider = (provider or "claude").lower()
+    if _provider == "openai":
+        if OpenAI is None:
+            raise RuntimeError("openai package not installed. Run: pip install openai")
+        _client = OpenAI(api_key=api_key)
+    else:
+        _client = Anthropic(api_key=api_key)
+
+def _classify_api_error(e):
+    """Return a clean, actionable error message for common API failures."""
+    msg = str(e).lower()
+    if "insufficient_quota" in msg or "exceeded" in msg and "quota" in msg:
+        return "Your API key has no credits remaining. Add billing/credits at your provider's dashboard and retry."
+    if "invalid_api_key" in msg or "invalid api key" in msg or "incorrect api key" in msg:
+        return "Invalid API key. Check it in Settings and try again."
+    if "rate_limit" in msg or "rate limit" in msg or "too many requests" in msg:
+        return "Rate limited by the API. Waiting and retrying..."
+    if "connection error" in msg or "connection refused" in msg:
+        return "Cannot reach the API. Check your internet connection, VPN, or firewall."
+    if "authentication" in msg or "401" in msg:
+        return "Authentication failed. Your API key may be expired or revoked."
+    return None
+
+def ask(system, user, max_tokens=3000):
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            if _provider == "openai":
+                r = _client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                )
+                _token_usage["calls"] += 1
+                if r.usage:
+                    _token_usage["input"] += r.usage.prompt_tokens or 0
+                    _token_usage["output"] += r.usage.completion_tokens or 0
+                return r.choices[0].message.content.strip()
+            else:
+                r = _client.messages.create(
+                    model=CLAUDE_MODEL,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=[{"role": "user", "content": user}],
+                )
+                _token_usage["calls"] += 1
+                if hasattr(r, "usage"):
+                    _token_usage["input"] += getattr(r.usage, "input_tokens", 0)
+                    _token_usage["output"] += getattr(r.usage, "output_tokens", 0)
+                return r.content[0].text.strip()
+        except Exception as e:
+            last_err = e
+            clean = _classify_api_error(e)
+            if clean and ("quota" in clean.lower() or "invalid" in clean.lower() or "authentication" in clean.lower()):
+                raise RuntimeError(clean) from e
+            if attempt < 3:
+                time.sleep(1.5 * attempt)
+    clean = _classify_api_error(last_err)
+    raise RuntimeError(clean or f"LLM request failed after 3 attempts ({_provider}): {last_err}")
+
+def extract_code(txt):
+    if "```python" in txt: return txt.split("```python")[1].split("```")[0].strip()
+    if "```"        in txt: return txt.split("```")[1].split("```")[0].strip()
+    return txt.strip()
+
+def classify_failure_reason(error_text: str) -> str:
+    e = (error_text or "").lower()
+    if "filenotfounderror" in e or "no such file or directory" in e:
+        return "data_path"
+    if "train.csv" in e or "test.csv" in e:
+        return "data_path"
+    if "validate_parameter_constraints" in e or "invalid parameter" in e:
+        return "invalid_hyperparameter"
+    if "absolute_deviation" in e:
+        return "invalid_hyperparameter"
+    if "no module named" in e:
+        return "missing_package"
+    if "timeout" in e:
+        return "timeout"
+    if "no json in stdout" in e:
+        return "bad_output_format"
+    if "json" in e and "decode" in e:
+        return "bad_output_format"
+    return "runtime_error"
+
+def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
+    """Patch common LLM-generated breakages before execution."""
+    fixed = code or ""
+    notes: list[str] = []
+
+    if "absolute_deviation" in fixed:
+        fixed = fixed.replace("absolute_deviation", "absolute_error")
+        notes.append("normalized_invalid_loss_name")
+
+    # Strip any DATA_PATH or TIME_BUDGET redefinitions — these are injected by execute()
+    for var in ("DATA_PATH", "TIME_BUDGET"):
+        pattern = rf'^{var}\s*=\s*.+$'
+        new_fixed = re.sub(pattern, f"# {var} injected by 19Labs (removed duplicate)", fixed, flags=re.MULTILINE)
+        if new_fixed != fixed:
+            fixed = new_fixed
+            notes.append(f"stripped_{var.lower()}_override")
+
+    # Catch os.environ.get('DATA_PATH', ...) pattern — replace with bare DATA_PATH usage
+    env_pattern = r"os\.environ\.get\(\s*['\"]DATA_PATH['\"].*?\)"
+    if re.search(env_pattern, fixed):
+        fixed = re.sub(env_pattern, "DATA_PATH", fixed)
+        notes.append("replaced_environ_get_data_path")
+
+    # Avoid hardcoded local paths; training script must always use injected DATA_PATH.
+    patterns = [
+        r"pd\.read_csv\(\s*r?[\"'](?:\./)?train\.csv[\"']\s*\)",
+        r"pd\.read_csv\(\s*r?[\"'](?:\./)?test\.csv[\"']\s*\)",
+        r"pd\.read_csv\(\s*r?[\"']data/train\.csv[\"']\s*\)",
+        r"pd\.read_csv\(\s*r?[\"'](?:\./)?data\.csv[\"']\s*\)",
+    ]
+    for p in patterns:
+        new_fixed = re.sub(p, "pd.read_csv(DATA_PATH)", fixed)
+        if new_fixed != fixed:
+            fixed = new_fixed
+            notes.append("replaced_hardcoded_csv_path")
+
+    if "json.dumps(" in fixed and "import json" not in fixed and "from json import" not in fixed:
+        fixed = "import json\n" + fixed
+        notes.append("added_missing_json_import")
+
+    return fixed, notes
+
+def normalize_reliability_mode(mode: str | None) -> str:
+    m = (mode or "balanced").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "safe": "demo_safe",
+        "demo": "demo_safe",
+        "demo_safe": "demo_safe",
+        "balanced": "balanced",
+        "normal": "balanced",
+        "aggressive": "aggressive",
+        "sota": "aggressive",
+    }
+    resolved = aliases.get(m, "balanced")
+    return resolved if resolved in RELIABILITY_PROFILES else "balanced"
+
+# ── INFER OBJECTIVE ────────────────────────────────────────────
+def infer_objective(profile, hint=""):
+    col_detail = "\n".join(
+        f"  {c['name']} [{c['type']}] unique={c['unique']} nulls={c['nulls']} sample={c['sample']}"
+        + (f" mean={c['mean']:.3f} std={c['std']:.3f}" if c.get("mean") is not None else "")
+        for c in profile["columns"])
+    resp = ask(
+        "You are 19Labs. Analyze datasets precisely. Reason from data structure, types, and statistics.",
+        f"""Analyze this dataset. Determine the exact ML task.
+
+ROWS: {profile['rows']:,} | COLS: {profile['cols']}
+COLUMNS: {', '.join(profile['headers'])}
+NUMERIC: {', '.join(profile['numeric'])}
+CATEGORICAL: {', '.join(profile['categorical'])}
+DATETIME: {', '.join(profile['datetime'])}
+TARGET CANDIDATES: {', '.join(profile['target_candidates'])}
+
+{col_detail}
+
+{"USER HINT: " + hint if hint else "No hint — infer from data."}
+
+Reply ONLY in this format:
+DOMAIN: <specific domain>
+TASK: <Regression|BinaryClassification|MulticlassClassification|TimeSeriesForecasting>
+TARGET: <exact column name>
+METRIC: <rmse|r2|mape|mae|nse|f1|auc|accuracy>
+DIRECTION: <lower_is_better|higher_is_better>
+CONFIDENCE: <0.0-1.0>
+REASONING: <2 sentences>
+GOOD_ENOUGH: <what metric value = production-ready for this domain>
+HYPOTHESES:
+1. <Model> — <why>
+2. <Model> — <why>
+3. <Model> — <why>""", 700)
+
+    def g(k):
+        m = re.search(rf"^{k}:\s*(.+)", resp, re.MULTILINE)
+        return m.group(1).strip() if m else ""
+
+    tc = profile["target_candidates"]
+    return dict(domain=g("DOMAIN") or "General",
+        task   =g("TASK")   or "Regression",
+        target =g("TARGET") or (tc[0] if tc else profile["headers"][-1]),
+        metric =g("METRIC") or "rmse",
+        direction=g("DIRECTION") or "lower_is_better",
+        confidence=_safe_float(g("CONFIDENCE"), 0.7),
+        reasoning =g("REASONING") or "",
+        good_enough=g("GOOD_ENOUGH") or "",
+        raw=resp)
+
+def _extract_json_blob(txt):
+    txt = txt.strip()
+    try:
+        return json.loads(txt)
+    except Exception:
+        pass
+    m = re.search(r"\{[\s\S]*\}", txt)
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return {}
+
+def discover_user_need(csv_path, user_hint="", api_key=None, provider="claude"):
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        raise RuntimeError("No API key.")
+    _init_client(key, provider)
+
+    profile = profile_dataset(csv_path)
+    obj = infer_objective(profile, user_hint)
+    pkg_txt = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
+
+    advice_raw = ask(
+        "You are a product-minded ML research copilot. Help clarify user intent before training.",
+        f"""Given this dataset profile and initial objective inference, propose the best next direction.
+
+Return STRICT JSON with keys:
+{{
+  "recommended_objective": "short objective sentence",
+  "recommended_metric": "metric name",
+  "clarifying_questions": ["q1", "q2", "q3"],
+  "decision_tree": [
+    {{
+      "id": "short_snake_case_id",
+      "question": "single focused question",
+      "options": ["option 1", "option 2", "option 3"]
+    }}
+  ],
+  "experiment_directions": ["direction1", "direction2", "direction3"],
+  "risks": ["risk1", "risk2"],
+  "first_iteration_plan": "one concise paragraph"
+}}
+
+DATA PROFILE:
+- rows: {profile['rows']}
+- cols: {profile['cols']}
+- headers: {profile['headers']}
+- numeric: {profile['numeric']}
+- categorical: {profile['categorical']}
+- datetime: {profile['datetime']}
+
+INFERRED OBJECTIVE:
+- task: {obj['task']}
+- target: {obj['target']}
+- metric: {obj['metric']} ({obj['direction']})
+- domain: {obj['domain']}
+- confidence: {obj['confidence']}
+- reasoning: {obj['reasoning']}
+
+USER HINT:
+{user_hint or "(none)"}
+
+AVAILABLE PACKAGES:
+{pkg_txt}
+""",
+        1200
+    )
+    advice = _extract_json_blob(advice_raw)
+    return {
+        "profile": profile,
+        "objective": obj,
+        "discovery": advice,
+        "raw": advice_raw,
+    }
+
+
+# ── MODEL NAME INFERENCE ──────────────────────────────────────
+_MODEL_PATTERNS = [
+    (r'(?:XGBRegressor|XGBClassifier|xgb\.XGB)', 'XGBoost'),
+    (r'(?:LGBMRegressor|LGBMClassifier|lgb\.LGBMModel)', 'LightGBM'),
+    (r'(?:CatBoostRegressor|CatBoostClassifier)', 'CatBoost'),
+    (r'(?:RandomForestRegressor|RandomForestClassifier)', 'Random Forest'),
+    (r'(?:GradientBoostingRegressor|GradientBoostingClassifier)', 'Gradient Boosting'),
+    (r'(?:ExtraTreesRegressor|ExtraTreesClassifier)', 'Extra Trees'),
+    (r'(?:AdaBoostRegressor|AdaBoostClassifier)', 'AdaBoost'),
+    (r'(?:BaggingRegressor|BaggingClassifier)', 'Bagging'),
+    (r'(?:StackingRegressor|StackingClassifier)', 'Stacking Ensemble'),
+    (r'(?:VotingRegressor|VotingClassifier)', 'Voting Ensemble'),
+    (r'Ridge\(', 'Ridge'),
+    (r'Lasso\(', 'Lasso'),
+    (r'ElasticNet\(', 'ElasticNet'),
+    (r'LinearRegression\(', 'Linear Regression'),
+    (r'LogisticRegression\(', 'Logistic Regression'),
+    (r'SVR\(|SVC\(', 'SVM'),
+    (r'KNeighborsRegressor|KNeighborsClassifier', 'KNN'),
+    (r'DecisionTreeRegressor|DecisionTreeClassifier', 'Decision Tree'),
+    (r'MLPRegressor|MLPClassifier', 'Neural Net (MLP)'),
+    (r'GaussianNB|BernoulliNB|MultinomialNB', 'Naive Bayes'),
+    (r'HuberRegressor', 'Huber Regressor'),
+    (r'SGDRegressor|SGDClassifier', 'SGD'),
+    (r'BayesianRidge', 'Bayesian Ridge'),
+    (r'(?:keras|tensorflow|tf\.)', 'TensorFlow/Keras'),
+    (r'(?:torch|nn\.Module)', 'PyTorch'),
+]
+
+def _infer_model_name(code: str) -> str:
+    """Extract most likely model name from train.py source code."""
+    found = []
+    for pattern, name in _MODEL_PATTERNS:
+        if re.search(pattern, code):
+            found.append(name)
+    return found[0] if found else "Custom Model"
+
+
+# ── EXECUTE (Karpathy-style: redirect to run.log, grep metrics) ─
+def execute(code, csv_path, ws, exp_num):
+    ws = pathlib.Path(ws)
+    script = ws / "train.py"
+    run_log = ws / "run.log"
+    full = f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{code}"
+    script.write_text(full)
+
+    # Also save numbered copy for audit trail
+    (ws / f"exp_{exp_num:02d}.py").write_text(full)
+
+    t0 = time.time()
+    try:
+        # Redirect ALL output to run.log — never flood context (Karpathy rule)
+        with open(run_log, "w") as log_f:
+            p = subprocess.run(
+                [sys.executable, str(script)],
+                stdout=log_f, stderr=subprocess.STDOUT,
+                timeout=EXEC_TIMEOUT, cwd=str(ws),
+            )
+        elapsed = time.time() - t0
+        stdout = run_log.read_text() if run_log.exists() else ""
+
+        if p.returncode != 0:
+            # Read tail of log for error context (like `tail -n 50 run.log`)
+            tail = "\n".join(stdout.split("\n")[-50:])
+            return dict(success=False, error=tail[-600:], elapsed=elapsed, stdout=stdout)
+
+        # Grep metrics from log (like `grep "^val_bpb:" run.log`)
+        for line in reversed(stdout.strip().split("\n")):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    return dict(success=True, metrics=json.loads(line), stdout=stdout, elapsed=elapsed)
+                except Exception:
+                    pass
+
+        has_metrics = bool(re.search(r'(?:rmse|r2|mape|mae|nse|auc|f1|accuracy|mse)\s*[:=]\s*[\d.]+', stdout, re.IGNORECASE))
+        return dict(success=False,
+            error=f"No JSON in stdout. Tail: {stdout[-300:]}",
+            elapsed=elapsed, stdout=stdout, fixable_output=has_metrics)
+    except subprocess.TimeoutExpired:
+        # Kill on timeout — treat as failure (Karpathy: if >10min, kill and discard)
+        return dict(success=False, error=f"Timeout {EXEC_TIMEOUT}s — killed", elapsed=EXEC_TIMEOUT)
+    except Exception as e:
+        return dict(success=False, error=str(e), elapsed=time.time() - t0)
+
+# ── AUTO-FIX ───────────────────────────────────────────────────
+def auto_fix(code, error):
+    pkg_list = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
+    fixed = extract_code(ask(
+        "You are 19Labs debugger. Fix failing Python ML scripts. Output ONLY a ```python block.",
+        f"""Fix this script. AVAILABLE PACKAGES (only use these): {pkg_list}
+Do NOT import anything outside this list — it will crash.
+
+ERROR:
+{error[:800]}
+
+SCRIPT:
+```python
+{code[:2500]}
+```
+
+RULES:
+- Load data only with DATA_PATH: `df = pd.read_csv(DATA_PATH)`
+- NEVER hardcode 'train.csv' or any local absolute path.
+- ALWAYS split data into train/test. Compute metrics on BOTH.
+- Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics:
+  "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse" (=test), "r2" (=test), etc.
+
+Fix the error. Keep model/approach if possible. Output ONLY fixed ```python code.""", 3000))
+    fixed, _ = apply_code_guardrails(fixed)
+    return fixed
+
+
+def write_program_md(profile, obj, history, insights):
+    hist_txt = "\n".join(
+        f"- Exp {h.get('num', 0):02d}: status={h.get('status', 'unknown')} "
+        f"{h.get('metric_name', obj.get('metric', 'metric'))}={h.get('metric_val', 0):.6f} "
+        f"model={h.get('model', 'unknown')} note={h.get('note', '')[:140]}"
+        for h in history
+    ) if history else "- (no experiments yet)"
+    ins_txt = "\n".join(f"- {x}" for x in insights) if insights else "- (none yet)"
+    pkg_txt = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
+
+    program = ask(
+        "You are an autonomous ML research lead. Write high-signal research specs in markdown.",
+        f"""Write a complete `program.md` for this project. Rewrite fully from scratch each time.
+
+ENVIRONMENT:
+- Importable packages only: {pkg_txt}
+- Do NOT rely on any package outside this list.
+
+DATASET PROFILE:
+- Rows: {profile['rows']:,} | Cols: {profile['cols']}
+- Headers: {', '.join(profile['headers'])}
+- Numeric: {', '.join(profile['numeric'])}
+- Categorical: {', '.join(profile['categorical'])}
+- Datetime: {', '.join(profile['datetime'])}
+
+OBJECTIVE:
+- Task: {obj.get('task', 'Regression')}
+- Target: {obj.get('target', '')}
+- Metric: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
+- Domain: {obj.get('domain', 'General')}
+- Good enough: {obj.get('good_enough', '')}
+- User hint: {obj.get('user_hint', '')}
+- Reliability mode: {obj.get('reliability_mode', 'balanced')}
+- Execution policy: {obj.get('execution_policy', 'Balance reliability and performance.')}
+
+EXPERIMENT HISTORY:
+{hist_txt}
+
+LEARNINGS:
+{ins_txt}
+
+KARPATHY DISCIPLINE (MANDATORY):
+- train.py is the ONLY file you may edit. ALL code goes in train.py.
+- prepare.py is READ-ONLY. Never reference or modify it.
+- DATA_PATH and TIME_BUDGET are pre-defined variables injected at line 1. DO NOT redefine them. DO NOT use os.environ.
+- TIME_BUDGET = {obj.get('time_budget', TIME_BUDGET)}s. Add wall-clock checks in training loops.
+- ALWAYS split data into train/test. Compute metrics on BOTH and report both.
+- ALL output goes to stdout. Metrics MUST be printed as a single JSON line at the end with ALL applicable metrics:
+  print(json.dumps({{"model": "ModelName", "train_rmse": val, "test_rmse": val, "train_r2": val, "test_r2": val, "rmse": test_val, "r2": test_val, "mape": val, "mae": val, "nse": val}}))
+  The "model" key is MANDATORY. ALWAYS include train_ and test_ prefixed metrics for at least rmse and r2.
+- NEVER print sentinel values (999, -1, 0) as fallback metrics. If training fails, let the exception propagate — the system handles crashes.
+- KEEP means the experiment improved the metric. DISCARD means it didn't. This is enforced by git.
+- Each experiment = 1 git commit. DISCARD = `git reset --hard` to the last KEEP. You CANNOT recover discarded code.
+- NEVER STOP iterating. If stagnating, RADICALLY change strategy (different algorithm, different features, different preprocessing).
+- If your code crashes, analyze the error, fix the CAUSE (not the symptom), and move on.
+
+Your `program.md` MUST include these sections:
+1) Mission
+2) Task + metric definition (including exact KEEP criteria)
+3) Constraints (packages, robustness, determinism, time budget)
+4) What worked
+5) What failed and why
+6) Current hypothesis for next iteration
+7) Plan for next train.py rewrite
+
+Output ONLY markdown for `program.md`.""",
+        2500
+    )
+    return program.strip()
+
+def write_train_py(program_md, profile, obj, exp_num, history):
+    pkg_txt = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
+    hist_txt = "\n".join(
+        f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
+        f"{h.get('metric_name', obj.get('metric', 'metric'))}={h.get('metric_val', 0):.6f}"
+        for h in history
+    ) if history else "- (none)"
+    code = ask(
+        "You write complete production-grade Python training scripts from research specs.",
+        f"""Write `train.py` from the program spec below.
+
+ENVIRONMENT: Only these packages are importable: {AVAILABLE_PKGS}
+Do NOT import anything outside this list — it will crash.
+You are not limited to standard models — use these packages creatively.
+Build whatever you think is best given these constraints.
+
+EXPERIMENT: {exp_num}
+TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
+METRIC: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
+AVAILABLE PACKAGES: {pkg_txt}
+
+RECENT HISTORY:
+{hist_txt}
+
+PROGRAM SPEC (source of truth):
+```markdown
+{program_md[:12000]}
+```
+
+DATA PROFILE:
+- Rows: {profile['rows']:,}
+- Cols: {profile['cols']}
+- Headers: {', '.join(profile['headers'])}
+
+EXECUTION POLICY:
+- Reliability mode: {obj.get('reliability_mode', 'balanced')}
+- {obj.get('execution_policy', 'Balance reliability and performance.')}
+
+KARPATHY DISCIPLINE (MANDATORY):
+- DATA_PATH is a Python variable pre-defined BEFORE your code runs (injected at line 1).
+  DO NOT redefine it. DO NOT use os.environ.get('DATA_PATH', ...). Just use it directly:
+  `df = pd.read_csv(DATA_PATH)` — this is the ONLY way to load data.
+- TIME_BUDGET is also pre-defined. DO NOT redefine it. Your entire training MUST complete within it.
+  Add a wall-clock check: `import time; _start = time.time()` at top, and periodically
+  check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
+  This is NON-NEGOTIABLE. Timeout = automatic DISCARD.
+- Robust preprocessing (nulls, categoricals, datetime).
+- Deterministic behavior (set random seeds).
+- Save model via `joblib.dump(model, 'model.pkl')`.
+- ALL output goes to stdout. Final line MUST be `print(json.dumps(metrics))` where metrics is a dict with these keys:
+  REQUIRED:
+  - "model": string naming the algorithm (e.g. "Ridge", "XGBoost", "LightGBM")
+  - "{obj.get('metric', 'rmse')}": float — the PRIMARY metric on TEST set
+  ALWAYS INCLUDE (compute all on TEST set):
+  - "train_rmse": float, "test_rmse": float — train vs test RMSE (ALWAYS include both)
+  - "train_mape": float, "test_mape": float — train vs test MAPE
+  - "train_r2": float, "test_r2": float — train vs test R²
+  - "rmse": float, "mape": float, "mae": float, "r2": float, "nse": float — test set values
+  - "nse": float — Nash-Sutcliffe efficiency on test set
+  - "what_worked": string
+  IMPORTANT: Always split data into train/test, compute metrics on BOTH, and report both.
+  The primary metric value MUST be computed on the TEST set, never the training set.
+  Example: print(json.dumps({{"model": "XGBoost", "rmse": 4500.0, "train_rmse": 3200.0, "test_rmse": 4500.0, "train_r2": 0.97, "test_r2": 0.91, "r2": 0.91, "mape": 8.2, "nse": 0.91, "what_worked": "feature engineering"}}))
+  NEVER use try/except to print fallback metrics. Let exceptions crash — the system handles recovery.
+- GENERATE PLOTS: After training, save these plots using matplotlib (use Agg backend):
+  1. `predictions.png` — scatter plot of y_true vs y_pred on the test set, with a diagonal reference line
+  2. `residuals.png` — residual distribution (histogram) or residuals vs predicted
+  3. `feature_importance.png` — if the model supports it (tree models, etc.)
+  Use dark style: fig.set_facecolor('#0d1117'), ax.set_facecolor('#161b22'), white text/labels.
+  Save all plots to the current working directory. If plot generation fails, let it pass silently (plots are optional, metrics are not).
+- This is the ONLY file you edit. Everything must be self-contained in this script.
+
+Output ONLY a complete ```python block.""",
+        4200
+    )
+    clean, _ = apply_code_guardrails(extract_code(code))
+    return clean
+
+def revise_after_iteration(program_md, train_py, score, error, history):
+    hist_txt = "\n".join(
+        f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
+        f"{h.get('metric_name', 'metric')}={h.get('metric_val', 0):.6f} note={h.get('note', '')[:120]}"
+        for h in history[-12:]
+    ) if history else "- (none)"
+
+    review = ask(
+        "You are an autonomous ML researcher. Decide KEEP/DISCARD and rewrite spec+script.",
+        f"""Given the current program.md and train.py, plus latest run result, decide whether to KEEP or DISCARD this iteration.
+
+KEEP CRITERIA (IMPORTANT):
+- KEEP if the primary metric improved compared to the previous best result in history.
+- KEEP the first successful experiment ALWAYS (it establishes the baseline).
+- DISCARD if the metric is WORSE or EQUAL to a previously KEPT experiment.
+
+CRITICAL — TRAIN.PY REWRITE RULES:
+- You MUST write a DIFFERENT train.py every time. NEVER return the same code.
+- Each iteration MUST try a different approach: different model, different features, different preprocessing, different hyperparameters.
+- If the previous model was Ridge/Linear, try GradientBoosting, RandomForest, XGBoost, SVR, or an ensemble.
+- If it was a tree method, try elastic net, neural net, stacking, or radically different feature engineering.
+- Copying the same train.py verbatim wastes an experiment and will be automatically detected and rejected.
+
+Respond in EXACT format:
+KEEP: <YES|NO>
+REASONING: <short technical rationale>
+PROGRAM_MD:
+```markdown
+<full rewritten program.md>
+```
+TRAIN_PY:
+```python
+<full rewritten train.py>
+```
+
+TRAIN.PY HARD RULES (Karpathy discipline):
+- DATA_PATH and TIME_BUDGET are pre-defined variables (injected at line 1 before your code). 
+  DO NOT redefine them. DO NOT use os.environ.get(). Just use them directly: `df = pd.read_csv(DATA_PATH)`
+- Training MUST complete within TIME_BUDGET. Add wall-clock checks.
+- ALWAYS split data into train/test. Compute metrics on BOTH sets.
+- Final line: print(json.dumps(metrics)) — MUST include "model" key PLUS train_ and test_ prefixed metrics.
+  Required keys: "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse" (=test), "r2" (=test), and any other applicable: mape, mae, nse.
+- GENERATE PLOTS (matplotlib, Agg backend, dark style with facecolor '#0d1117'):
+  1. predictions.png — y_true vs y_pred scatter on test set, with diagonal line
+  2. residuals.png — residual histogram or residuals vs predicted
+  3. feature_importance.png — if model supports it (tree models etc.)
+  Wrap plot generation in try/except so it never blocks metrics output.
+- This is a git-tracked experiment. KEEP = commit. DISCARD = git reset --hard.
+  You are writing the NEXT experiment. If you KEEP, your code becomes the new baseline.
+  If you DISCARD, the codebase reverts to the last KEEP.
+- NEVER repeat a failed strategy. ALWAYS change something significant when writing new train.py.
+- If stagnating, RADICALLY change approach (different model, features, preprocessing).
+
+LATEST SCORE JSON:
+{json.dumps(score, indent=2, default=str) if score is not None else "null"}
+
+LATEST ERROR:
+{error or "none"}
+
+RECENT HISTORY:
+{hist_txt}
+
+CURRENT PROGRAM.MD:
+```markdown
+{program_md[:12000]}
+```
+
+CURRENT TRAIN.PY:
+```python
+{train_py[:12000]}
+```
+""",
+        7000
+    )
+
+    keep = bool(re.search(r"KEEP:\s*YES", review, re.IGNORECASE))
+    reason_match = re.search(r"REASONING:\s*(.+)", review)
+    reasoning = reason_match.group(1).strip() if reason_match else ""
+
+    pm = ""
+    tm = ""
+    if "PROGRAM_MD:" in review and "TRAIN_PY:" in review:
+        pm_part = review.split("PROGRAM_MD:", 1)[1].split("TRAIN_PY:", 1)[0]
+        tm_part = review.split("TRAIN_PY:", 1)[1]
+        pm = extract_code(pm_part)
+        tm = extract_code(tm_part)
+
+    if not pm:
+        pm = program_md
+    if not tm:
+        tm = train_py
+    tm, _ = apply_code_guardrails(tm)
+
+    return {
+        "keep": keep,
+        "new_program_md": pm.strip(),
+        "new_train_py": tm.strip(),
+        "reasoning": reasoning or ("KEEP" if keep else "DISCARD"),
+    }
+
+def init_results_tsv(ws):
+    ws = pathlib.Path(ws)
+    p = ws / "results.tsv"
+    if not p.exists():
+        p.write_text("experiment\tmodel\tmetric\tmetric_value\ttrain_rmse\ttest_rmse\ttrain_r2\ttest_r2\trmse\tmape\tmae\tr2\tnse\tstatus\tdescription\n")
+    return p
+
+def append_results_tsv(ws, exp_num, model, metric_name, metric_value, status, description, all_metrics=None):
+    ws = pathlib.Path(ws)
+    p = init_results_tsv(ws)
+    am = all_metrics or {}
+    def _g(k): return f"{am[k]:.4f}" if k in am else ""
+    cols = [_g(k) for k in ("train_rmse", "test_rmse", "train_r2", "test_r2", "rmse", "mape", "mae", "r2", "nse")]
+    line = f"{exp_num:02d}\t{model}\t{metric_name}\t{metric_value:.6f}\t" + "\t".join(cols) + f"\t{status}\t{description.replace(chr(9), ' ')[:220]}\n"
+    with open(p, "a") as f:
+        f.write(line)
+
+def _nb_md(text):
+    return {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [text],
+    }
+
+def _nb_code(text):
+    return {
+        "cell_type": "code",
+        "metadata": {},
+        "execution_count": None,
+        "outputs": [],
+        "source": [text],
+    }
+
+def write_prepare_py(ws, profile, obj, csv_path):
+    ws = pathlib.Path(ws)
+    code = f'''"""
+Auto-generated data preparation script for this 19Labs run.
+Usage:
+    python prepare.py --input "{pathlib.Path(csv_path).name}" --target "{obj.get("target", "")}"
+"""
+
+import argparse
+import json
+from pathlib import Path
+
+import pandas as pd
+
+def run(input_csv: str, target: str, out_dir: str = "prepared"):
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_csv(input_csv)
+    if target and target not in df.columns:
+        raise ValueError(f"Target '{{target}}' not found in columns: {{list(df.columns)}}")
+
+    # Basic hygiene: remove duplicate rows and normalize missing values.
+    df = df.drop_duplicates().replace([float("inf"), float("-inf")], pd.NA)
+
+    dt_cols = []
+    for c in df.columns:
+        if df[c].dtype == "object":
+            sample = df[c].dropna().astype(str).head(20)
+            if sample.empty:
+                continue
+            if sample.str.contains(r"-|/").mean() >= 0.7:
+                try:
+                    df[c] = pd.to_datetime(df[c], errors="coerce")
+                    dt_cols.append(c)
+                except Exception:
+                    pass
+
+    # Time-aware split when datetime exists; otherwise random split.
+    if dt_cols:
+        split_col = dt_cols[0]
+        df = df.sort_values(split_col)
+        split_idx = int(len(df) * 0.8)
+        train_df = df.iloc[:split_idx].copy()
+        val_df = df.iloc[split_idx:].copy()
+    else:
+        train_df = df.sample(frac=0.8, random_state=42)
+        val_df = df.drop(train_df.index).copy()
+
+    train_df.to_csv(out / "train.csv", index=False)
+    val_df.to_csv(out / "val.csv", index=False)
+
+    summary = {{
+        "rows": int(len(df)),
+        "cols": int(df.shape[1]),
+        "target": target,
+        "datetime_columns": dt_cols,
+        "train_rows": int(len(train_df)),
+        "val_rows": int(len(val_df)),
+    }}
+    (out / "prep_summary.json").write_text(json.dumps(summary, indent=2))
+    print(json.dumps(summary))
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", default="{pathlib.Path(csv_path).name}")
+    ap.add_argument("--target", default="{obj.get("target", "")}")
+    ap.add_argument("--out-dir", default="prepared")
+    args = ap.parse_args()
+    run(args.input, args.target, args.out_dir)
+'''
+    p = ws / "prepare.py"
+    p.write_text(code)
+    return str(p)
+
+def write_analysis_notebook(ws, profile, obj):
+    ws = pathlib.Path(ws)
+    metric = obj.get("metric", "metric")
+    direction = obj.get("direction", "lower_is_better")
+    nb = {
+        "cells": [
+            _nb_md(
+                "# 19Labs Project Analysis\n\n"
+                "Auto-generated notebook for dataset profiling, experiment tracking, and progress visualization."
+            ),
+            _nb_md(
+                f"## Project Context\n\n"
+                f"- Task: **{obj.get('task', 'Unknown')}**\n"
+                f"- Target: **{obj.get('target', 'target')}**\n"
+                f"- Metric: **{metric}** ({direction})\n"
+                f"- Rows x Cols: **{profile.get('rows', 0):,} x {profile.get('cols', 0)}**\n"
+            ),
+            _nb_code(
+                "import pandas as pd\n"
+                "import numpy as np\n"
+                "import matplotlib.pyplot as plt\n\n"
+                "profile = pd.read_json('profile.json') if __import__('pathlib').Path('profile.json').exists() else None\n"
+                "results = pd.read_csv('results.tsv', sep='\\t')\n"
+                "results"
+            ),
+            _nb_code(
+                f"metric_col = 'metric_value'\n"
+                f"metric_name = '{metric}'\n"
+                "df = pd.read_csv('results.tsv', sep='\\t')\n"
+                "df['metric_value'] = pd.to_numeric(df['metric_value'], errors='coerce')\n"
+                "df['experiment'] = pd.to_numeric(df['experiment'], errors='coerce')\n"
+                "ok = df[df['status'] != 'crash'].copy()\n"
+                "if len(ok) > 0:\n"
+                "    if '" + direction + "' == 'lower_is_better':\n"
+                "        ok['running_best'] = ok['metric_value'].cummin()\n"
+                "    else:\n"
+                "        ok['running_best'] = ok['metric_value'].cummax()\n"
+                "    fig, ax = plt.subplots(figsize=(12, 5))\n"
+                "    ax.plot(ok['experiment'], ok['metric_value'], marker='o', alpha=0.5, label='all')\n"
+                "    ax.plot(ok['experiment'], ok['running_best'], marker='o', linewidth=2, label='running_best')\n"
+                "    ax.set_title(f'Experiment Progress ({metric_name})')\n"
+                "    ax.set_xlabel('Experiment')\n"
+                "    ax.set_ylabel(metric_name)\n"
+                "    ax.grid(alpha=0.2)\n"
+                "    ax.legend()\n"
+                "    plt.tight_layout()\n"
+                "    plt.savefig('progress.png', dpi=150)\n"
+                "    plt.show()\n"
+            ),
+        ],
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {
+                "name": "python",
+                "version": "3",
+            },
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    p = ws / "analysis.ipynb"
+    p.write_text(json.dumps(nb, indent=2))
+    return str(p)
+
+def render_progress_png(ws, history, obj):
+    """Single progress chart — updated every experiment."""
+    ws = pathlib.Path(ws)
+    p = ws / "progress.png"
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return ""
+    rows = [h for h in history if h.get("success")]
+    if not rows:
+        fig, ax = plt.subplots(figsize=(10, 3))
+        ax.text(0.5, 0.5, "No successful experiments yet" if history else "No experiments yet",
+                ha="center", va="center", fontsize=14, color="#888")
+        ax.set_facecolor("#0d1117"); fig.set_facecolor("#0d1117")
+        ax.axis("off"); plt.tight_layout(); plt.savefig(p, dpi=140, facecolor="#0d1117"); plt.close(fig)
+        return str(p)
+
+    _apply_dark_style(plt)
+    metric = obj.get("metric", "metric")
+    lower = obj.get("direction", "lower_is_better") == "lower_is_better"
+    xs = [int(h["num"]) for h in rows]
+    ys = [float(h["metric_val"]) for h in rows]
+    running = []
+    cur = None
+    for y in ys:
+        cur = y if cur is None else (min(cur, y) if lower else max(cur, y))
+        running.append(cur)
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(xs, ys, "o-", alpha=0.4, color="#8b949e", label="Each experiment")
+    ax.plot(xs, running, "o-", linewidth=2.5, color="#58a6ff", label="Running best")
+    ax.fill_between(xs, ys, running, alpha=0.06, color="#58a6ff")
+    ax.set_title(f"Experiment Progress — {metric.upper()}", fontsize=14, fontweight="bold", color="white")
+    ax.set_xlabel("Experiment #"); ax.set_ylabel(metric.upper())
+    ax.legend(framealpha=0.3)
+    plt.tight_layout(); plt.savefig(p, dpi=160, facecolor="#0d1117"); plt.close(fig)
+    return str(p)
+
+
+def _apply_dark_style(plt):
+    plt.rcParams.update({
+        "figure.facecolor": "#0d1117", "axes.facecolor": "#161b22",
+        "axes.edgecolor": "#30363d", "axes.labelcolor": "#c9d1d9",
+        "xtick.color": "#8b949e", "ytick.color": "#8b949e",
+        "text.color": "#c9d1d9", "grid.color": "#21262d", "grid.alpha": 0.5,
+        "legend.facecolor": "#161b22", "legend.edgecolor": "#30363d",
+    })
+
+
+def render_final_plots(ws, history, obj, best):
+    """Generate clean, professional final plots after all experiments."""
+    ws = pathlib.Path(ws)
+    generated = {}
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import numpy as np
+    except Exception:
+        return generated
+
+    _apply_dark_style(plt)
+    rows = [h for h in history if h.get("success")]
+    if not rows:
+        return generated
+
+    metric = obj.get("metric", "metric")
+    lower = obj.get("direction", "lower_is_better") == "lower_is_better"
+    BLUE, PURPLE, AMBER, RED, GRAY = "#58a6ff", "#a78bfa", "#d29922", "#f85149", "#8b949e"
+    palette = [BLUE, PURPLE, AMBER, "#79c0ff", "#bc8cff", GRAY, "#e3b341", "#f0883e"]
+
+    # ── 1. TRAIN vs TEST — separate chart per metric (same scale) ─
+    try:
+        metric_pairs = [
+            ("rmse", "train_rmse", "test_rmse", "RMSE"),
+            ("r2",   "train_r2",   "test_r2",   "R²"),
+            ("mape", "train_mape", "test_mape", "MAPE"),
+        ]
+        available_pairs = []
+        for _, tk, vk, label in metric_pairs:
+            if any(h.get("all_metrics", {}).get(tk) is not None for h in rows):
+                available_pairs.append((tk, vk, label))
+
+        if available_pairs:
+            n_panels = len(available_pairs)
+            fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
+            if n_panels == 1:
+                axes = [axes]
+
+            xs = [h["num"] for h in rows]
+            x_pos = np.arange(len(xs))
+            w = 0.35
+
+            for i, (tk, vk, label) in enumerate(available_pairs):
+                ax = axes[i]
+                trains = [h.get("all_metrics", {}).get(tk, 0) for h in rows]
+                tests = [h.get("all_metrics", {}).get(vk, 0) for h in rows]
+                ax.bar(x_pos - w/2, trains, w, label="Train", color=BLUE, alpha=0.85)
+                ax.bar(x_pos + w/2, tests, w, label="Test", color=PURPLE, alpha=0.85)
+                ax.set_xticks(x_pos)
+                ax.set_xticklabels([f"#{x}" for x in xs], fontsize=9)
+                ax.set_title(f"Train vs Test — {label}", fontsize=13, fontweight="bold", color="white")
+                ax.set_ylabel(label)
+                ax.legend(framealpha=0.3, fontsize=9)
+                for j, (tr, te) in enumerate(zip(trains, tests)):
+                    ax.text(x_pos[j] - w/2, tr, f"{tr:.1f}" if tr > 10 else f"{tr:.3f}",
+                            ha="center", va="bottom", fontsize=7, color="#8b949e")
+                    ax.text(x_pos[j] + w/2, te, f"{te:.1f}" if te > 10 else f"{te:.3f}",
+                            ha="center", va="bottom", fontsize=7, color="#8b949e")
+
+            plt.tight_layout()
+            p = ws / "train_test.png"
+            plt.savefig(p, dpi=160, facecolor="#0d1117"); plt.close(fig)
+            generated["train_test_png"] = str(p)
+    except Exception:
+        pass
+
+    # ── 2. MODEL COMPARISON — primary metric + R² ─────────────────
+    try:
+        from collections import OrderedDict
+        model_best = OrderedDict()
+        for h in rows:
+            m = h.get("model", "Unknown")
+            v = float(h["metric_val"])
+            am = h.get("all_metrics", {})
+            if m not in model_best or (lower and v < model_best[m]["val"]) or (not lower and v > model_best[m]["val"]):
+                model_best[m] = {"val": v, "am": am}
+
+        if len(model_best) >= 2:
+            sorted_models = sorted(model_best.items(), key=lambda x: x[1]["val"], reverse=not lower)
+            names = [m[:25] for m, _ in sorted_models]
+            vals = [d["val"] for _, d in sorted_models]
+            bar_c = [palette[i % len(palette)] for i in range(len(names))]
+            bar_c[0] = BLUE
+
+            r2_vals = [d["am"].get("test_r2") or d["am"].get("r2") for _, d in sorted_models]
+            has_r2 = all(v is not None for v in r2_vals)
+            n_panels = 2 if has_r2 else 1
+            fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels, max(3, len(names) * 0.7 + 1.5)))
+            if n_panels == 1:
+                axes = [axes]
+
+            ax = axes[0]
+            y_pos = np.arange(len(names))
+            bars = ax.barh(y_pos, vals, color=bar_c, alpha=0.85, height=0.6)
+            ax.set_yticks(y_pos); ax.set_yticklabels(names, fontsize=10)
+            ax.set_xlabel(metric.upper())
+            ax.set_title(f"Model Comparison — {metric.upper()}", fontsize=13, fontweight="bold", color="white")
+            for bar, v in zip(bars, vals):
+                ax.text(bar.get_width() + max(vals) * 0.01, bar.get_y() + bar.get_height()/2,
+                        f"{v:,.1f}", va="center", fontsize=9, color="#c9d1d9")
+
+            if has_r2:
+                ax2 = axes[1]
+                bars2 = ax2.barh(y_pos, r2_vals, color=bar_c, alpha=0.85, height=0.6)
+                ax2.set_yticks(y_pos); ax2.set_yticklabels(names, fontsize=10)
+                ax2.set_xlabel("R²"); ax2.set_xlim(0, 1.05)
+                ax2.set_title("Model Comparison — R²", fontsize=13, fontweight="bold", color="white")
+                ax2.axvline(0.9, color=BLUE, linewidth=0.8, linestyle="--", alpha=0.5, label="R²=0.9")
+                for bar, v in zip(bars2, r2_vals):
+                    ax2.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height()/2,
+                             f"{v:.3f}", va="center", fontsize=9, color="#c9d1d9")
+                ax2.legend(framealpha=0.3, fontsize=8)
+
+            plt.tight_layout()
+            p = ws / "model_comparison.png"
+            plt.savefig(p, dpi=160, facecolor="#0d1117"); plt.close(fig)
+            generated["model_comparison_png"] = str(p)
+    except Exception:
+        pass
+
+    # ── 3. BEST MODEL SCORECARD — train vs test per metric ────────
+    try:
+        best_am = (best or {}).get("all_metrics", {})
+        score_metrics = []
+        for base in ["rmse", "mape", "r2", "mae", "nse"]:
+            tr = best_am.get(f"train_{base}")
+            te = best_am.get(f"test_{base}") or best_am.get(base)
+            if tr is not None and te is not None:
+                score_metrics.append((base.upper(), tr, te))
+
+        if score_metrics:
+            n = len(score_metrics)
+            fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 4))
+            if n == 1:
+                axes = [axes]
+
+            model_name = (best or {}).get("model", "Best Model")
+            fig.suptitle(f"{model_name} — Train vs Test", fontsize=14, fontweight="bold", color="white", y=0.98)
+
+            for i, (name, tr, te) in enumerate(score_metrics):
+                ax = axes[i]
+                bars = ax.bar([0, 1], [tr, te], color=[BLUE, PURPLE], alpha=0.85, width=0.6)
+                ax.set_xticks([0, 1]); ax.set_xticklabels(["Train", "Test"], fontsize=10)
+                ax.set_title(name, fontsize=12, fontweight="bold", color="white")
+                for bar, v in zip(bars, [tr, te]):
+                    fmt = f"{v:.3f}" if abs(v) < 10 else f"{v:,.1f}"
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                            fmt, ha="center", va="bottom", fontsize=10, fontweight="bold", color="#c9d1d9")
+                ax.set_xlim(-0.5, 1.5)
+
+            plt.tight_layout(rect=[0, 0, 1, 0.93])
+            p = ws / "metrics_overview.png"
+            plt.savefig(p, dpi=160, facecolor="#0d1117"); plt.close(fig)
+            generated["metrics_overview_png"] = str(p)
+    except Exception:
+        pass
+
+    # ── 4. EXPERIMENT TIMELINE ────────────────────────────────────
+    try:
+        fig, axes = plt.subplots(2, 1, figsize=(14, 8), gridspec_kw={"height_ratios": [3, 1]})
+
+        ax = axes[0]
+        xs = [h["num"] for h in rows]
+        test_vals = [float(h["metric_val"]) for h in rows]
+        train_key = f"train_{metric}"
+        train_vals = [h.get("all_metrics", {}).get(train_key) for h in rows]
+        has_train = any(v is not None for v in train_vals)
+
+        running = []
+        cur = None
+        for y in test_vals:
+            cur = y if cur is None else (min(cur, y) if lower else max(cur, y))
+            running.append(cur)
+
+        if has_train:
+            tv = [v if v is not None else 0 for v in train_vals]
+            ax.plot(xs, tv, "s--", color=BLUE, alpha=0.6, label="Train", markersize=6)
+        ax.plot(xs, test_vals, "o-", color=PURPLE, alpha=0.7, label="Test", markersize=6)
+        ax.plot(xs, running, "o-", linewidth=2.5, color=BLUE, label="Running Best", markersize=7)
+        ax.fill_between(xs, test_vals, running, alpha=0.06, color=BLUE)
+
+        crashes = [h for h in history if not h.get("success")]
+        if crashes:
+            cx = [h["num"] for h in crashes]
+            cy = [ax.get_ylim()[0]] * len(cx)
+            ax.scatter(cx, cy, marker="x", color=RED, s=60, zorder=5, label="Crashed")
+
+        ax.set_title(f"Experiment Timeline — {metric.upper()}", fontsize=14, fontweight="bold", color="white")
+        ax.set_ylabel(metric.upper()); ax.legend(framealpha=0.3, fontsize=9)
+
+        ax2 = axes[1]
+        all_models = list(set(h.get("model", "?") for h in history))
+        model_color = {m: palette[i % len(palette)] for i, m in enumerate(all_models)}
+        for h in history:
+            c = RED if not h.get("success") else model_color.get(h.get("model", "?"), GRAY)
+            ax2.bar(h["num"], 1, color=c, alpha=0.8, width=0.8)
+        ax2.set_yticks([]); ax2.set_xlabel("Experiment #")
+        ax2.set_title("Models Used", fontsize=11, color=GRAY)
+        from matplotlib.patches import Patch
+        legend_elements = [Patch(facecolor=model_color[m], label=m) for m in all_models if m in model_color]
+        if crashes:
+            legend_elements.append(Patch(facecolor=RED, label="Crashed"))
+        ax2.legend(handles=legend_elements, fontsize=8, framealpha=0.3, ncol=min(4, len(legend_elements)))
+
+        plt.tight_layout()
+        p = ws / "experiment_timeline.png"
+        plt.savefig(p, dpi=160, facecolor="#0d1117"); plt.close(fig)
+        generated["experiment_timeline_png"] = str(p)
+    except Exception:
+        pass
+
+    return generated
+
+def initialize_workspace_artifacts(ws, csv_path, profile, obj):
+    ws = pathlib.Path(ws)
+    artifacts = {}
+    artifacts["prepare_py"] = write_prepare_py(ws, profile, obj, csv_path)
+    artifacts["analysis_ipynb"] = write_analysis_notebook(ws, profile, obj)
+    artifacts["progress_png"] = render_progress_png(ws, [], obj)
+    if AUTORESEARCH_DIR.exists():
+        for name in ["program.md", "analysis.ipynb", "prepare.py"]:
+            src = AUTORESEARCH_DIR / name
+            if src.exists():
+                dst = ws / f"template_{name}"
+                dst.write_text(src.read_text())
+                artifacts[f"template_{name.replace('.', '_')}"] = str(dst)
+    return artifacts
+
+# ── PACKAGE DEPLOYMENT ─────────────────────────────────────────
+def package_deployment(ws, best_exp, obj, profile):
+    ws = pathlib.Path(ws)
+    d = ws / "deploy"; d.mkdir(exist_ok=True)
+    src = ws / f"exp_{best_exp['num']:02d}.py"
+    if src.exists():
+        shutil.copy(src, d / "train.py")
+    elif (ws / "train.py").exists():
+        shutil.copy(ws / "train.py", d / "train.py")
+    # model.pkl if saved
+    pkl = ws / "model.pkl"
+    if pkl.exists(): shutil.copy(pkl, d / "model.pkl")
+
+    inference = extract_code(ask(
+        "Write production Python inference code. FastAPI endpoint + CLI. Output ONLY ```python.",
+        f"""Production inference script.
+
+MODEL: {best_exp['model']} | TASK: {obj['task']} | TARGET: {obj['target']}
+METRIC: {best_exp['metric_name']}={best_exp['metric_val']:.6f}
+COLS: {', '.join(profile['headers'])}
+NUMERIC: {', '.join(profile['numeric'])}
+CATEGORICAL: {', '.join(profile['categorical'])}
+
+Requirements:
+- Load model.pkl with joblib
+- FastAPI POST /predict — accepts JSON {{"data": [row_dict, ...]}} → returns {{"predictions": [...]}}
+- CLI: python predict.py --input data.csv --output predictions.csv
+- Same preprocessing as training
+- Handle nulls and encoding robustly
+
+Output ONLY ```python code.""", 2500))
+
+    (d / "predict.py").write_text(inference)
+    train_code = ""
+    if (d / "train.py").exists():
+        train_code = (d / "train.py").read_text()
+    dep_reqs = build_requirements_from_code(
+        train_code,
+        inference,
+        extra_modules={"fastapi", "uvicorn"},
+    )
+    (d / "requirements.txt").write_text(dep_reqs)
+
+    history_lines = "\n".join(
+        f"- Exp {h['num']:02d}: {h['model']} → {h['metric_name']}={h['metric_val']:.6f}"
+        for h in best_exp.get("all_history", []))
+    (d / "README.md").write_text(f"""# 19Labs Deployed Model
+
+## Model
+- Task: {obj['task']}
+- Target: `{obj['target']}`
+- Model: **{best_exp['model']}**
+- {best_exp['metric_name'].upper()}: **{best_exp['metric_val']:.6f}**
+- Trained: {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+## Quick Start
+```bash
+pip install -r requirements.txt
+python train.py        # retrain → saves model.pkl
+uvicorn predict:app    # serve API on :8000
+```
+
+## API
+```bash
+POST /predict
+{{"data": [{{"col1": val1, "col2": val2}}]}}
+→ {{"predictions": [42.0]}}
+```
+
+## Experiment History
+{history_lines}
+""")
+    return str(d)
+
+# ── REPORT ─────────────────────────────────────────────────────
+def generate_report(ws, obj, profile, history, best):
+    ws = pathlib.Path(ws)
+    hist_txt = "\n".join(
+        f"  Exp {h['num']:02d}: {h['model']:25s} {h['metric_name']}={h['metric_val']:.6f}"
+        + (f" r2={h['r2']:.4f}" if h.get("r2") else "")
+        + (" [FAILED]" if not h["success"] else "")
+        for h in history)
+    rpt = ask("Write precise technical ML research reports. Dense, no fluff.",
+        f"""Final research report.
+
+DOMAIN: {obj['domain']} | TASK: {obj['task']} | TARGET: {obj['target']}
+METRIC: {obj['metric']} ({obj['direction']}) | GOOD ENOUGH: {obj.get('good_enough','')}
+DATASET: {profile['rows']:,} rows × {profile['cols']} cols
+
+EXPERIMENTS:
+{hist_txt}
+
+WINNER: {best['model']} {best['metric_name']}={best['metric_val']:.6f}
+
+Sections: Executive Summary, Dataset, Experiment Breakdown, 
+Winner Analysis, Production Notes, Next Steps. Technical, dense.""", 2000)
+    (ws / "final_report.md").write_text(f"# 19Labs Research Report\n\n{rpt}")
+    return rpt
+
+def _grade_from_score(score: int) -> str:
+    if score >= 90:
+        return "A+"
+    if score >= 80:
+        return "A"
+    if score >= 70:
+        return "B"
+    if score >= 60:
+        return "C"
+    return "D"
+
+def build_run_diagnostics(obj, profile, history, best, deploy_path):
+    total = len(history or [])
+    success_rows = [h for h in (history or []) if h.get("success")]
+    failures = [h for h in (history or []) if not h.get("success")]
+    success_count = len(success_rows)
+    fail_count = len(failures)
+    success_rate = (success_count / total) if total else 0.0
+
+    metric_name = (best or {}).get("metric_name") or obj.get("metric", "metric")
+    metric_val = (best or {}).get("metric_val")
+    direction = obj.get("direction", "lower_is_better")
+    threshold = GOOD_ENOUGH.get(metric_name) or GOOD_ENOUGH.get(metric_name.lower())
+    # Try to extract numeric threshold from Claude's good_enough string (e.g. "RMSE < 5,000")
+    ge_str = obj.get("good_enough", "")
+    ge_nums = re.findall(r'[\d,]+\.?\d*', ge_str.replace(',', ''))
+    if ge_nums:
+        try:
+            parsed_thresh = float(ge_nums[0])
+            if parsed_thresh > 0:
+                threshold = parsed_thresh
+        except ValueError:
+            pass
+    threshold_met = False
+    if metric_val is not None and threshold is not None:
+        threshold_met = (metric_val <= threshold) if direction == "lower_is_better" else (metric_val >= threshold)
+
+    fail_reason_counts = {}
+    for h in failures:
+        fr = h.get("failure_reason") or classify_failure_reason(h.get("error", ""))
+        fail_reason_counts[fr] = fail_reason_counts.get(fr, 0) + 1
+
+    score = 30
+    score += int(min(25, round(success_rate * 25)))
+    if best:
+        score += 15
+        # Bonus for strong secondary metrics
+        am = (best or {}).get("all_metrics", {})
+        r2_val = am.get("r2") or am.get("R2")
+        if r2_val is not None and r2_val > 0.85:
+            score += 5
+        if r2_val is not None and r2_val > 0.95:
+            score += 5
+    if threshold_met:
+        score += 15
+    if deploy_path:
+        score += 10
+    score = max(0, min(100, score))
+
+    top_fail = sorted(fail_reason_counts.items(), key=lambda x: x[1], reverse=True)[:2]
+    risk_lines = [f"{k} ({v})" for k, v in top_fail] if top_fail else ["No dominant failure mode"]
+    best_line = f"{best['model']} {metric_name}={float(metric_val):.6f}" if best and metric_val is not None else "No successful model yet"
+    headline = (
+        "Production-candidate run with deployable artifact."
+        if best and deploy_path
+        else "Exploratory run; reliability improvements still needed."
+    )
+    brief = (
+        f"Dataset: {profile.get('rows', 0):,} rows x {profile.get('cols', 0)} cols. "
+        f"Task: {obj.get('task', 'Unknown')} predicting {obj.get('target', 'target')}. "
+        f"Best result: {best_line}. Success rate: {success_count}/{total}. "
+        f"Top risks: {', '.join(risk_lines)}."
+    )
+    next_actions = [
+        "Lock feature schema and add dataset contract checks before training.",
+        "Run 3 repeated seeds for stability and report variance bands.",
+        "Add offline backtest slice (time/segment) before shipping.",
+    ]
+    if threshold_met:
+        next_actions[0] = "Promote current model to staged deployment and monitor drift."
+
+    return {
+        "yc_readiness_score": score,
+        "yc_grade": _grade_from_score(score),
+        "headline": headline,
+        "executive_brief": brief,
+        "success_rate": success_rate,
+        "success_count": success_count,
+        "failure_count": fail_count,
+        "total_experiments": total,
+        "best_metric_name": metric_name,
+        "best_metric_value": metric_val,
+        "threshold": threshold,
+        "threshold_met": threshold_met,
+        "top_failure_modes": risk_lines,
+        "next_actions": next_actions,
+        "reliability_mode": obj.get("reliability_mode", "balanced"),
+    }
+
+# ══════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════
+def run_research(
+    csv_path,
+    workspace=None,
+    budget=6,
+    user_hint="",
+    api_key=None,
+    log_callback=None,
+    reliability_mode="balanced",
+    continuous=False,
+    cancel_event=None,
+    provider="claude",
+):
+    """
+    Karpathy-discipline autoresearch loop.
+    
+    Protocol:
+    1. Git-init the workspace. Every experiment is a commit.
+    2. KEEP = commit advances HEAD. DISCARD = git reset --hard HEAD~1.
+    3. Only train.py is mutable by the AI. program.md is the research spec.
+    4. prepare.py is a READ-ONLY utility template.
+    5. All experiment output goes to run.log (never floods context).
+    6. TIME_BUDGET is injected into every script for wall-clock discipline.
+    7. In continuous mode: NEVER STOP. Stagnation triggers strategy pivot, not exit.
+    8. Crash recovery: trivial fix → rerun, fundamental → skip and move on.
+    """
+    global AVAILABLE_PKGS
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+    if not key: raise RuntimeError("No API key.")
+    _init_client(key, provider)
+    reset_token_usage()
+
+    mode = normalize_reliability_mode(reliability_mode)
+    mode_cfg = RELIABILITY_PROFILES[mode]
+    requested_budget = max(1, int(budget))
+
+    if continuous:
+        budget = int(mode_cfg.get("continuous_cap", MAX_CONTINUOUS_EXPERIMENTS))
+        stagnation_limit = None  # NEVER STOP on stagnation in continuous mode
+    else:
+        budget = requested_budget  # User controls experiment count
+        stagnation_limit = int(mode_cfg["stagnation_limit"])
+
+    ws = pathlib.Path(workspace or tempfile.mkdtemp(prefix="19labs_"))
+    ws.mkdir(parents=True, exist_ok=True)
+    log = Logger(ws, log_callback)
+    run_tag = f"run_{int(time.time())}"
+
+    model_label = OPENAI_MODEL if _provider == "openai" else CLAUDE_MODEL
+    log.sys(f"Workspace: {ws}")
+    log.sys(f"Provider: {_provider} ({model_label})")
+    log.sys(f"Budget: {budget} {'(continuous — NEVER STOP)' if continuous else f'(requested={requested_budget})'} | CSV: {csv_path}")
+    log.sys(f"Reliability mode: {mode} | Policy: {mode_cfg['policy']}")
+    log.sys(f"Time budget per experiment: {TIME_BUDGET}s | Hard kill: {EXEC_TIMEOUT}s")
+
+    # ── GIT INIT ──────────────────────────────────────────────
+    git_ok = git_init_workspace(ws, run_tag)
+    if git_ok:
+        log.engine("Git repo initialized — every experiment = 1 commit, DISCARD = hard reset")
+    else:
+        log.engine("Warning: git init failed, falling back to file-based tracking")
+
+    # PROFILE
+    log.engine("Profiling dataset...")
+    profile = profile_dataset(csv_path)
+    log.engine(f"{profile['rows']:,} rows × {profile['cols']} cols | numeric={profile['numeric']} | cat={profile['categorical']}")
+    (ws / "profile.json").write_text(json.dumps(profile, indent=2, default=str))
+
+    # INFER
+    log.engine("Inferring task from data...")
+    obj = infer_objective(profile, user_hint)
+    log.claude(f"Task: {obj['task']} | Target: {obj['target']} | Metric: {obj['metric']} ({obj['direction']})")
+    log.claude(f"Domain: {obj['domain']} | Confidence: {obj['confidence']:.0%}")
+    log.claude(f"Good enough: {obj['good_enough']}")
+    log.claude(obj["reasoning"])
+
+    # Validate target column exists in the dataset
+    if obj["target"] and obj["target"] not in profile["headers"]:
+        close_match = [h for h in profile["headers"] if obj["target"].lower() in h.lower() or h.lower() in obj["target"].lower()]
+        if close_match:
+            log.engine(f"Target '{obj['target']}' not found in columns — correcting to '{close_match[0]}'")
+            obj["target"] = close_match[0]
+        else:
+            fallback = profile["target_candidates"][0] if profile.get("target_candidates") else profile["headers"][-1]
+            log.engine(f"Target '{obj['target']}' not found in columns — falling back to '{fallback}'")
+            obj["target"] = fallback
+
+    (ws / "objective.md").write_text(obj["raw"])
+    (ws / "objective.json").write_text(json.dumps(obj, indent=2))
+    artifacts = initialize_workspace_artifacts(ws, csv_path, profile, obj)
+    log.engine("Initialized project artifacts (prepare.py, analysis.ipynb, progress.png)")
+
+    # ── INIT: program.md (mutable spec) + train.py (the ONLY file AI edits) ──
+    history = []
+    insights = []
+    best = None
+    best_train_py = ""
+    best_val = None
+    lower = obj["direction"] == "lower_is_better"
+    obj["user_hint"] = user_hint
+    obj["reliability_mode"] = mode
+    obj["execution_policy"] = mode_cfg["policy"]
+    obj["time_budget"] = TIME_BUDGET
+    no_improve_rounds = 0
+    consecutive_crashes = 0
+
+    init_results_tsv(ws)
+    program_md = write_program_md(profile, obj, history, insights)
+    (ws / "program.md").write_text(program_md)
+    log.engine("program.md written (research spec — drives all experiments)")
+
+    train_py = write_train_py(program_md, profile, obj, 1, history)
+    train_py, initial_notes = apply_code_guardrails(train_py)
+    if initial_notes:
+        log.engine(f"Applied train.py guardrails: {', '.join(sorted(set(initial_notes)))}")
+    (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
+    write_workspace_requirements(ws, train_py)
+    log.engine("train.py written from program.md")
+
+    # Commit initial state
+    if git_ok:
+        git_commit_experiment(ws, 0, "initial: program.md + train.py from data profile")
+        log.engine(f"Git commit: initial state @ {git_get_commit_hash(ws)}")
+
+    # ══════════════════════════════════════════════════════════
+    # THE LOOP — Karpathy-style: iterate, KEEP or DISCARD, never stop (continuous)
+    # ══════════════════════════════════════════════════════════
+    for n in range(1, budget + 1):
+        if cancel_event and cancel_event.is_set():
+            log.engine("Graceful stop — wrapping up with results from completed experiments.")
+            break
+        log.engine(f"\n{'═'*50}\nEXPERIMENT {n}/{budget} {'(continuous)' if continuous else ''}\n{'═'*50}")
+
+        # Pre-exec guardrails
+        train_py, pre_notes = apply_code_guardrails(train_py)
+        if pre_notes:
+            log.engine(f"Pre-exec guardrails: {', '.join(sorted(set(pre_notes)))}")
+
+        # RUN — all output to run.log, grep metrics from log
+        res = execute(train_py, csv_path, ws, n)
+
+        score = None
+        error = None
+        failure_reason = ""
+        metric_name = obj["metric"]
+        metric_val = 999 if lower else 0
+        model_name = "Failed"
+        what_worked = ""
+        all_metrics = {}
+
+        if res["success"]:
+            consecutive_crashes = 0
+            m = res["metrics"]
+            score = m
+            for k in [metric_name, metric_name.upper(), "rmse", "r2", "mape", "mae", "nse", "auc", "f1", "accuracy"]:
+                if k in m and isinstance(m[k], (int, float)):
+                    metric_name = k
+                    metric_val = float(m[k])
+                    break
+            else:
+                for k, v in m.items():
+                    if isinstance(v, (int, float)) and k not in ("model",):
+                        metric_name = k
+                        metric_val = float(v)
+                        break
+            # Collect ALL numeric metrics for multi-metric display
+            all_metrics = {}
+            for k, v in m.items():
+                if isinstance(v, (int, float)) and k not in ("model",):
+                    all_metrics[k] = float(v)
+            model_name = m.get("model") or _infer_model_name(train_py)
+            what_worked = m.get("what_worked", "")
+
+            # Detect sentinel/garbage metrics (code caught its own error and printed a fallback)
+            stdout_text = res.get("stdout", "")
+            has_error_in_log = bool(re.search(
+                r'(?:FileNotFoundError|KeyError|ValueError|ModuleNotFoundError|Exception|Error|Traceback)',
+                stdout_text[-1000:], re.IGNORECASE
+            ))
+            is_known_sentinel = metric_val in (999, 999.0, 999.9, 999.99, 9999, 99999, -1, -999, 0)
+            is_suspicious_extreme = (
+                (lower and metric_val >= 100 and has_error_in_log) or
+                (not lower and metric_val <= 0.01 and has_error_in_log)
+            )
+            is_sentinel = is_known_sentinel or is_suspicious_extreme
+            if is_sentinel:
+                log_tail = res.get("stdout", "")[-500:]
+                log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f} (SENTINEL — treating as failure)")
+                res["success"] = False
+                error = f"Sentinel metric value {metric_val} detected — script likely failed silently. Log tail: {log_tail[-300:]}"
+                failure_reason = "bad_output_format"
+                consecutive_crashes += 1
+            else:
+                secondary = " · ".join(f"{k}={v:.4f}" for k, v in all_metrics.items() if k != metric_name and k != "what_worked")
+                sec_str = f" ({secondary})" if secondary else ""
+                log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f}{sec_str} ({res['elapsed']:.1f}s)")
+                # Log train/test split if available
+                tr_key = f"train_{metric_name}"
+                te_key = f"test_{metric_name}"
+                if tr_key in all_metrics and te_key in all_metrics:
+                    log.engine(f"  ↳ {metric_name.upper()}: train={all_metrics[tr_key]:.4f} → test={all_metrics[te_key]:.4f}")
+        
+        if not res["success"]:
+            if not error:
+                error = res.get("error", "Unknown execution failure")
+            if not failure_reason:
+                failure_reason = classify_failure_reason(error)
+                consecutive_crashes += 1
+
+            # ── CRASH RECOVERY (Karpathy: trivial fix → rerun, fundamental → skip) ──
+            if failure_reason in {"data_path", "invalid_hyperparameter", "bad_output_format", "missing_package"}:
+                repaired = auto_fix(train_py, error)
+                repaired, fix_notes = apply_code_guardrails(repaired)
+                if repaired.strip() and repaired.strip() != train_py.strip():
+                    log.engine(f"Crash recovery [{failure_reason}] → auto-repair + retry")
+                    retry_res = execute(repaired, csv_path, ws, n)
+                    if retry_res.get("success"):
+                        res = retry_res
+                        m = res["metrics"]
+                        score = m
+                        for k in [metric_name, metric_name.upper(), "rmse", "r2", "mape", "mae", "nse", "auc", "f1", "accuracy"]:
+                            if k in m and isinstance(m[k], (int, float)):
+                                metric_name = k
+                                metric_val = float(m[k])
+                                break
+                        else:
+                            for k, v in m.items():
+                                if isinstance(v, (int, float)) and k not in ("model",):
+                                    metric_name = k
+                                    metric_val = float(v)
+                                    break
+                        all_metrics = {k: float(v) for k, v in m.items() if isinstance(v, (int, float)) and k != "model"}
+                        model_name = m.get("model") or _infer_model_name(repaired)
+                        what_worked = m.get("what_worked", "") or "Recovered from auto-repair"
+                        error = None
+                        failure_reason = ""
+                        consecutive_crashes = 0
+                        train_py = repaired
+                        log.result(f"Exp {n}: recovery succeeded → {model_name} {metric_name}={metric_val:.6f}")
+                    else:
+                        error = retry_res.get("error", error)
+                        failure_reason = classify_failure_reason(error)
+
+            if not res.get("success"):
+                score = {"success": False, "error": error}
+                log.err(f"Exp {n} crashed: {failure_reason or 'unknown'} — {error[:200]}")
+
+                # If 3+ consecutive crashes, HARD RESET to last known good state
+                if consecutive_crashes >= 3 and best_train_py and git_ok:
+                    log.engine("3 consecutive crashes — hard resetting to last known good train.py")
+                    train_py = best_train_py
+                    (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
+                    consecutive_crashes = 0
+
+        if cancel_event and cancel_event.is_set():
+            log.engine("Graceful stop — preserving current experiment results.")
+            break
+
+        # ── KEEP / DISCARD DECISION ──────────────────────────────
+        revision = revise_after_iteration(program_md, train_py, score, error, history)
+        keep = bool(revision["keep"] and res["success"])
+        program_md = revision["new_program_md"]
+        train_py_candidate = revision["new_train_py"]
+        reasoning = revision["reasoning"]
+
+        if res.get("success"):
+            is_first_success = best_val is None
+            is_new_best = best_val is not None and (
+                (lower and metric_val < best_val) or
+                (not lower and metric_val > best_val)
+            )
+            is_worse = best_val is not None and (
+                (lower and metric_val > best_val) or
+                (not lower and metric_val < best_val)
+            )
+
+            # ENGINE OVERRIDE: force KEEP if this is the best score so far
+            if not keep and (is_first_success or is_new_best):
+                keep = True
+                override_reason = "first successful result" if is_first_success else f"new best ({metric_val:.4f} vs {best_val:.4f})"
+                reasoning = f"[ENGINE OVERRIDE: {override_reason}] {reasoning}"
+                log.engine(f"Overriding DISCARD → KEEP: {override_reason}")
+
+            # ENGINE VETO: force DISCARD if metric is worse than current best
+            if keep and is_worse:
+                keep = False
+                reasoning = f"[ENGINE VETO: metric worse ({metric_val:.4f} vs best {best_val:.4f})] {reasoning}"
+                log.engine(f"Overriding KEEP → DISCARD: metric regressed ({metric_val:.4f} vs {best_val:.4f})")
+
+        status = "keep" if keep else ("crash" if not res["success"] else "discard")
+        history.append({
+            "num": n,
+            "status": status,
+            "success": bool(res["success"]),
+            "model": model_name,
+            "metric_name": metric_name,
+            "metric_val": float(metric_val),
+            "all_metrics": all_metrics,
+            "note": reasoning,
+            "error": error or "",
+            "failure_reason": failure_reason,
+            "commit": "",
+        })
+        append_results_tsv(ws, n, model_name, metric_name, float(metric_val), status, reasoning or what_worked or "", all_metrics)
+        prog = render_progress_png(ws, history, obj)
+        if prog:
+            artifacts["progress_png"] = prog
+
+        # Clean up per-experiment plots from workspace (will regenerate final ones)
+        for plot_name in ("predictions.png", "residuals.png", "feature_importance.png"):
+            try:
+                (ws / plot_name).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        # program.md is ALWAYS updated (learnings accumulate regardless of keep/discard)
+        (ws / "program.md").write_text(program_md)
+
+        if keep:
+            best_train_py = train_py
+            better = best_val is None or (lower and metric_val < best_val) or ((not lower) and metric_val > best_val)
+            if better:
+                best_val = metric_val
+                best = {
+                    "num": n,
+                    "model": model_name,
+                    "metric_name": metric_name,
+                    "metric_val": float(metric_val),
+                    "all_metrics": all_metrics,
+                    "all_history": history,
+                }
+                no_improve_rounds = 0
+            else:
+                no_improve_rounds += 1
+            insights.append(f"Exp {n}: KEEP — {reasoning}")
+            train_py = train_py_candidate or train_py
+            log.result(f"KEEP — {reasoning}")
+
+            # GIT: commit this winning state (branch advances)
+            if git_ok:
+                sha = git_commit_experiment(ws, n, f"KEEP {model_name} {metric_name}={metric_val:.6f}")
+                history[-1]["commit"] = sha
+                log.engine(f"Git commit {sha}: KEEP")
+        else:
+            # Only count real experiments toward stagnation, not crashes/sentinels
+            if res.get("success"):
+                no_improve_rounds += 1
+            insights.append(f"Exp {n}: DISCARD — {reasoning}")
+
+            # GIT: revert to last known good state (Karpathy: git reset --hard)
+            if git_ok and best_train_py:
+                git_discard_uncommitted(ws)
+                log.engine(f"Git discard: reverted working tree to {git_get_commit_hash(ws)}")
+
+            train_py = train_py_candidate or (best_train_py if best_train_py else train_py)
+            log.engine(f"DISCARD — {reasoning}")
+
+        # Detect stale code — if LLM returned identical train.py, force a rewrite
+        prev_hash = hash(train_py.strip())
+        train_py, post_notes = apply_code_guardrails(train_py)
+        if post_notes:
+            log.engine(f"Post-revision guardrails: {', '.join(sorted(set(post_notes)))}")
+
+        if hash(train_py.strip()) == prev_hash and n < budget:
+            # Check if the new code is the same as what we just ran
+            current_on_disk = ""
+            try:
+                current_on_disk = (ws / "train.py").read_text().split("\n\n", 1)[-1].strip()
+            except Exception:
+                pass
+            if train_py.strip() == current_on_disk:
+                log.engine("STALE CODE DETECTED — LLM returned identical train.py. Forcing radical rewrite...")
+                forced = ask(
+                    "You are an ML engineer. The previous train.py produced IDENTICAL results twice. You MUST write a COMPLETELY DIFFERENT approach.",
+                    f"""The current train.py keeps producing the same result: {metric_name}={metric_val:.4f}.
+
+MANDATORY: Write a COMPLETELY different train.py using a DIFFERENT model/algorithm.
+If the previous used Ridge/Linear, try: GradientBoosting, RandomForest, XGBoost, SVR, or ensemble.
+If it used tree methods, try: neural net, elastic net, stacking, or a radically different preprocessing.
+
+DO NOT copy any part of the old code. Start fresh.
+Previous model: {model_name}
+Available packages: {', '.join(AVAILABLE_PKGS) if AVAILABLE_PKGS else 'sklearn, numpy, pandas, joblib'}
+Target: {obj.get('target', '')} | Metric: {metric_name} ({obj.get('direction', 'lower_is_better')})
+Columns: {', '.join(profile['headers'])}
+
+RULES: DATA_PATH and TIME_BUDGET are pre-injected variables. Use df = pd.read_csv(DATA_PATH).
+Split into train/test. Report train_ and test_ prefixed metrics.
+Final line: print(json.dumps(metrics)) with "model" key.
+Generate plots (predictions.png, residuals.png) with dark theme.
+
+Output ONLY a complete ```python block.""", 4200)
+                train_py = extract_code(forced)
+                train_py, _ = apply_code_guardrails(train_py)
+                log.engine(f"Forced rewrite complete — new approach ready")
+
+        (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
+        write_workspace_requirements(ws, train_py)
+
+        # ── STOP CONDITIONS ──────────────────────────────────────
+        # Good-enough threshold: stop in any mode
+        thresh = GOOD_ENOUGH.get(metric_name) or GOOD_ENOUGH.get(metric_name.lower())
+        ge_str = obj.get("good_enough", "")
+        ge_nums = re.findall(r'[\d,]+\.?\d*', ge_str.replace(',', ''))
+        if ge_nums:
+            try:
+                parsed_t = float(ge_nums[0])
+                if parsed_t > 0:
+                    thresh = parsed_t
+            except ValueError:
+                pass
+        if keep and thresh and ((lower and metric_val <= thresh) or ((not lower) and metric_val >= thresh)):
+            log.engine(f"Hit good-enough threshold ({thresh}) on {metric_name}. Mission accomplished.")
+            break
+
+        # In continuous mode: stagnation triggers STRATEGY PIVOT, not exit
+        if continuous and no_improve_rounds >= 5:
+            log.engine(f"Stagnation ({no_improve_rounds} rounds) — pivoting strategy, NOT stopping")
+            pivot_insight = f"STAGNATION ALERT: {no_improve_rounds} rounds without improvement. RADICALLY change approach."
+            insights.append(pivot_insight)
+            program_md = write_program_md(profile, obj, history, insights)
+            (ws / "program.md").write_text(program_md)
+            no_improve_rounds = 0  # reset after pivot
+            log.engine("Rewrote program.md with pivot directive")
+        elif not continuous and stagnation_limit and no_improve_rounds >= stagnation_limit:
+            log.engine(f"Stopping: stagnated for {no_improve_rounds} rounds (limit={stagnation_limit}).")
+            break
+
+    # ── REPORT + DEPLOY ──────────────────────────────────────────
+    total_experiments = len(history)
+    kept = sum(1 for h in history if h["status"] == "keep")
+    crashed = sum(1 for h in history if h["status"] == "crash")
+    log.engine(f"\nCompleted {total_experiments} experiments: {kept} kept, {crashed} crashed, {total_experiments - kept - crashed} discarded")
+
+    # Fallback: if no KEEP but we have successful experiments, pick the best one
+    if not best:
+        successful = [h for h in history if h.get("success") and h.get("metric_val") is not None]
+        if successful:
+            if lower:
+                best_h = min(successful, key=lambda h: h["metric_val"])
+            else:
+                best_h = max(successful, key=lambda h: h["metric_val"])
+            best = {
+                "num": best_h["num"],
+                "model": best_h["model"],
+                "metric_name": best_h["metric_name"],
+                "metric_val": float(best_h["metric_val"]),
+                "all_metrics": best_h.get("all_metrics", {}),
+                "all_history": history,
+            }
+            log.engine(f"Fallback best: {best['model']} {best['metric_name']}={best['metric_val']:.6f} (exp {best['num']})")
+
+    if best:
+        best["all_history"] = history
+        report = generate_report(ws, obj, profile, history, best)
+        log.engine("Packaging deployment...")
+        deploy = package_deployment(ws, best, obj, profile)
+        diagnostics = build_run_diagnostics(obj, profile, history, best, deploy)
+
+        # Final git tag
+        if git_ok:
+            try:
+                _git(ws, "tag", f"best-{best['metric_name']}-{best['metric_val']:.4f}")
+            except Exception:
+                pass
+
+        log.sys(f"\n{'═'*50}")
+        am = best.get("all_metrics", {})
+        sec = " · ".join(f"{k}={v:.4f}" for k, v in am.items() if k != best["metric_name"])
+        sec_str = f" ({sec})" if sec else ""
+        log.sys(f"DONE — Best: {best['model']} {best['metric_name']}={best['metric_val']:.6f}{sec_str} (exp {best['num']})")
+        log.sys(f"Total experiments: {total_experiments} | Kept: {kept} | Crashed: {crashed}")
+        if git_ok:
+            log.sys(f"Git HEAD: {git_get_commit_hash(ws)}")
+        log.sys(f"Workspace: {ws}")
+        log.sys(f"{'═'*50}")
+    else:
+        report = "All experiments failed."
+        deploy = None
+        diagnostics = build_run_diagnostics(obj, profile, history, best, deploy)
+        log.err("All experiments failed.")
+
+    artifacts["program_md"] = str(ws / "program.md")
+    artifacts["prepare_py"] = str(ws / "prepare.py")
+    artifacts["analysis_ipynb"] = write_analysis_notebook(ws, profile, obj)
+    artifacts["results_tsv"] = str(ws / "results.tsv")
+    artifacts["train_py"] = str(ws / "train.py")
+    if (ws / "final_report.md").exists():
+        artifacts["final_report_md"] = str(ws / "final_report.md")
+
+    # Generate comprehensive final plots
+    log.engine("Generating final visualizations...")
+    final_plots = render_final_plots(ws, history, obj, best)
+    artifacts.update(final_plots)
+    if final_plots:
+        log.engine(f"Generated {len(final_plots)} plots: {', '.join(final_plots.keys())}")
+
+    return dict(workspace=str(ws), objective=obj, profile=profile,
+        history=history, best=best, deploy_path=deploy, report=report,
+        diagnostics=diagnostics, executive_brief=diagnostics.get("executive_brief", ""),
+        artifacts=artifacts,
+        train_script=str(ws / "train.py"), results_tsv=str(ws / "results.tsv"),
+        continuous_mode=continuous, total_experiments=total_experiments,
+        token_usage=get_token_usage())
+
+# ── CLI ────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="19Labs Autoresearch Engine — Karpathy-discipline ML research loop")
+    ap.add_argument("csv")
+    ap.add_argument("--hint",      default="")
+    ap.add_argument("--budget",    type=int, default=6)
+    ap.add_argument("--reliability-mode", default="balanced")
+    ap.add_argument("--workspace", default=None)
+    ap.add_argument("--api-key",   default=None)
+    ap.add_argument("--continuous", action="store_true", help="NEVER STOP mode — runs until killed or good-enough")
+    a = ap.parse_args()
+    r = run_research(a.csv, workspace=a.workspace or f"./ws_{int(time.time())}",
+        budget=a.budget, user_hint=a.hint, api_key=a.api_key,
+        reliability_mode=a.reliability_mode, continuous=a.continuous)
+    print(f"\nBest: {r['best']['model'] if r['best'] else 'None'}")
+    print(f"Total experiments: {r['total_experiments']}")
+    print(f"Workspace: {r['workspace']}")
+    print(f"Deploy: {r['deploy_path']}")
