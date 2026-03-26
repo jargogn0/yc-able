@@ -2,7 +2,7 @@
 # Build script for Netlify: injects API_BASE_URL into the HTML
 set -e
 
-API_URL="${API_BASE_URL:-https://19labs-api.up.railway.app}"
+API_URL="${API_BASE_URL:-https://yc-able.com}"
 
 # Copy the main HTML
 cp ../19labs-app.html index.html
