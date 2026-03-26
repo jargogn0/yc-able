@@ -1,22 +1,26 @@
-name: Build Desktop App
+name: Build & Release Desktop App
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
             platform: mac
+            artifact: "*.dmg"
           - os: windows-latest
             platform: win
+            artifact: "*.exe"
           - os: ubuntu-latest
             platform: linux
+            artifact: "*.AppImage"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -28,29 +32,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build
+      - name: Build ${{ matrix.platform }}
         run: npm run build:${{ matrix.platform }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false   # skip code-signing
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: 19labs-${{ matrix.platform }}
-          path: |
-            desktop/dist/*.dmg
-            desktop/dist/*.exe
-            desktop/dist/*.AppImage
-            desktop/dist/*.deb
+          path: desktop/dist/${{ matrix.artifact }}
+          if-no-files-found: warn
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -59,9 +62,35 @@ jobs:
         with:
           path: artifacts
 
-      - name: Create Release
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Create or update release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.0.0
+          name: "19Labs v1.0.0 — The Cursor for Data Science"
           draft: false
-          generate_release_notes: true
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            ## 19Labs Desktop App
+
+            **The Cursor for Data Science** — autonomous ML research in a native app.
+
+            ### Download
+            | Platform | File |
+            |----------|------|
+            | macOS | `19Labs-1.0.0.dmg` |
+            | Windows | `19Labs Setup 1.0.0.exe` |
+            | Linux | `19Labs-1.0.0.AppImage` |
+
+            ### What's included
+            - Full 19Labs ML research platform wrapped in a native desktop window
+            - Splash screen with animated loader
+            - Native app menu (File, Edit, View, Window, Help)
+            - Auto-detects your OS for the right download
+
+            ### Or use in the browser
+            → [yc-able.com/app](https://yc-able.com/app)
           files: artifacts/**/*
