@@ -38,7 +38,68 @@ AUTORESEARCH_DIR = pathlib.Path(__file__).parent / "autoresearch-master"
 MODULE_TO_PIP = {
     "sklearn": "scikit-learn",
     "dotenv": "python-dotenv",
+    "cv2": "opencv-python-headless",
+    "PIL": "Pillow",
+    "sentence_transformers": "sentence-transformers",
+    "transformers": "transformers",
+    "datasets": "datasets",
+    "sktime": "sktime",
+    "neuralprophet": "neuralprophet",
+    "prophet": "prophet",
+    "hdbscan": "hdbscan",
+    "umap": "umap-learn",
+    "catboost": "catboost",
+    "optuna": "optuna",
+    "shap": "shap",
+    "statsmodels": "statsmodels",
+    "scipy": "scipy",
 }
+
+_installed_session: set = set()
+
+def auto_install_packages(code: str, log=None) -> list:
+    """Parse imports from generated code and pip-install any missing packages."""
+    import importlib
+    modules = detect_imported_modules(code)
+    to_install = []
+    for mod in modules:
+        pip_name = MODULE_TO_PIP.get(mod, mod)
+        if pip_name in _installed_session:
+            continue
+        # Skip standard library and internal modules
+        if mod in {"json", "os", "sys", "re", "time", "math", "random", "pathlib",
+                   "collections", "itertools", "functools", "typing", "abc", "io",
+                   "csv", "datetime", "warnings", "copy", "string", "struct",
+                   "hashlib", "base64", "urllib", "http", "threading", "subprocess"}:
+            continue
+        try:
+            importlib.import_module(mod)
+        except ImportError:
+            to_install.append(pip_name)
+        except Exception:
+            pass
+
+    installed = []
+    for pkg in to_install:
+        try:
+            if log:
+                log.engine(f"Auto-installing {pkg}...")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", pkg, "-q", "--no-warn-script-location"],
+                timeout=180, capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                _installed_session.add(pkg)
+                installed.append(pkg)
+                if log:
+                    log.engine(f"Installed {pkg} ✓")
+            else:
+                if log:
+                    log.engine(f"Could not install {pkg}: {result.stderr[-200:]}")
+        except Exception as e:
+            if log:
+                log.engine(f"Install skipped ({pkg}): {e}")
+    return installed
 
 MIN_REQUIREMENTS = {
     "anthropic": "anthropic>=0.44",
@@ -220,25 +281,68 @@ def profile_dataset(csv_path):
         s = df[col].dropna()
         nr = pd.to_numeric(s, errors='coerce').notna().mean()
         is_date = False
-        if nr < 0.7:  # only check dates for non-numeric columns
+        if nr < 0.7:
             try:
                 pd.to_datetime(s.iloc[:5])
-                # Extra check: values must look like dates
                 if any(str(v) for v in s.iloc[:3] if "-" in str(v) or "/" in str(v)):
                     is_date = True
             except: pass
-        typ = ("datetime" if is_date else "numeric" if nr > 0.8
-               else "categorical" if s.nunique()/max(len(s),1) < 0.05 else "text")
+
+        str_s = s.astype(str)
+        avg_len = str_s.str.len().mean()
+        # Long free text (avg > 40 chars, low numeric ratio) → text/nlp column
+        is_long_text = avg_len > 40 and nr < 0.3
+        # Image/file path heuristic
+        is_path = avg_len > 5 and str_s.str.contains(r'\.(jpg|jpeg|png|gif|bmp|tiff|webp|csv|json|txt)$', case=False, regex=True).mean() > 0.5
+
+        if is_date:
+            typ = "datetime"
+        elif nr > 0.8:
+            typ = "numeric"
+        elif is_path:
+            typ = "filepath"
+        elif is_long_text:
+            typ = "text"
+        elif s.nunique() / max(len(s), 1) < 0.05:
+            typ = "categorical"
+        else:
+            typ = "high_cardinality"
+
         cols.append(dict(name=col, type=typ, unique=int(s.nunique()),
-            nulls=int(df[col].isna().sum()), sample=str(list(s.dropna().iloc[:3].values)),
-            mean=float(pd.to_numeric(s, errors='coerce').mean()) if typ=="numeric" else None,
-            std =float(pd.to_numeric(s, errors='coerce').std())  if typ=="numeric" else None))
-    return dict(path=str(csv_path), rows=len(df), cols=len(df.columns),
+            nulls=int(df[col].isna().sum()),
+            sample=str(list(s.dropna().iloc[:3].values)),
+            avg_len=round(avg_len, 1) if typ in ("text", "high_cardinality", "filepath") else None,
+            mean=float(pd.to_numeric(s, errors='coerce').mean()) if typ == "numeric" else None,
+            std =float(pd.to_numeric(s, errors='coerce').std())  if typ == "numeric" else None))
+
+    text_cols     = [c["name"] for c in cols if c["type"] == "text"]
+    datetime_cols = [c["name"] for c in cols if c["type"] == "datetime"]
+    filepath_cols = [c["name"] for c in cols if c["type"] == "filepath"]
+    numeric_cols  = [c["name"] for c in cols if c["type"] == "numeric"]
+
+    # Dataset-level signals to help the LLM reason about task type
+    signals = []
+    if text_cols:
+        signals.append(f"has_text_columns: {text_cols} — likely NLP/text classification or sentiment")
+    if datetime_cols and numeric_cols:
+        # Check if data looks sequential (sorted by date or has a clear time index)
+        signals.append(f"has_datetime+numeric — likely time-series forecasting or anomaly detection")
+    if filepath_cols:
+        signals.append(f"has_filepath_columns: {filepath_cols} — likely image/file-based ML")
+    if not signals:
+        signals.append("standard tabular dataset")
+
+    return dict(
+        path=str(csv_path), rows=len(df), cols=len(df.columns),
         headers=list(df.columns), columns=cols,
-        numeric    =[c["name"] for c in cols if c["type"]=="numeric"],
-        categorical=[c["name"] for c in cols if c["type"]=="categorical"],
-        datetime   =[c["name"] for c in cols if c["type"]=="datetime"],
-        target_candidates=[c["name"] for c in cols if c["type"]=="numeric" and c["unique"]>10][:5])
+        numeric     =numeric_cols,
+        categorical =[c["name"] for c in cols if c["type"] in ("categorical", "high_cardinality")],
+        datetime    =datetime_cols,
+        text        =text_cols,
+        filepath    =filepath_cols,
+        signals     =signals,
+        target_candidates=[c["name"] for c in cols if c["type"] == "numeric" and c["unique"] > 10][:5],
+    )
 
 def _safe_float(s, default=0.0):
     try:
@@ -410,34 +514,51 @@ def infer_objective(profile, hint=""):
         f"  {c['name']} [{c['type']}] unique={c['unique']} nulls={c['nulls']} sample={c['sample']}"
         + (f" mean={c['mean']:.3f} std={c['std']:.3f}" if c.get("mean") is not None else "")
         for c in profile["columns"])
+    signals_txt = "\n".join(f"  - {s}" for s in profile.get("signals", []))
+    text_cols = profile.get("text", [])
+    filepath_cols = profile.get("filepath", [])
     resp = ask(
-        "You are 19Labs. Analyze datasets precisely. Reason from data structure, types, and statistics.",
-        f"""Analyze this dataset. Determine the exact ML task.
+        "You are 19Labs. Analyze datasets precisely. Reason from data structure, domain, and statistics to determine the single best ML approach.",
+        f"""Analyze this dataset and determine the exact ML task and best approach.
 
 ROWS: {profile['rows']:,} | COLS: {profile['cols']}
 COLUMNS: {', '.join(profile['headers'])}
 NUMERIC: {', '.join(profile['numeric'])}
 CATEGORICAL: {', '.join(profile['categorical'])}
 DATETIME: {', '.join(profile['datetime'])}
+TEXT COLUMNS: {', '.join(text_cols) if text_cols else 'none'}
+FILEPATH COLUMNS: {', '.join(filepath_cols) if filepath_cols else 'none'}
 TARGET CANDIDATES: {', '.join(profile['target_candidates'])}
 
+DATASET SIGNALS:
+{signals_txt}
+
+COLUMN DETAILS:
 {col_detail}
 
 {"USER HINT: " + hint if hint else "No hint — infer from data."}
 
+Choose the most appropriate task from any of these (not limited to this list):
+- Regression, BinaryClassification, MulticlassClassification
+- TimeSeriesForecasting, AnomalyDetection
+- TextClassification, SentimentAnalysis, TextRegression, NER, Summarization
+- ImageClassification, ObjectDetection (if filepath columns present)
+- Clustering, DimensionalityReduction (if no clear target)
+- RecommendationSystem, RankingLearning
+
 Reply ONLY in this format:
-DOMAIN: <specific domain>
-TASK: <Regression|BinaryClassification|MulticlassClassification|TimeSeriesForecasting>
-TARGET: <exact column name>
-METRIC: <rmse|r2|mape|mae|nse|f1|auc|accuracy>
+DOMAIN: <specific domain e.g. "E-commerce churn", "Medical NLP", "Financial time series">
+TASK: <exact task name>
+TARGET: <exact column name, or "unsupervised" if no label>
+METRIC: <rmse|r2|mape|mae|f1|auc|accuracy|bleu|rouge|silhouette|map|ndcg|custom>
 DIRECTION: <lower_is_better|higher_is_better>
 CONFIDENCE: <0.0-1.0>
-REASONING: <2 sentences>
+REASONING: <2 sentences explaining why this task and approach>
 GOOD_ENOUGH: <what metric value = production-ready for this domain>
 HYPOTHESES:
-1. <Model> — <why>
-2. <Model> — <why>
-3. <Model> — <why>""", 700)
+1. <Specific model/approach> — <why it fits this data>
+2. <Specific model/approach> — <why it fits this data>
+3. <Specific model/approach> — <why it fits this data>""", 900)
 
     def g(k):
         m = re.search(rf"^{k}:\s*(.+)", resp, re.MULTILINE)
@@ -476,7 +597,6 @@ def discover_user_need(csv_path, user_hint="", api_key=None, provider="claude"):
 
     profile = profile_dataset(csv_path)
     obj = infer_objective(profile, user_hint)
-    pkg_txt = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
 
     advice_raw = ask(
         "You are a product-minded ML research copilot. Help clarify user intent before training.",
@@ -506,6 +626,8 @@ DATA PROFILE:
 - numeric: {profile['numeric']}
 - categorical: {profile['categorical']}
 - datetime: {profile['datetime']}
+- text_columns: {profile.get('text', [])}
+- signals: {profile.get('signals', [])}
 
 INFERRED OBJECTIVE:
 - task: {obj['task']}
@@ -517,9 +639,6 @@ INFERRED OBJECTIVE:
 
 USER HINT:
 {user_hint or "(none)"}
-
-AVAILABLE PACKAGES:
-{pkg_txt}
 """,
         1200
     )
@@ -619,11 +738,9 @@ def execute(code, csv_path, ws, exp_num):
 
 # ── AUTO-FIX ───────────────────────────────────────────────────
 def auto_fix(code, error):
-    pkg_list = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
     fixed = extract_code(ask(
         "You are 19Labs debugger. Fix failing Python ML scripts. Output ONLY a ```python block.",
-        f"""Fix this script. AVAILABLE PACKAGES (only use these): {pkg_list}
-Do NOT import anything outside this list — it will crash.
+        f"""Fix this script. Any package you import will be auto-installed — do not downgrade the approach.
 
 ERROR:
 {error[:800]}
@@ -634,13 +751,13 @@ SCRIPT:
 ```
 
 RULES:
-- Load data only with DATA_PATH: `df = pd.read_csv(DATA_PATH)`
+- Load data only with DATA_PATH: `df = pd.read_csv(DATA_PATH)` (or appropriate loader for the data type)
 - NEVER hardcode 'train.csv' or any local absolute path.
 - ALWAYS split data into train/test. Compute metrics on BOTH.
-- Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics:
-  "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse" (=test), "r2" (=test), etc.
+- Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics.
+- If the error is a missing package, keep the import — it will be auto-installed before the next run.
 
-Fix the error. Keep model/approach if possible. Output ONLY fixed ```python code.""", 3000))
+Fix the error. Keep the model/approach if possible. Output ONLY fixed ```python code.""", 3000))
     fixed, _ = apply_code_guardrails(fixed)
     return fixed
 
@@ -653,15 +770,17 @@ def write_program_md(profile, obj, history, insights):
         for h in history
     ) if history else "- (no experiments yet)"
     ins_txt = "\n".join(f"- {x}" for x in insights) if insights else "- (none yet)"
-    pkg_txt = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
 
     program = ask(
         "You are an autonomous ML research lead. Write high-signal research specs in markdown.",
         f"""Write a complete `program.md` for this project. Rewrite fully from scratch each time.
 
 ENVIRONMENT:
-- Importable packages only: {pkg_txt}
-- Do NOT rely on any package outside this list.
+- You have access to the full Python ML ecosystem. Any package you import will be auto-installed.
+- Pre-installed: sklearn, xgboost, lightgbm, pandas, numpy, matplotlib, joblib
+- Available on demand: transformers, torch, tensorflow, statsmodels, prophet, catboost, optuna,
+  sentence-transformers, scipy, shap, hdbscan, umap-learn, opencv-python-headless, Pillow, and more.
+- Use whatever is genuinely best for the task. Do NOT limit yourself to pre-installed packages.
 
 DATASET PROFILE:
 - Rows: {profile['rows']:,} | Cols: {profile['cols']}
@@ -669,6 +788,8 @@ DATASET PROFILE:
 - Numeric: {', '.join(profile['numeric'])}
 - Categorical: {', '.join(profile['categorical'])}
 - Datetime: {', '.join(profile['datetime'])}
+- Text columns: {', '.join(profile.get('text', [])) or 'none'}
+- Dataset signals: {'; '.join(profile.get('signals', []))}
 
 OBJECTIVE:
 - Task: {obj.get('task', 'Regression')}
@@ -716,7 +837,6 @@ Output ONLY markdown for `program.md`.""",
     return program.strip()
 
 def write_train_py(program_md, profile, obj, exp_num, history):
-    pkg_txt = ", ".join(AVAILABLE_PKGS) if AVAILABLE_PKGS else "sklearn, numpy, pandas, joblib"
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
         f"{h.get('metric_name', obj.get('metric', 'metric'))}={h.get('metric_val', 0):.6f}"
@@ -726,15 +846,16 @@ def write_train_py(program_md, profile, obj, exp_num, history):
         "You write complete production-grade Python training scripts from research specs.",
         f"""Write `train.py` from the program spec below.
 
-ENVIRONMENT: Only these packages are importable: {AVAILABLE_PKGS}
-Do NOT import anything outside this list — it will crash.
-You are not limited to standard models — use these packages creatively.
-Build whatever you think is best given these constraints.
+ENVIRONMENT:
+- You have access to the full Python ML ecosystem. Any package you import will be auto-installed.
+- Pre-installed: sklearn, xgboost, lightgbm, pandas, numpy, matplotlib, joblib
+- Use whatever is genuinely best: transformers, torch, tensorflow, statsmodels, prophet,
+  catboost, optuna, sentence-transformers, scipy, shap, hdbscan, umap-learn, etc.
+- Do NOT artificially limit yourself to simple models if a more powerful approach fits the task.
 
 EXPERIMENT: {exp_num}
 TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
 METRIC: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
-AVAILABLE PACKAGES: {pkg_txt}
 
 RECENT HISTORY:
 {hist_txt}
@@ -748,6 +869,8 @@ DATA PROFILE:
 - Rows: {profile['rows']:,}
 - Cols: {profile['cols']}
 - Headers: {', '.join(profile['headers'])}
+- Text columns: {', '.join(profile.get('text', [])) or 'none'}
+- Signals: {'; '.join(profile.get('signals', []))}
 
 EXECUTION POLICY:
 - Reliability mode: {obj.get('reliability_mode', 'balanced')}
@@ -1688,6 +1811,11 @@ def run_research(
         if pre_notes:
             log.engine(f"Pre-exec guardrails: {', '.join(sorted(set(pre_notes)))}")
 
+        # Auto-install any packages the script imports that aren't yet available
+        installed = auto_install_packages(train_py, log)
+        if installed:
+            log.engine(f"Auto-installed: {', '.join(installed)}")
+
         # RUN — all output to run.log, grep metrics from log
         res = execute(train_py, csv_path, ws, n)
 
@@ -1760,11 +1888,13 @@ def run_research(
                 consecutive_crashes += 1
 
             # ── CRASH RECOVERY (Karpathy: trivial fix → rerun, fundamental → skip) ──
-            if failure_reason in {"data_path", "invalid_hyperparameter", "bad_output_format", "missing_package"}:
+            if failure_reason in {"data_path", "invalid_hyperparameter", "bad_output_format", "missing_package", "runtime_error"}:
                 repaired = auto_fix(train_py, error)
                 repaired, fix_notes = apply_code_guardrails(repaired)
                 if repaired.strip() and repaired.strip() != train_py.strip():
                     log.engine(f"Crash recovery [{failure_reason}] → auto-repair + retry")
+                    # Auto-install any new packages the fix introduced
+                    auto_install_packages(repaired, log)
                     retry_res = execute(repaired, csv_path, ws, n)
                     if retry_res.get("success"):
                         res = retry_res
