@@ -362,14 +362,21 @@ async def stream_logs(run_id: str):
     async def generate():
         sent = 0
         run_start = RUNS[run_id].get("started", time.time())
+        last_data_ts = time.time()
+        KEEPALIVE_INTERVAL = 15  # send ping every 15s of silence to prevent proxy timeout
+
         while True:
             run = RUNS[run_id]
             logs = run["logs"]
+            flushed = 0
             while sent < len(logs):
                 entry = dict(logs[sent])
                 entry["elapsed"] = round(time.time() - run_start, 1)
                 yield f"data: {json.dumps(entry)}\n\n"
                 sent += 1
+                flushed += 1
+            if flushed:
+                last_data_ts = time.time()
             if run["status"] in ("done", "error"):
                 yield f"data: {json.dumps({'tag':'sys','msg':'__DONE__','ts':time.strftime('%H:%M:%S'),'elapsed':round(time.time()-run_start,1)})}\n\n"
                 break
@@ -382,10 +389,15 @@ async def stream_logs(run_id: str):
                         entry["elapsed"] = round(time.time() - run_start, 1)
                         yield f"data: {json.dumps(entry)}\n\n"
                         sent += 1
+                        last_data_ts = time.time()
                     if run["status"] in ("done", "error"):
                         break
                 yield f"data: {json.dumps({'tag':'sys','msg':'__DONE__','ts':time.strftime('%H:%M:%S'),'elapsed':round(time.time()-run_start,1)})}\n\n"
                 break
+            # Keepalive ping — prevents Railway/nginx from closing idle SSE connection
+            if time.time() - last_data_ts >= KEEPALIVE_INTERVAL:
+                yield f": keepalive\n\n"
+                last_data_ts = time.time()
             await asyncio.sleep(0.25)
 
     return StreamingResponse(

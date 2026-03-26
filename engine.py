@@ -57,6 +57,29 @@ MODULE_TO_PIP = {
 
 _installed_session: set = set()
 
+# Packages too large/slow to install mid-experiment (>200MB or >3min install).
+# Map them to lighter drop-in alternatives where possible.
+_HEAVY_PACKAGE_REDIRECTS = {
+    "tensorflow": None,   # skip — use torch or sklearn instead
+    "keras": None,        # skip — use torch or sklearn instead
+    "tf": None,
+    "torch": None,        # skip — too large for auto-install; use sklearn/xgboost
+    "torchvision": None,
+    "torchaudio": None,
+    "jax": None,
+    "jaxlib": None,
+    "transformers": None, # skip — too large
+    "sentence_transformers": None,
+    "sentence-transformers": None,
+    "datasets": None,
+    "diffusers": None,
+    "cv2": None,          # opencv — large
+    "opencv-python": None,
+    "opencv-python-headless": None,
+}
+
+_INSTALL_TIMEOUT = 60  # seconds — if pip takes longer, skip the package
+
 def auto_install_packages(code: str, log=None) -> list:
     """Parse imports from generated code and pip-install any missing packages."""
     import importlib
@@ -72,6 +95,14 @@ def auto_install_packages(code: str, log=None) -> list:
                    "csv", "datetime", "warnings", "copy", "string", "struct",
                    "hashlib", "base64", "urllib", "http", "threading", "subprocess"}:
             continue
+        # Redirect or skip heavy packages
+        if pip_name in _HEAVY_PACKAGE_REDIRECTS:
+            redirect = _HEAVY_PACKAGE_REDIRECTS[pip_name]
+            if redirect is None:
+                if log:
+                    log.engine(f"Skipping {pip_name} (too large for auto-install — engine will use lighter alternative)")
+                continue
+            pip_name = redirect
         try:
             importlib.import_module(mod)
         except ImportError:
@@ -86,7 +117,7 @@ def auto_install_packages(code: str, log=None) -> list:
                 log.engine(f"Auto-installing {pkg}...")
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", pkg, "-q", "--no-warn-script-location"],
-                timeout=180, capture_output=True, text=True
+                timeout=_INSTALL_TIMEOUT, capture_output=True, text=True
             )
             if result.returncode == 0:
                 _installed_session.add(pkg)
@@ -96,6 +127,9 @@ def auto_install_packages(code: str, log=None) -> list:
             else:
                 if log:
                     log.engine(f"Could not install {pkg}: {result.stderr[-200:]}")
+        except subprocess.TimeoutExpired:
+            if log:
+                log.engine(f"Install timed out ({_INSTALL_TIMEOUT}s) for {pkg} — skipping")
         except Exception as e:
             if log:
                 log.engine(f"Install skipped ({pkg}): {e}")
@@ -274,18 +308,37 @@ def git_get_commit_hash(ws):
         return ""
 
 # ── PROFILE ────────────────────────────────────────────────────
-def profile_dataset(csv_path):
+def _read_csv_smart(csv_path):
+    """Try multiple delimiters and encodings to load a CSV correctly."""
+    encodings = ["utf-8", "latin-1", "utf-8-sig"]
+    separators = [",", ";", "\t", "|"]
+    last_err = None
+    for enc in encodings:
+        for sep in separators:
+            try:
+                df = pd.read_csv(csv_path, encoding=enc, sep=sep)
+                # Accept if we got more than 1 column OR it's the first pass (comma/utf-8)
+                if len(df.columns) > 1:
+                    return df, sep, enc
+                if sep == "," and enc == "utf-8":
+                    last_df = df  # keep as fallback
+            except Exception as e:
+                last_err = e
+    # Return best single-column result if nothing better found
     try:
-        df = pd.read_csv(csv_path, encoding="utf-8")
-    except UnicodeDecodeError:
-        try:
-            df = pd.read_csv(csv_path, encoding="latin-1")
-        except Exception as e:
-            raise RuntimeError(f"Cannot read CSV: {e}") from e
+        return pd.read_csv(csv_path), ",", "utf-8"
     except Exception as e:
-        raise RuntimeError(f"Cannot read CSV: {e}") from e
+        raise RuntimeError(f"Cannot read CSV: {last_err or e}") from (last_err or e)
+
+def profile_dataset(csv_path):
+    df, detected_sep, detected_enc = _read_csv_smart(csv_path)
     if df.empty:
         raise RuntimeError("CSV file is empty (0 rows). Please upload a dataset with data.")
+    if len(df.columns) == 1:
+        # Single column — likely wrong delimiter; add a warning to the profile
+        _single_col_warning = f"WARNING: Only 1 column detected (sep={repr(detected_sep)}). Data may be improperly delimited."
+    else:
+        _single_col_warning = None
     cols = []
     for col in df.columns:
         s = df[col].dropna()
@@ -400,6 +453,9 @@ def profile_dataset(csv_path):
     if not signals:
         signals.append("TABULAR dataset — standard supervised learning")
 
+    if _single_col_warning:
+        signals.insert(0, _single_col_warning)
+
     return dict(
         path=str(csv_path), rows=len(df), cols=len(df.columns),
         headers=list(df.columns), columns=cols,
@@ -408,6 +464,7 @@ def profile_dataset(csv_path):
         signals=signals,
         class_balance=class_balance,
         top_correlations=top_correlations,
+        detected_sep=detected_sep,
         target_candidates=[c["name"] for c in cols if c["type"] == "numeric" and c["unique"] > 10][:5],
     )
 
@@ -639,7 +696,7 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         r"pd\.read_csv\(\s*r?[\"'](?:\./)?data\.csv[\"']\s*\)",
     ]
     for p in patterns:
-        new_fixed = re.sub(p, "pd.read_csv(DATA_PATH)", fixed)
+        new_fixed = re.sub(p, "pd.read_csv(DATA_PATH, sep=DATA_SEP)", fixed)
         if new_fixed != fixed:
             fixed = new_fixed
             notes.append("replaced_hardcoded_csv_path")
@@ -824,11 +881,11 @@ def _infer_model_name(code: str) -> str:
 
 
 # ── EXECUTE (Karpathy-style: redirect to run.log, grep metrics) ─
-def execute(code, csv_path, ws, exp_num):
+def execute(code, csv_path, ws, exp_num, data_sep=","):
     ws = pathlib.Path(ws)
     script = ws / "train.py"
     run_log = ws / "run.log"
-    full = f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{code}"
+    full = f"DATA_PATH = {repr(str(csv_path))}\nDATA_SEP = {repr(data_sep)}\nTIME_BUDGET = {TIME_BUDGET}\n\n{code}"
     script.write_text(full)
 
     # Also save numbered copy for audit trail
@@ -885,7 +942,7 @@ SCRIPT:
 ```
 
 RULES:
-- Load data only with DATA_PATH: `df = pd.read_csv(DATA_PATH)` (or appropriate loader for the data type)
+- Load data only with DATA_PATH: `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)` (DATA_SEP is pre-injected; or use appropriate loader for the data type)
 - NEVER hardcode 'train.csv' or any local absolute path.
 - ALWAYS split data into train/test. Compute metrics on BOTH.
 - Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics.
@@ -1010,9 +1067,10 @@ EXECUTION POLICY:
 - {obj.get('execution_policy', 'Balance reliability and performance.')}
 
 KARPATHY DISCIPLINE (MANDATORY):
-- DATA_PATH is a Python variable pre-defined BEFORE your code runs (injected at line 1).
-  DO NOT redefine it. DO NOT use os.environ.get('DATA_PATH', ...). Just use it directly:
-  `df = pd.read_csv(DATA_PATH)` — this is the ONLY way to load data.
+- DATA_PATH, DATA_SEP, and TIME_BUDGET are Python variables pre-defined BEFORE your code runs (injected at line 1).
+  DO NOT redefine them. DO NOT use os.environ.get(). Use them directly:
+  `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)` — this is the ONLY way to load data.
+  DATA_SEP is already set to the correct delimiter (e.g. ',' or ';' or '\\t').
 - TIME_BUDGET is also pre-defined. DO NOT redefine it. Your entire training MUST complete within it.
   Add a wall-clock check: `import time; _start = time.time()` at top, and periodically
   check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
@@ -1091,8 +1149,8 @@ TRAIN_PY:
 ```
 
 TRAIN.PY HARD RULES (Karpathy discipline):
-- DATA_PATH and TIME_BUDGET are pre-defined variables (injected at line 1 before your code). 
-  DO NOT redefine them. DO NOT use os.environ.get(). Just use them directly: `df = pd.read_csv(DATA_PATH)`
+- DATA_PATH, DATA_SEP, and TIME_BUDGET are pre-defined variables (injected at line 1 before your code).
+  DO NOT redefine them. DO NOT use os.environ.get(). Use them directly: `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)`
 - Training MUST complete within TIME_BUDGET. Add wall-clock checks.
 - ALWAYS split data into train/test. Compute metrics on BOTH sets.
 - Final line: print(json.dumps(metrics)) — MUST include "model" key PLUS train_ and test_ prefixed metrics.
@@ -1949,7 +2007,7 @@ def run_research(
     train_py, initial_notes = apply_code_guardrails(train_py)
     if initial_notes:
         log.engine(f"Applied train.py guardrails: {', '.join(sorted(set(initial_notes)))}")
-    (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
+    (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nDATA_SEP = {repr(profile.get('detected_sep', ','))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
     write_workspace_requirements(ws, train_py)
     log.engine("train.py written from program.md")
 
@@ -1978,7 +2036,7 @@ def run_research(
             log.engine(f"Auto-installed: {', '.join(installed)}")
 
         # RUN — all output to run.log, grep metrics from log
-        res = execute(train_py, csv_path, ws, n)
+        res = execute(train_py, csv_path, ws, n, data_sep=profile.get("detected_sep", ","))
 
         score = None
         error = None
@@ -2074,7 +2132,7 @@ def run_research(
                     log.engine(f"Crash recovery [{failure_reason}] → auto-repair + retry")
                     # Auto-install any new packages the fix introduced
                     auto_install_packages(repaired, log)
-                    retry_res = execute(repaired, csv_path, ws, n)
+                    retry_res = execute(repaired, csv_path, ws, n, data_sep=profile.get("detected_sep", ","))
                     if retry_res.get("success"):
                         res = retry_res
                         m = res["metrics"]
@@ -2110,7 +2168,7 @@ def run_research(
                 if consecutive_crashes >= 3 and best_train_py and git_ok:
                     log.engine("3 consecutive crashes — hard resetting to last known good train.py")
                     train_py = best_train_py
-                    (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
+                    (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nDATA_SEP = {repr(profile.get('detected_sep', ','))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
                     consecutive_crashes = 0
 
         if cancel_event and cancel_event.is_set():
@@ -2222,7 +2280,7 @@ def run_research(
                 else:
                     log.engine("Git discard failed — restoring train.py from memory")
                     (ws / "train.py").write_text(
-                        f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{best_train_py}"
+                        f"DATA_PATH = {repr(str(csv_path))}\nDATA_SEP = {repr(profile.get('detected_sep', ','))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{best_train_py}"
                     )
 
             train_py = train_py_candidate or (best_train_py if best_train_py else train_py)
@@ -2267,7 +2325,7 @@ Output ONLY a complete ```python block.""", 4200)
                 train_py, _ = apply_code_guardrails(train_py)
                 log.engine(f"Forced rewrite complete — new approach ready")
 
-        (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
+        (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nDATA_SEP = {repr(profile.get('detected_sep', ','))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
         write_workspace_requirements(ws, train_py)
 
         # ── STOP CONDITIONS ──────────────────────────────────────
