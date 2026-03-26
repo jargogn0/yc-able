@@ -34,6 +34,19 @@ h1{font-size:22px;font-weight:400;color:#202124;margin-bottom:16px}
 .sub{font-size:14px;color:#5f6368;line-height:1.6;margin-bottom:28px}
 .sub a{color:#1a73e8;text-decoration:none}
 .sub a:hover{text-decoration:underline}
+
+.dl-section{display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:24px}
+.dl-btn{display:inline-flex;align-items:center;gap:10px;font-size:15px;font-weight:500;color:#fff;background:#202124;padding:14px 32px;border-radius:12px;text-decoration:none;transition:all .2s;border:none;cursor:pointer;letter-spacing:-.2px}
+.dl-btn:hover{background:#1a73e8;transform:translateY(-1px);box-shadow:0 4px 16px rgba(26,115,232,.3)}
+.dl-btn svg{width:20px;height:20px}
+.dl-platforms{display:flex;align-items:center;gap:16px;font-size:12px;color:#5f6368}
+.dl-platforms a{color:#5f6368;text-decoration:none;display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;transition:all .15s}
+.dl-platforms a:hover{color:#202124;background:rgba(0,0,0,.04)}
+.dl-platforms a svg{width:14px;height:14px}
+.dl-or{font-size:13px;color:#5f6368;margin-bottom:4px}
+.dl-or a{color:#1a73e8;text-decoration:none;font-weight:500}
+.dl-or a:hover{text-decoration:underline}
+
 .foot-links{display:flex;align-items:center;gap:4px;font-size:13px}
 .foot-links a{color:#1a73e8;text-decoration:none;padding:4px 8px}
 .foot-links a:hover{text-decoration:underline}
@@ -43,6 +56,7 @@ h1{font-size:22px;font-weight:400;color:#202124;margin-bottom:16px}
   .n-links{display:none}
   .logo-mark .wordmark{font-size:22px}
   h1{font-size:18px}
+  .dl-btn{padding:12px 24px;font-size:14px}
 }
 </style>
 </head>
@@ -73,11 +87,36 @@ h1{font-size:22px;font-weight:400;color:#202124;margin-bottom:16px}
     <div class="wordmark"><b>19Labs</b></div>
   </div>
   <h1>Autonomous ML Research Platform</h1>
-  <p class="sub">Drop a dataset, describe your goal, get a deployed model. <a href="/app">Open the app</a> to get started.</p>
+  <p class="sub">Drop a dataset, describe your goal, get a deployed model.</p>
+
+  <div class="dl-section">
+    <a href="#" class="dl-btn" id="dl-main">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span id="dl-label">Download for macOS</span>
+    </a>
+    <div class="dl-platforms">
+      <a href="https://github.com/jargogn0/yc-able/releases/latest" id="dl-mac">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83"/><path d="M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11"/></svg>
+        macOS
+      </a>
+      <a href="https://github.com/jargogn0/yc-able/releases/latest" id="dl-win">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.75l8-1.25V12H3zm0 .5h8v6.5l-8-1.25V12.5zm9 0h9v7L12 21V12.5zm0-.5V4l9-1.5V12h-9z"/></svg>
+        Windows
+      </a>
+      <a href="https://github.com/jargogn0/yc-able/releases/latest" id="dl-linux">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 2c-1.77 0-3.15 1.49-3.46 3.47-.2.72.02 1.47.14 2.18L6.5 9.5c-.48.38-.75.97-.75 1.61v.39c-.75.63-1.25 1.55-1.25 2.6 0 1.22.62 2.3 1.55 2.94-.07.31-.05.66.07.97.27.73.97 1.2 1.74 1.17.26-.01.51-.08.73-.2.6.82 1.54 1.4 2.62 1.52.12.57.34 1.12.69 1.57.53.69 1.35 1.08 2.21 1.03.79-.04 1.52-.43 2.01-1.04.38-.47.62-1.03.76-1.63 1.04-.17 1.94-.76 2.51-1.57.19.1.4.16.63.17.77.04 1.47-.43 1.75-1.15.14-.35.14-.73.03-1.08.86-.65 1.42-1.68 1.42-2.84 0-1.01-.44-1.91-1.13-2.54v-.45c0-.63-.27-1.22-.73-1.59l-2.72-1.88c.12-.7.33-1.44.14-2.14C15.65 3.49 14.27 2 12.5 2z"/></svg>
+        Linux
+      </a>
+    </div>
+    <p class="dl-or">or <a href="/app">use in browser</a></p>
+  </div>
+
   <div class="foot-links">
     <a href="/app">Docs</a>
     <span class="sep">|</span>
     <a href="https://github.com/jargogn0/yc-able" target="_blank">GitHub</a>
+    <span class="sep">|</span>
+    <a href="https://github.com/jargogn0/yc-able/releases" target="_blank">All Releases</a>
   </div>
 </div>
 
@@ -166,6 +205,24 @@ addEventListener('mouseleave',()=>{mx=-9e3;my=-9e3});
 addEventListener('touchmove',e=>{if(e.touches[0]){mx=e.touches[0].clientX;my=e.touches[0].clientY}},{passive:true});
 addEventListener('touchend',()=>{mx=-9e3;my=-9e3});
 sz();draw();
+
+// OS detection for download button
+(function(){
+  const btn=document.getElementById('dl-main');
+  const lbl=document.getElementById('dl-label');
+  const ua=navigator.userAgent||navigator.platform||'';
+  const base='https://github.com/jargogn0/yc-able/releases/latest';
+  let os='macOS',icon='';
+  if(/Win/.test(ua)){os='Windows'}
+  else if(/Linux/.test(ua)&&!/Android/.test(ua)){os='Linux'}
+  else{os='macOS'}
+  lbl.textContent='Download for '+os;
+  btn.href=base;
+  // Highlight current platform
+  const id=os==='macOS'?'dl-mac':os==='Windows'?'dl-win':'dl-linux';
+  const el=document.getElementById(id);
+  if(el)el.style.fontWeight='600';
+})();
 </script>
 </body>
 </html>
