@@ -4,41 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>19Labs</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#fff;color:#202124;font-family:'Inter',system-ui,sans-serif;height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
+html,body{height:100%;overflow:hidden}
+body{background:#fff;color:#202124;font-family:'Inter','Google Sans',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 canvas{position:fixed;inset:0;z-index:0}
 
-/* Nav — minimal top bar */
-nav{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;padding:0 32px;height:56px}
-.logo{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:-.5px;color:#202124;text-decoration:none;display:flex;align-items:center;gap:6px}
-.logo b{color:#4285f4}
-.nav-links{display:flex;gap:28px;margin-left:40px}
-.nav-links a{font-size:14px;color:#5f6368;text-decoration:none;font-weight:500}
-.nav-links a:hover{color:#202124}
-.nav-r{margin-left:auto}
-.nav-r a{font-size:13px;font-weight:600;color:#fff;background:#202124;padding:9px 22px;border-radius:8px;text-decoration:none;transition:background .2s}
-.nav-r a:hover{background:#4285f4}
+nav{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;height:64px;padding:0 24px 0 28px}
+.n-logo{font-size:15px;font-weight:500;color:#202124;text-decoration:none;display:flex;align-items:center;gap:6px;letter-spacing:-.2px}
+.n-logo svg{width:24px;height:24px}
+.n-logo span{font-weight:400;color:#5f6368}
+.n-links{display:flex;align-items:center;gap:8px;margin-left:24px}
+.n-links a{font-size:14px;color:#3c4043;text-decoration:none;padding:8px 12px;font-weight:400;border-radius:6px;transition:background .15s}
+.n-links a:hover{background:rgba(0,0,0,.04)}
+.n-links .has-arrow::after{content:'';display:inline-block;width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid #5f6368;margin-left:6px;vertical-align:middle;position:relative;top:-0.5px}
+.n-r{margin-left:auto}
+.n-r a{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:#fff;background:#202124;padding:10px 20px;border-radius:8px;text-decoration:none;transition:all .2s;border:none}
+.n-r a:hover{background:#1a73e8}
+.n-r a svg{width:16px;height:16px}
 
-/* Center content */
-.center{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;pointer-events:none;text-align:center;padding:0 24px}
-.center>*{pointer-events:auto}
-.mark{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;letter-spacing:-1px;margin-bottom:20px;display:flex;align-items:center;gap:8px}
-.mark b{color:#4285f4;font-weight:700}
-h1{font-size:20px;font-weight:500;color:#202124;margin-bottom:10px}
-p{font-size:14px;color:#5f6368;margin-bottom:28px}
-p a{color:#4285f4;text-decoration:none}
-p a:hover{text-decoration:underline}
-.links{display:flex;gap:16px;font-size:13px}
-.links a{color:#4285f4;text-decoration:none}
-.links a:hover{text-decoration:underline}
-.links span{color:#dadce0}
+.page{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;pointer-events:none;text-align:center;padding-bottom:20px}
+.page>*{pointer-events:auto}
+.logo-mark{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:24px}
+.logo-mark svg{width:36px;height:36px}
+.logo-mark .wordmark{font-size:28px;font-weight:400;color:#202124;letter-spacing:-.5px}
+.logo-mark .wordmark b{font-weight:400}
+h1{font-size:22px;font-weight:400;color:#202124;margin-bottom:16px}
+.sub{font-size:14px;color:#5f6368;line-height:1.6;margin-bottom:28px}
+.sub a{color:#1a73e8;text-decoration:none}
+.sub a:hover{text-decoration:underline}
+.foot-links{display:flex;align-items:center;gap:4px;font-size:13px}
+.foot-links a{color:#1a73e8;text-decoration:none;padding:4px 8px}
+.foot-links a:hover{text-decoration:underline}
+.foot-links .sep{color:#dadce0;font-size:12px;user-select:none}
 
-@media(max-width:600px){
-  .nav-links{display:none}
-  .mark{font-size:22px}
-  h1{font-size:17px}
+@media(max-width:640px){
+  .n-links{display:none}
+  .logo-mark .wordmark{font-size:22px}
+  h1{font-size:18px}
 }
 </style>
 </head>
@@ -47,79 +51,111 @@ p a:hover{text-decoration:underline}
 <canvas id="c"></canvas>
 
 <nav>
-  <a href="/" class="logo"><b>19</b>Labs</a>
-  <div class="nav-links">
+  <a href="/" class="n-logo">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L2 19.5h4l6-11 6 11h4L12 2z" fill="#4285f4"/><path d="M8.5 14.5L6 19.5h4l1-2.5-2.5-2.5z" fill="#ea4335"/><path d="M15.5 14.5L18 19.5h-4l-1-2.5 2.5-2.5z" fill="#fbbc04"/><path d="M12 8l-3.5 6.5h7L12 8z" fill="#34a853"/></svg>
+    <b>19Labs</b> <span>Autonomous ML</span>
+  </a>
+  <div class="n-links">
     <a href="/app">Product</a>
+    <a href="#" class="has-arrow">Use Cases</a>
+    <a href="/app">Pricing</a>
     <a href="https://github.com/jargogn0/yc-able" target="_blank">GitHub</a>
+    <a href="#" class="has-arrow">Resources</a>
   </div>
-  <div class="nav-r">
-    <a href="/app">Launch App</a>
+  <div class="n-r">
+    <a href="/app">Launch App <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></a>
   </div>
 </nav>
 
-<div class="center">
-  <div class="mark"><b>19</b>Labs</div>
-  <h1>Autonomous ML Research</h1>
-  <p>Drop a dataset. Get a deployed model. <a href="/app">Open the app</a> to start.</p>
-  <div class="links">
-    <a href="/app">App</a>
-    <span>|</span>
+<div class="page">
+  <div class="logo-mark">
+    <svg viewBox="0 0 48 48" fill="none"><path d="M24 4L4 39h8l12-22 12 22h8L24 4z" fill="#4285f4"/><path d="M17 29L12 39h8l2-5-5-5z" fill="#ea4335"/><path d="M31 29l5 10h-8l-2-5 5-5z" fill="#fbbc04"/><path d="M24 16l-7 13h14L24 16z" fill="#34a853"/></svg>
+    <div class="wordmark"><b>19Labs</b></div>
+  </div>
+  <h1>Autonomous ML Research Platform</h1>
+  <p class="sub">Drop a dataset, describe your goal, get a deployed model. <a href="/app">Open the app</a> to get started.</p>
+  <div class="foot-links">
+    <a href="/app">Docs</a>
+    <span class="sep">|</span>
     <a href="https://github.com/jargogn0/yc-able" target="_blank">GitHub</a>
   </div>
 </div>
 
 <script>
-const c=document.getElementById('c'),x=c.getContext('2d');
+const c=document.getElementById('c'),g=c.getContext('2d');
 let W,H,mx=-9e3,my=-9e3;
-const N=160,R=180,pts=[];
 
-function sz(){W=c.width=innerWidth;H=c.height=innerHeight;if(!pts.length)init();else pts.forEach(p=>{p.hx=p.hx/p._W*W;p.hy=p.hy/p._H*H;p.x=p.hx;p.y=p.hy;p._W=W;p._H=H})}
+// Multi-color palette matching Antigravity: blue, red, purple, orange
+const COLORS=[
+  [66,133,244],  // google blue
+  [66,133,244],  // blue again (dominant)
+  [66,133,244],  // blue (heavy weight)
+  [100,100,244], // blue-purple
+  [120,90,220],  // purple
+  [234,67,53],   // red
+  [234,67,53],   // red
+  [180,60,60],   // dark red
+  [251,188,4],   // yellow (rare)
+  [100,120,230], // indigo
+];
+
+const N=220, R=160, pts=[];
+
+function sz(){
+  W=c.width=innerWidth;
+  H=c.height=innerHeight;
+  if(!pts.length)init();
+}
 
 function init(){
   pts.length=0;
   for(let i=0;i<N;i++){
-    const s=1+Math.random()*2.5;
+    const s=.8+Math.random()*2;
+    const col=COLORS[Math.floor(Math.random()*COLORS.length)];
     pts.push({
-      x:Math.random()*W,y:Math.random()*H,
-      hx:0,hy:0,
-      vx:0,vy:0,
+      x:Math.random()*W, y:Math.random()*H,
+      hx:0, hy:0,
+      vx:0, vy:0,
       s,
-      len:s*(2.5+Math.random()*4),
+      len:s*(2+Math.random()*5),
       a:Math.random()*Math.PI*2,
-      ra:(Math.random()-.5)*.015,
-      o:.12+Math.random()*.3,
-      _W:W,_H:H
+      ra:(Math.random()-.5)*.012,
+      o:.1+Math.random()*.3,
+      col,
     });
-    pts[i].hx=pts[i].x;pts[i].hy=pts[i].y;
+    pts[i].hx=pts[i].x;
+    pts[i].hy=pts[i].y;
   }
 }
 
 function draw(){
-  x.clearRect(0,0,W,H);
+  g.clearRect(0,0,W,H);
   for(const p of pts){
-    const dx=p.x-mx,dy=p.y-my,d=Math.sqrt(dx*dx+dy*dy);
+    const dx=p.x-mx, dy=p.y-my, d=Math.sqrt(dx*dx+dy*dy);
     if(d<R&&d>0){
-      const f=(R-d)/R*.6;
+      const f=(R-d)/R*.5;
       p.vx+=dx/d*f;
       p.vy+=dy/d*f;
     }
-    p.vx+=(p.hx-p.x)*.018;
-    p.vy+=(p.hy-p.y)*.018;
-    p.vx*=.93;p.vy*=.93;
-    p.x+=p.vx;p.y+=p.vy;
+    p.vx+=(p.hx-p.x)*.015;
+    p.vy+=(p.hy-p.y)*.015;
+    p.vx*=.94;
+    p.vy*=.94;
+    p.x+=p.vx;
+    p.y+=p.vy;
     p.a+=p.ra;
 
-    x.save();
-    x.translate(p.x,p.y);
-    x.rotate(p.a);
-    x.beginPath();
-    x.moveTo(-p.len/2,0);
-    x.lineTo(p.len/2,0);
-    x.strokeStyle=`rgba(66,133,244,${p.o})`;
-    x.lineWidth=p.s;
-    x.lineCap='round';
-    x.stroke();
-    x.restore();
+    g.save();
+    g.translate(p.x,p.y);
+    g.rotate(p.a);
+    g.beginPath();
+    g.moveTo(-p.len/2,0);
+    g.lineTo(p.len/2,0);
+    g.strokeStyle=`rgba(${p.col[0]},${p.col[1]},${p.col[2]},${p.o})`;
+    g.lineWidth=p.s;
+    g.lineCap='round';
+    g.stroke();
+    g.restore();
   }
   requestAnimationFrame(draw);
 }
@@ -129,7 +165,6 @@ addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY});
 addEventListener('mouseleave',()=>{mx=-9e3;my=-9e3});
 addEventListener('touchmove',e=>{if(e.touches[0]){mx=e.touches[0].clientX;my=e.touches[0].clientY}},{passive:true});
 addEventListener('touchend',()=>{mx=-9e3;my=-9e3});
-
 sz();draw();
 </script>
 </body>
