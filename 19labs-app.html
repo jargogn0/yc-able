@@ -55,6 +55,47 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 .tbtn{font-size:12px;padding:5px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:all var(--t);font-family:var(--sans)}
 .tbtn:hover{border-color:var(--border-2);color:var(--text)}
+.tbtn.active{color:var(--accent);border-color:rgba(59,130,246,.4);background:var(--accent-soft)}
+
+/* Plan overlay */
+.plan-overlay{display:none;position:absolute;inset:0;background:rgba(10,10,11,.8);backdrop-filter:blur(6px);z-index:50;align-items:center;justify-content:center;padding:24px}
+.plan-overlay.show{display:flex}
+.plan-card{background:var(--surface);border:1px solid var(--border-2);border-radius:16px;padding:28px 32px;max-width:580px;width:100%;max-height:85vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+.plan-card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.plan-card-h h2{font-size:17px;font-weight:700}
+.plan-card-close{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:18px;padding:2px 6px;border-radius:4px}
+.plan-card-close:hover{color:var(--text);background:var(--surface-2)}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.plan-field{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px}
+.plan-field-l{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-bottom:4px}
+.plan-field-v{font-size:13px;color:var(--text);line-height:1.4}
+.plan-field.full{grid-column:1/-1}
+.plan-risks{background:var(--amber-soft);border:1px solid rgba(245,158,11,.2);border-radius:var(--r);padding:10px 14px}
+.plan-risk-item{font-size:12px;color:var(--amber);margin-bottom:3px;line-height:1.4}
+.plan-modify{display:flex;gap:8px;margin-top:4px}
+.plan-modify-in{flex:1;padding:9px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:13px;outline:none}
+.plan-modify-in:focus{border-color:var(--accent)}
+.plan-modify-in::placeholder{color:var(--text-3)}
+.plan-actions{display:flex;gap:10px;margin-top:4px}
+.btn-execute{flex:1;padding:11px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;transition:all var(--t)}
+.btn-execute:hover{background:var(--accent-2)}
+.btn-modify{padding:11px 16px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;transition:all var(--t)}
+.btn-modify:hover{border-color:var(--border-2);color:var(--text)}
+
+/* Deploy prompt card */
+.deploy-prompt{background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(167,139,250,.05));border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:16px 18px;margin:4px 0}
+.deploy-prompt h4{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.deploy-prompt p{font-size:12px;color:var(--text-2);margin-bottom:12px;line-height:1.5}
+.deploy-prompt-btns{display:flex;gap:8px}
+.btn-deploy-api{padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;transition:all var(--t)}
+.btn-deploy-api:hover{background:var(--accent-2)}
+.btn-deploy-skip{padding:8px 12px;background:none;color:var(--text-3);border:1px solid var(--border);border-radius:var(--r);font-size:12px;cursor:pointer;transition:all var(--t)}
+.btn-deploy-skip:hover{color:var(--text-2);border-color:var(--border-2)}
+
+/* Chat mode indicator */
+.chat-mode-bar{display:none;padding:6px 16px;background:var(--accent-soft);border-bottom:1px solid rgba(59,130,246,.2);font-size:11px;font-weight:500;color:var(--accent);align-items:center;gap:8px;flex-shrink:0}
+.chat-mode-bar.show{display:flex}
+.chat-mode-bar span{flex:1}
 .prog{height:2px;background:var(--surface);flex-shrink:0;overflow:hidden}.prog-f{height:100%;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s ease;width:0}
 
 /* ── LAYOUT ── */
@@ -393,7 +434,8 @@ input[type=file]{display:none}
   <div class="topbar-tag">AI Data Science</div>
   <div class="topbar-r">
     <button class="stop-btn" id="stop-btn" style="display:none" onclick="cancelRun()" data-tip="Stop current run">Stop</button>
-    <div class="badge" id="badge">IDLE</div>
+    <button class="tbtn" id="chat-mode-btn" onclick="toggleChatMode()" data-tip="Chat mode — ask questions about your data without triggering training">Chat</button>
+    <div class="badge" id="badge" onclick="onBadgeClick()" style="cursor:pointer" data-tip="Click to view plan">IDLE</div>
     <button class="tbtn" onclick="openCmd()" data-tip="Command Palette (⌘K)">⌘K</button>
     <button class="tbtn" id="tb-prov" onclick="openSettings()" data-tip="Provider settings (⌘,)">Claude</button>
   </div>
@@ -426,7 +468,25 @@ input[type=file]{display:none}
   </div>
 
   <!-- WORKSPACE -->
-  <div class="ws">
+  <div class="ws" style="position:relative">
+  <!-- Plan overlay (shown when plan is ready) -->
+  <div class="plan-overlay" id="plan-overlay" onclick="if(event.target===this)hidePlanCard()">
+    <div class="plan-card" id="plan-card">
+      <div class="plan-card-h">
+        <h2>Research Plan</h2>
+        <button class="plan-card-close" onclick="hidePlanCard()">✕</button>
+      </div>
+      <div class="plan-grid" id="plan-fields"></div>
+      <div class="plan-risks" id="plan-risks" style="display:none"></div>
+      <div class="plan-modify">
+        <input class="plan-modify-in" id="plan-modify-in" placeholder="Modify plan: change model, add constraint, update goal..." onkeydown="if(event.key==='Enter')modifyPlan()">
+        <button class="btn-modify" onclick="modifyPlan()">Update</button>
+      </div>
+      <div class="plan-actions">
+        <button class="btn-execute" onclick="executePlan()">▶ Execute Plan</button>
+      </div>
+    </div>
+  </div>
     <div class="tabs" id="tabs">
       <div class="tab on" data-t="data" onclick="stab('data')">Data</div>
       <div class="tab" data-t="code" onclick="stab('code')">Code</div>
@@ -460,6 +520,10 @@ input[type=file]{display:none}
   <!-- CHAT -->
   <div class="chat">
     <div class="chat-h"><h3>19 Agent</h3><div class="chat-dot" id="cdot"></div></div>
+    <div class="chat-mode-bar" id="chat-mode-bar">
+      <span>Chat mode — ask anything about your data or model</span>
+      <button onclick="toggleChatMode()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:11px;font-weight:600">Exit</button>
+    </div>
     <div class="chat-msgs" id="msgs">
       <div class="cw" id="cw">
         <div class="cw-i">19</div>
@@ -521,7 +585,7 @@ function apiFetch(url,options={}){
   });
 }
 function sseUrl(path){return ACCESS_TOKEN?`${path}?token=${encodeURIComponent(ACCESS_TOKEN)}`:path;}
-const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false};
+const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,chatMode:false};
 
 // ═══════════════════════════════════════════
 // SETTINGS
@@ -783,6 +847,9 @@ async function send(){
   chat('user',text);
   const lo=text.toLowerCase();
 
+  // Chat mode — route all messages to /api/chat
+  if(S.chatMode){await chatWithAI(text);return}
+
   if(!S.file&&!lo.includes('setting')&&!lo.includes('key')&&!lo.includes('help')){
     chat('ai',"Drop a CSV in the sidebar first — I'll analyze it and we'll figure out the best approach together.");return;
   }
@@ -847,16 +914,114 @@ async function send(){
 
   // Post-run
   if(S.best){
-    if(lo.includes('download')||lo.includes('deploy')||lo.includes('export')){if(S.runId)dlDeploy(S.runId);return}
+    if(lo.includes('deploy api')||lo.includes('deploy as api')||lo.includes('create api')||lo.includes('make api')||lo.includes('live api')){if(S.runId)deployAsAPI(S.runId);return}
+    if(lo.includes('download')||lo.includes('export')){if(S.runId)dlDeploy(S.runId);return}
+    if(lo.includes('deploy')&&!lo.includes('api')){if(S.runId)deployAsAPI(S.runId);return}
     if(lo.includes('again')||lo.includes('rerun')||lo.includes('more')||lo.includes('iterate')){
       S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];
       document.getElementById('p-exp').innerHTML='';
       chat('ai',"Let's iterate. What would you like to change?");return;
     }
-    chat('ai','Your model is ready. Say <strong>"download"</strong> for the deploy package, <strong>"run again"</strong> to iterate, or describe a new direction.');return;
+    chat('ai','Your model is ready. Say <strong>"download"</strong> for the model zip, <strong>"deploy"</strong> to create a live API, <strong>"run again"</strong> to iterate, or describe a new direction.');return;
   }
 
   chat('ai',"Tell me what you'd like to predict or analyze. I'll take it from there.");
+}
+
+// ═══════════════════════════════════════════
+// CHAT MODE
+// ═══════════════════════════════════════════
+function toggleChatMode(){
+  S.chatMode=!S.chatMode;
+  document.getElementById('chat-mode-btn').classList.toggle('active',S.chatMode);
+  document.getElementById('chat-mode-bar').classList.toggle('show',S.chatMode);
+  const inp=document.getElementById('cin');
+  inp.placeholder=S.chatMode?'Ask anything about your data or model...':'Describe what you want to build...';
+  if(S.chatMode)chat('sys','Chat mode active. Ask me anything about your data, model, or results — no training will run.');
+}
+
+async function chatWithAI(message){
+  typing(true);
+  const key=C.key||gk(C.provider);
+  const ctx={
+    filename:S.file?.name,
+    profile:S.discovery?.profile,
+    best:S.best,
+    objective:S.discovery?.objective||S.discovery?.discovery,
+    history:S.exps
+  };
+  try{
+    const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,context:ctx})});
+    const j=await r.json();typing(false);
+    if(!r.ok||!j.ok){chat('err',j.error||'Chat failed');return}
+    chat('ai',j.response);
+  }catch(e){typing(false);chat('err',`Chat error: ${esc(e.message)}`)}
+}
+
+// ═══════════════════════════════════════════
+// PLAN MODE
+// ═══════════════════════════════════════════
+function showPlanCard(){
+  if(!S.discovery)return;
+  const d=S.discovery.discovery||{};
+  const obj=S.discovery.objective||{};
+  const fields=document.getElementById('plan-fields');
+  fields.innerHTML='';
+  const add=(label,val,full)=>{
+    if(!val)return;
+    const div=document.createElement('div');
+    div.className='plan-field'+(full?' full':'');
+    div.innerHTML=`<div class="plan-field-l">${label}</div><div class="plan-field-v">${esc(val)}</div>`;
+    fields.appendChild(div);
+  };
+  add('Objective',d.recommended_objective||obj.task,true);
+  add('Task',obj.task);add('Target',obj.target);add('Metric',obj.metric);
+  if(d.first_iteration_plan)add('Plan',d.first_iteration_plan,true);
+  const risksEl=document.getElementById('plan-risks');
+  if(d.risks&&d.risks.length){
+    risksEl.style.display='';
+    risksEl.innerHTML='<div class="plan-field-l" style="color:var(--amber)">⚠ Risks</div>'+d.risks.map(r=>`<div class="plan-risk-item">• ${esc(r)}</div>`).join('');
+  }else{risksEl.style.display='none'}
+  document.getElementById('plan-overlay').classList.add('show');
+}
+function hidePlanCard(){document.getElementById('plan-overlay').classList.remove('show')}
+function onBadgeClick(){
+  const badge=document.getElementById('badge');
+  if(badge.textContent==='PLAN READY'&&S.analyzed&&!S.confirmed)showPlanCard();
+}
+function modifyPlan(){
+  const val=document.getElementById('plan-modify-in').value.trim();
+  if(!val)return;
+  hidePlanCard();
+  S.hint=val;
+  chat('ai',`Adjusting plan: "${esc(val)}"...`);
+  runDiscover(val);
+}
+function executePlan(){
+  hidePlanCard();
+  S.confirmed=true;
+  chat('ai',"Launching experiments now. I'll keep you posted.");
+  launchRun();
+}
+
+// ═══════════════════════════════════════════
+// DEPLOY AS API
+// ═══════════════════════════════════════════
+async function deployAsAPI(runId){
+  if(!runId){chat('err','No active run to deploy');return}
+  chat('ai','Generating your inference API server... this takes ~30 seconds.');
+  typing(true);
+  const key=C.key||gk(C.provider);
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${runId}/create-api`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key||undefined,provider:C.provider})});
+    typing(false);
+    if(!r.ok){const err=await r.text();throw new Error(err)}
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=`19labs_api_${runId.slice(0,8)}.zip`;a.click();URL.revokeObjectURL(url);
+    chat('ai',`<strong>API server ready!</strong> Your <code>api_server.zip</code> contains:<br><br>• <code>inference_server.py</code> — FastAPI server with <code>/predict</code> &amp; <code>/health</code><br>• <code>Dockerfile</code> — container-ready<br>• <code>railway.json</code> — one-click Railway deploy<br>• <code>README.md</code> — deployment instructions<br><br>Deploy in 1 command: <code>railway login &amp;&amp; railway up</code>`);
+    toast('API server downloaded','ok',5000);
+  }catch(e){typing(false);chat('err',`Deploy failed: ${esc(e.message.slice(0,80))}`);toast('API generation failed','err')}
 }
 
 // ═══════════════════════════════════════════
@@ -893,6 +1058,7 @@ async function runDiscover(hint){
     if(d.first_iteration_plan)msg+=`<br><strong>Plan:</strong> ${esc(d.first_iteration_plan)}<br>`;
     if(d.risks&&d.risks.length)msg+=`<br><strong>Risks:</strong> ${d.risks.map(r=>esc(r)).join('; ')}<br>`;
     msg+=`<br>Say <strong>"go"</strong> to start, or tell me what to change.`;
+    msg+=`<br><em style="font-size:11px;color:var(--text-3)">Click <strong>PLAN READY</strong> badge above to view full plan, or say "go" to start.</em>`;
     chat('ai',msg);setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
     toast('Analysis complete — plan ready','ok');
@@ -991,7 +1157,8 @@ async function launchRun(){
     const secLine=extraKeys.map(k=>{const tt=fmtTrainTest(bam,k);return tt?`<code>${k.toUpperCase()}: ${tt}</code>`:null}).filter(Boolean).join(' · ');
     const wasStop=st.status==='stopping'||st.status==='done'&&S.exps.length<S.budget;
     const stopLabel=wasStop&&S.exps.length>0?'Stopped early — showing results from completed experiments.':'';
-    chat('ai',`<strong>Research ${wasStop?'stopped':'complete'}!</strong>${stopLabel?' '+stopLabel:''}<br><br>Experiments: <strong>${totalExp}</strong> (${kept} kept)<br>Quality: <strong>${score}/100</strong><br>Best: <strong>${esc(S.best?.model||'N/A')}</strong><br>Primary: <code>${esc(pk.toUpperCase())}: ${ttPrimary||(S.best?.metric_val!=null?Number(S.best.metric_val).toFixed(4):'N/A')}</code>${secLine?'<br>Metrics: '+secLine:''}${tokStr}<br><br>Say <strong>"download"</strong> for the model, <strong>"run again"</strong> to iterate, or <strong>"never stop"</strong> for continuous mode.`);
+    const rid=run_id;
+    chat('ai',`<strong>Research ${wasStop?'stopped':'complete'}!</strong>${stopLabel?' '+stopLabel:''}<br><br>Experiments: <strong>${totalExp}</strong> (${kept} kept)<br>Quality: <strong>${score}/100</strong><br>Best: <strong>${esc(S.best?.model||'N/A')}</strong><br>Primary: <code>${esc(pk.toUpperCase())}: ${ttPrimary||(S.best?.metric_val!=null?Number(S.best.metric_val).toFixed(4):'N/A')}</code>${secLine?'<br>Metrics: '+secLine:''}${tokStr}<br><br><div class="deploy-prompt"><h4>🚀 Deploy your model</h4><p>Create a live <strong>FastAPI inference server</strong> — ready to deploy on Railway, Docker, or any cloud in one command.</p><div class="deploy-prompt-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div></div>`);
     setProg(100);setBadge('DONE','ok');document.getElementById('cdot').className='chat-dot ok';
     addRunHistory(S.runId,'done',`${S.best?.model||''}`.trim()||S.file?.name||'Done');
     toast(`Research complete — ${kept}/${totalExp} experiments kept`,'ok',6000);

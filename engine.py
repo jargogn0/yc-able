@@ -2318,6 +2318,109 @@ Output ONLY a complete ```python block.""", 4200)
         continuous_mode=continuous, total_experiments=total_experiments,
         token_usage=get_token_usage())
 
+# ── CHAT WITH DATA ─────────────────────────────────────────────
+def chat_with_data(message: str, context: dict, api_key: str, provider: str = "claude") -> str:
+    """Free-form conversational AI about the current dataset/model."""
+    ctx_parts = []
+    if context.get("filename"):
+        ctx_parts.append(f"Dataset: {context['filename']}")
+    profile = context.get("profile") or {}
+    if profile.get("n_rows"):
+        ctx_parts.append(f"Rows: {profile['n_rows']}, Columns: {profile.get('n_cols', '?')}")
+    if profile.get("headers"):
+        ctx_parts.append(f"Columns: {', '.join(profile['headers'][:25])}")
+    if context.get("best"):
+        b = context["best"]
+        ctx_parts.append(f"Best model: {b.get('model','?')} — {b.get('metric_name','metric')}: {b.get('metric_val','?')}")
+    if context.get("objective"):
+        o = context["objective"]
+        ctx_parts.append(f"Task: {o.get('task','?')} | Target: {o.get('target','?')} | Metric: {o.get('metric','?')}")
+    if context.get("history"):
+        kept = sum(1 for e in context["history"] if e.get("success"))
+        ctx_parts.append(f"Experiments: {len(context['history'])} total, {kept} kept")
+
+    system = "You are 19Labs, an expert AI data scientist. Answer questions about the dataset, model, results, and data science in general. Be concise, practical, and specific. Use markdown when helpful."
+    if ctx_parts:
+        system += "\n\nSession context:\n" + "\n".join(f"- {c}" for c in ctx_parts)
+
+    try:
+        if provider == "openai" and OpenAI:
+            client = OpenAI(api_key=api_key)
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": message}],
+                max_tokens=800
+            )
+            return resp.choices[0].message.content
+        else:
+            client = Anthropic(api_key=api_key)
+            resp = client.messages.create(
+                model=CLAUDE_MODEL, max_tokens=800,
+                system=system,
+                messages=[{"role": "user", "content": message}]
+            )
+            return resp.content[0].text
+    except Exception as e:
+        return f"I couldn't process that: {e}"
+
+
+# ── INFERENCE SERVER GENERATOR ─────────────────────────────────
+def generate_inference_server(train_py: str, best: dict, obj: dict, api_key: str, provider: str = "claude") -> dict:
+    """Generate a complete deployable FastAPI inference server from the trained model code."""
+    model_name = best.get("model", "MLModel")
+    task = obj.get("task", "regression")
+    target = obj.get("target", "target")
+    metric = obj.get("metric", "accuracy")
+
+    prompt = f"""Generate a production-ready FastAPI inference server for this trained ML model.
+
+TRAINING CODE (first 3500 chars):
+```python
+{train_py[:3500]}
+```
+
+MODEL: {model_name} | TASK: {task} | TARGET: {target} | METRIC: {metric}
+
+Generate a complete inference_server.py that:
+1. Loads the trained model at startup — scan for .pkl, .joblib, .pt, .h5, best_model.* in the same directory
+2. POST /predict — accepts JSON dict of features, returns {{"prediction": value, "probability": null_or_float}}
+3. GET /health — returns {{"status": "ok", "model": "{model_name}", "task": "{task}"}}
+4. Handles missing/extra input fields gracefully
+5. Applies the EXACT same feature preprocessing from the training code
+6. Works with uvicorn on Railway ($PORT env var)
+
+Also generate minimal requirements_txt (inference only, not training) and a Dockerfile using python:3.11-slim.
+
+Return ONLY valid JSON with keys: inference_server_py, requirements_txt, dockerfile
+No markdown fences, no explanation — just the JSON object."""
+
+    try:
+        if provider == "openai" and OpenAI:
+            client = OpenAI(api_key=api_key)
+            resp = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=3000,
+                response_format={"type": "json_object"}
+            )
+            raw = resp.choices[0].message.content
+        else:
+            client = Anthropic(api_key=api_key)
+            resp = client.messages.create(
+                model=CLAUDE_MODEL, max_tokens=3000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            raw = resp.content[0].text
+
+        try:
+            return json.loads(raw)
+        except Exception:
+            m = re.search(r'\{[\s\S]*\}', raw)
+            return json.loads(m.group()) if m else {"error": "Could not parse response"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ── CLI ────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import argparse
