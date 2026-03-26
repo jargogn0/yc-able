@@ -169,39 +169,72 @@ def serve_app_page():
     return HTMLResponse("<h1>19Labs</h1><p>Place 19labs-app.html next to server.py</p>")
 
 # ── DIRECT DOWNLOADS ──────────────────────────────────────────
+import io, zipfile, stat
+
 _APP_URL = "https://yc-able-production.up.railway.app/app"
 
-_MAC_SCRIPT = f'''#!/bin/bash
-# 19Labs launcher for macOS
-APP_URL="{_APP_URL}"
-echo "Opening 19Labs..."
-open "$APP_URL"
-'''
+_INFO_PLIST = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>    <string>19Labs</string>
+    <key>CFBundleName</key>          <string>19Labs</string>
+    <key>CFBundleDisplayName</key>   <string>19Labs</string>
+    <key>CFBundleIdentifier</key>    <string>com.19labs.desktop</string>
+    <key>CFBundleVersion</key>       <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key><string>1.0.0</string>
+    <key>CFBundlePackageType</key>   <string>APPL</string>
+    <key>LSMinimumSystemVersion</key><string>10.13</string>
+    <key>LSUIElement</key>           <false/>
+    <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+"""
 
-_WIN_SCRIPT = f'''@echo off
-:: 19Labs launcher for Windows
-set APP_URL={_APP_URL}
-echo Opening 19Labs...
-start "" "%APP_URL%"
-exit
-'''
+_MAC_EXEC = f"""\
+#!/bin/bash
+# 19Labs — The Cursor for Data Science
+open "{_APP_URL}"
+"""
 
-_LINUX_SCRIPT = f'''#!/bin/bash
-# 19Labs launcher for Linux
-APP_URL="{_APP_URL}"
-echo "Opening 19Labs..."
-if command -v xdg-open &>/dev/null; then
-  xdg-open "$APP_URL"
-elif command -v gnome-open &>/dev/null; then
-  gnome-open "$APP_URL"
-else
-  echo "Open this URL in your browser: $APP_URL"
-fi
-'''
+_WIN_SCRIPT = f"""\
+@echo off
+start "" "{_APP_URL}"
+"""
+
+_LINUX_SCRIPT = f"""\
+#!/usr/bin/env bash
+# 19Labs — The Cursor for Data Science
+URL="{_APP_URL}"
+if command -v xdg-open &>/dev/null; then xdg-open "$URL"
+elif command -v open &>/dev/null; then open "$URL"
+else echo "Open in browser: $URL"; fi
+"""
+
+def _build_mac_zip() -> bytes:
+    """Build a real .app bundle inside a zip archive."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Executable — must have execute bit set
+        info = zipfile.ZipInfo("19Labs.app/Contents/MacOS/19Labs")
+        info.external_attr = (stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP |
+                               stat.S_IROTH | stat.S_IXOTH) << 16
+        info.compress_type = zipfile.ZIP_DEFLATED
+        zf.writestr(info, _MAC_EXEC)
+        # Info.plist
+        zf.writestr("19Labs.app/Contents/Info.plist", _INFO_PLIST)
+        # PkgInfo
+        zf.writestr("19Labs.app/Contents/PkgInfo", "APPL????")
+    buf.seek(0)
+    return buf.read()
+
+# Pre-build mac zip once at startup
+_MAC_ZIP = _build_mac_zip()
 
 @app.get("/download")
 async def download_auto(request: Request):
-    """Auto-detect platform and serve the right launcher."""
+    """Auto-detect platform and serve the right download."""
     ua = request.headers.get("user-agent", "").lower()
     if "windows" in ua or "win64" in ua or "win32" in ua:
         return _download_windows()
@@ -213,9 +246,9 @@ async def download_auto(request: Request):
 def _download_mac():
     from fastapi.responses import Response as FR
     return FR(
-        content=_MAC_SCRIPT.encode(),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="19Labs.command"'},
+        content=_MAC_ZIP,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="19Labs.zip"'},
     )
 
 @app.get("/download/win")
