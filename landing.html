@@ -190,7 +190,7 @@ nav{
 
   <div class="cta">
     <div class="cta-btns">
-      <a class="dl-primary" href="/download" id="dl-btn">
+      <a class="dl-primary" href="/download/mac" download="19Labs.zip" id="dl-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span id="dl-label">Download for macOS</span>
       </a>
@@ -199,11 +199,11 @@ nav{
       </a>
     </div>
     <div class="platforms">
-      <a href="/download/mac">macOS</a>
+      <a href="/download/mac" download="19Labs.zip">macOS</a>
       <span class="sep">·</span>
-      <a href="/download/win">Windows</a>
+      <a href="/download/win" download="19Labs.bat">Windows</a>
       <span class="sep">·</span>
-      <a href="/download/linux">Linux</a>
+      <a href="/download/linux" download="19labs.sh">Linux</a>
     </div>
   </div>
 </div>
@@ -330,12 +330,15 @@ resize();frame();
   if(/Win/i.test(ua)){
     lbl.textContent='Download for Windows';
     btn.href='/download/win';
+    btn.setAttribute('download','19Labs.bat');
   } else if(/Linux/i.test(ua)&&!/Android/i.test(ua)){
     lbl.textContent='Download for Linux';
     btn.href='/download/linux';
+    btn.setAttribute('download','19labs.sh');
   } else {
     lbl.textContent='Download for macOS';
     btn.href='/download/mac';
+    btn.setAttribute('download','19Labs.zip');
   }
 })();
 </script>
