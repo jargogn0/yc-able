@@ -7,7 +7,7 @@
 - GET  /api/run/{id}/deploy → download deploy.zip
 - GET  /                 → serves 19labs-app.html
 """
-import asyncio, json, os, signal, shutil, tempfile, threading, time, uuid, zipfile
+import asyncio, glob, json, os, signal, shutil, tempfile, threading, time, uuid, zipfile
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse
@@ -22,6 +22,9 @@ ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
 if ALLOWED_ORIGINS == ["*"]:
     ALLOWED_ORIGINS = ["*"]
 
+ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "").strip()
+CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -31,25 +34,47 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],
 )
 
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not ACCESS_PASSWORD:
+        return await call_next(request)
+    if request.url.path in ("/", "/health", "/favicon.ico"):
+        return await call_next(request)
+    auth = request.headers.get("Authorization", "")
+    if auth == f"Bearer {ACCESS_PASSWORD}":
+        return await call_next(request)
+    token = request.query_params.get("token", "")
+    if token == ACCESS_PASSWORD:
+        return await call_next(request)
+    return JSONResponse(status_code=401, content={"error": "Unauthorized. Set your access token in Settings."})
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"error": str(exc)})
 
 RUNS: dict[str, dict] = {}
-KEY_CACHE_FILE = Path(tempfile.gettempdir()) / "19labs_last_api_key.txt"
-try:
-    LAST_API_KEY: str = KEY_CACHE_FILE.read_text().strip() if KEY_CACHE_FILE.exists() else ""
-except Exception:
-    LAST_API_KEY = ""
 APP_HTML = Path(__file__).parent / "19labs-app.html"
 
-def _persist_cached_key(key: str):
-    if not key:
-        return
-    try:
-        KEY_CACHE_FILE.write_text(key)
-    except Exception:
-        pass
+def _cleanup_old_workspaces():
+    cutoff = time.time() - (4 * 3600)  # 4 hours
+    for ws_path in glob.glob(str(Path(tempfile.gettempdir()) / "19labs_*")):
+        try:
+            p = Path(ws_path)
+            if p.is_dir() and p.stat().st_mtime < cutoff:
+                shutil.rmtree(p, ignore_errors=True)
+        except Exception:
+            pass
+
+def _cleanup_loop():
+    while True:
+        time.sleep(1800)
+        try:
+            _cleanup_old_workspaces()
+        except Exception:
+            pass
+
+threading.Thread(target=_cleanup_loop, daemon=True).start()
+_cleanup_old_workspaces()
 
 # ── SERVE APP ──────────────────────────────────────────────────
 @app.get("/")
@@ -155,6 +180,9 @@ def _fallback_discovery(profile: dict, hint: str = ""):
 
 @app.post("/api/run")
 async def start_run(req: RunRequest):
+    if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
+        raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
+
     run_id = str(uuid.uuid4())[:12]
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
 
@@ -171,7 +199,6 @@ async def start_run(req: RunRequest):
     )
 
     def background():
-        global LAST_API_KEY
         import sys
         sys.path.insert(0, str(Path(__file__).parent))
         from engine import run_research
@@ -182,10 +209,7 @@ async def start_run(req: RunRequest):
             })
 
         try:
-            if req.api_key:
-                LAST_API_KEY = req.api_key
-                _persist_cached_key(LAST_API_KEY)
-            resolved_api_key = req.api_key or LAST_API_KEY or os.environ.get("ANTHROPIC_API_KEY", "")
+            resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
             cb("sys", f"API key received: {'YES' if resolved_api_key else 'NO'} (length={len(resolved_api_key)}) | Provider: {req.provider or 'claude'}")
             if not resolved_api_key:
                 raise RuntimeError(
@@ -224,12 +248,8 @@ async def start_run(req: RunRequest):
 
 @app.post("/api/validate-key")
 async def validate_key(req: ValidateKeyRequest):
-    global LAST_API_KEY
     provider = (req.provider or "claude").lower()
-    if req.api_key:
-        LAST_API_KEY = req.api_key
-        _persist_cached_key(LAST_API_KEY)
-    resolved_api_key = req.api_key or LAST_API_KEY or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+    resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
     if not resolved_api_key:
         return {"ok": False, "error": "No API key provided."}
     try:
@@ -240,7 +260,7 @@ async def validate_key(req: ValidateKeyRequest):
         else:
             from anthropic import Anthropic
             c = Anthropic(api_key=resolved_api_key)
-            c.messages.create(model="claude-sonnet-4-5", max_tokens=1, system="Respond minimally.", messages=[{"role":"user","content":"ping"}])
+            c.messages.create(model="claude-sonnet-4-6", max_tokens=1, system="Respond minimally.", messages=[{"role":"user","content":"ping"}])
         return {"ok": True}
     except Exception as e:
         msg = str(e)
@@ -250,7 +270,8 @@ async def validate_key(req: ValidateKeyRequest):
 
 @app.post("/api/discover")
 async def discover(req: DiscoverRequest):
-    global LAST_API_KEY
+    if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
+        raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
     ws = Path(tempfile.mkdtemp(prefix="19labs_discover_"))
     csv_path = ws / req.filename
     csv_path.write_text(req.csv)
@@ -259,10 +280,7 @@ async def discover(req: DiscoverRequest):
         sys.path.insert(0, str(Path(__file__).parent))
         from engine import discover_user_need, profile_dataset
         profile = profile_dataset(str(csv_path))
-        if req.api_key:
-            LAST_API_KEY = req.api_key
-            _persist_cached_key(LAST_API_KEY)
-        resolved_api_key = req.api_key or LAST_API_KEY or os.environ.get("ANTHROPIC_API_KEY", "")
+        resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
         if not resolved_api_key:
             fallback = _fallback_discovery(profile, req.hint)
@@ -620,10 +638,8 @@ def health():
 
 @app.get("/api/provider-status")
 def provider_status():
-    # Expose only availability, never the key itself.
     has_server_key = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
-    has_cached_key = bool(LAST_API_KEY.strip())
-    return {"provider": "claude", "server_key_available": has_server_key, "cached_key_available": has_cached_key}
+    return {"provider": "claude", "server_key_available": has_server_key, "cached_key_available": False}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8019))

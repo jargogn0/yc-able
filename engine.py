@@ -101,7 +101,7 @@ def write_workspace_requirements(ws, train_py_code):
     return req_text
 
 # ── CONFIG ─────────────────────────────────────────────────────
-CLAUDE_MODEL = "claude-sonnet-4-5"
+CLAUDE_MODEL = "claude-sonnet-4-6"
 OPENAI_MODEL = "gpt-4o"
 EXEC_TIMEOUT = 180          # hard wall-clock kill per experiment
 TIME_BUDGET  = 120          # target training budget (seconds) injected into scripts

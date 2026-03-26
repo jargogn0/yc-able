@@ -364,6 +364,8 @@ input[type=file]{display:none}
       <button class="prov-btn" id="rm-aggressive" onclick="setRM('aggressive')">Aggressive</button>
     </div>
     <div class="msub" style="margin-top:-4px">Safe = reliable demos · Balanced = default · Aggressive = max innovation</div>
+    <label>Access Token <span style="font-weight:400;text-transform:none;letter-spacing:0">(required if server sets ACCESS_PASSWORD)</span></label>
+    <input type="password" id="access-token-input" placeholder="Leave empty if not required" autocomplete="off">
     <label>Server URL</label>
     <input type="text" id="server-url" placeholder="http://localhost:8019">
     <div class="modal-foot">
@@ -510,6 +512,15 @@ const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',demo:
 C.key=gk(C.provider);
 const _apiMeta=document.querySelector('meta[name="api-base"]');
 const BASE=_apiMeta&&_apiMeta.content?_apiMeta.content.replace(/\/$/,''):(window.location.protocol==='file:'||!window.location.host)?(localStorage.getItem('19labs_server')||'http://localhost:8019'):window.location.origin;
+let ACCESS_TOKEN=localStorage.getItem('19labs_access_token')||'';
+function apiFetch(url,options={}){
+  if(ACCESS_TOKEN){options.headers={...( options.headers||{}),'Authorization':`Bearer ${ACCESS_TOKEN}`};}
+  return fetch(url,options).then(r=>{
+    if(r.status===401){toast('Access token required. Set it in Settings (⌘,).','err');}
+    return r;
+  });
+}
+function sseUrl(path){return ACCESS_TOKEN?`${path}?token=${encodeURIComponent(ACCESS_TOKEN)}`:path;}
 const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false};
 
 // ═══════════════════════════════════════════
@@ -517,6 +528,7 @@ const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[]
 // ═══════════════════════════════════════════
 function openSettings(){
   document.getElementById('key-input').value=C.key;
+  document.getElementById('access-token-input').value=ACCESS_TOKEN;
   document.getElementById('server-url').value=localStorage.getItem('19labs_server')||'http://localhost:8019';
   document.getElementById('budget-slider').value=S.budget;
   document.getElementById('budget-val').textContent=S.budget;
@@ -542,11 +554,13 @@ function spUI(p){
 }
 async function saveSettings(){
   const k=document.getElementById('key-input').value.trim();
+  const at=document.getElementById('access-token-input').value.trim();
   const su=document.getElementById('server-url').value.trim();
   const newBudget=parseInt(document.getElementById('budget-slider').value)||6;
   S.budget=newBudget;localStorage.setItem('19labs_budget',newBudget);
   localStorage.setItem('19labs_rmode',S.rmode);
   if(k){C.key=k;C.demo=false;localStorage.setItem(`19labs_api_key_${C.provider}`,k);localStorage.setItem('19labs_api_key_last',k)}
+  ACCESS_TOKEN=at;localStorage.setItem('19labs_access_token',at);
   if(su){const prev=localStorage.getItem('19labs_server')||'http://localhost:8019';if(su!==prev){localStorage.setItem('19labs_server',su);location.reload();return}}
   closeSettings();
   if(k){warmKey();toast('API key saved','ok')}else{toast('Settings saved','ok')}
@@ -554,7 +568,7 @@ async function saveSettings(){
 }
 async function warmKey(){
   if(!C.key)return;
-  try{await fetch(`${BASE}/api/validate-key`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:C.key,provider:C.provider})})}catch(_){}
+  try{await apiFetch(`${BASE}/api/validate-key`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:C.key,provider:C.provider})})}catch(_){}
 }
 
 // ═══════════════════════════════════════════
@@ -859,7 +873,7 @@ async function runDiscover(hint){
   sbUpdate({status:'Analyzing...',running:true});
   let key=C.key||gk(C.provider);
   try{
-    const dr=await fetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:S.file.name,csv:S.csv,hint:hint||'',api_key:key||undefined,provider:C.provider})});
+    const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:S.file.name,csv:S.csv,hint:hint||'',api_key:key||undefined,provider:C.provider})});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){
@@ -913,7 +927,7 @@ async function launchRun(){
   if(C.demo){await runPreview();return}
   if(!C.key)C.key=gk(C.provider);
   if(!C.key){
-    try{const pr=await fetch(`${BASE}/api/provider-status`);if(pr.ok){const pj=await pr.json();if(!pj.server_key_available&&!pj.cached_key_available){chat('ai','Need an API key for real experiments.');showKeyPrompt();return}}}catch(_){}
+    try{const pr=await apiFetch(`${BASE}/api/provider-status`);if(pr.ok){const pj=await pr.json();if(!pj.server_key_available&&!pj.cached_key_available){chat('ai','Need an API key for real experiments.');showKeyPrompt();return}}}catch(_){}
   }
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
@@ -929,7 +943,7 @@ async function launchRun(){
 
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
   try{
-    const sr=await fetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous})});
+    const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous})});
     if(!sr.ok)throw new Error(`Server error (${sr.status}): ${await sr.text()}`);
     const{run_id}=await sr.json();S.runId=run_id;updStatus();
     addRunHistory(run_id,'running',S.file?.name||'Run');
@@ -939,7 +953,7 @@ async function launchRun(){
     let es;
     activeAbort=new AbortController();
     await new Promise((resolve)=>{
-      es=new EventSource(`${BASE}/api/run/${run_id}/stream`);
+      es=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
       S._es=es;
       es.onmessage=e=>{
         const d=JSON.parse(e.data);
@@ -947,17 +961,17 @@ async function launchRun(){
         S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
       };
       es.onerror=()=>{es.close();chat('sys','Stream disconnected, polling...');
-        const poll=setInterval(async()=>{try{const pr=await fetch(`${BASE}/api/run/${run_id}/status`);if(!pr.ok)return;const ps=await pr.json();if(ps.status==='done'||ps.status==='error'){clearInterval(poll);resolve()}}catch(_){}},3000);
+        const poll=setInterval(async()=>{try{const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);if(!pr.ok)return;const ps=await pr.json();if(ps.status==='done'||ps.status==='error'){clearInterval(poll);resolve()}}catch(_){}},3000);
       };
       activeAbort.signal.addEventListener('abort',()=>{es.close();resolve()});
     });
 
     setProg(92);
-    let st=await(await fetch(`${BASE}/api/run/${run_id}/status`)).json();
+    let st=await(await apiFetch(`${BASE}/api/run/${run_id}/status`)).json();
     // Wait briefly for stopping runs to finalize
     if(st.status==='stopping'){
       await new Promise(r=>setTimeout(r,3000));
-      st=await(await fetch(`${BASE}/api/run/${run_id}/status`)).json();
+      st=await(await apiFetch(`${BASE}/api/run/${run_id}/status`)).json();
     }
     if(st.status==='error'&&!st.best&&!st.history?.length)throw new Error(st.error||'Run failed');
     if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
@@ -1045,7 +1059,7 @@ function procMsg(d){
 async function fetchTrainPy(){
   if(!S.runId)return;
   try{
-    const r=await fetch(`${BASE}/api/run/${S.runId}/artifact/train_py`);
+    const r=await apiFetch(`${BASE}/api/run/${S.runId}/artifact/train_py`);
     if(r.ok){const t=await r.text();updateMonaco(t)}
   }catch(_){}
 }
@@ -1150,15 +1164,15 @@ function showArts(runId,arts){
 // ═══════════════════════════════════════════
 async function dlDeploy(rid){
   toast('Packaging model...','info',2000);
-  try{const r=await fetch(`${BASE}/api/run/${rid}/deploy`);if(!r.ok)throw new Error(await r.text());const b=await r.blob();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`19labs_model_${rid}.zip`;a.click();URL.revokeObjectURL(u);toast('Model downloaded','ok')}catch(e){toast(`Download failed: ${e.message.slice(0,60)}`,'err')}
+  try{const r=await apiFetch(`${BASE}/api/run/${rid}/deploy`);if(!r.ok)throw new Error(await r.text());const b=await r.blob();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`19labs_model_${rid}.zip`;a.click();URL.revokeObjectURL(u);toast('Model downloaded','ok')}catch(e){toast(`Download failed: ${e.message.slice(0,60)}`,'err')}
 }
 async function dlPack(rid){
   toast('Building project pack...','info',2000);
-  try{const r=await fetch(`${BASE}/api/run/${rid}/project-pack`);if(!r.ok)throw new Error(await r.text());const b=await r.blob();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`19labs_project_${rid}.zip`;a.click();URL.revokeObjectURL(u);toast('Project pack downloaded','ok')}catch(e){toast(`Download failed: ${e.message.slice(0,60)}`,'err')}
+  try{const r=await apiFetch(`${BASE}/api/run/${rid}/project-pack`);if(!r.ok)throw new Error(await r.text());const b=await r.blob();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`19labs_project_${rid}.zip`;a.click();URL.revokeObjectURL(u);toast('Project pack downloaded','ok')}catch(e){toast(`Download failed: ${e.message.slice(0,60)}`,'err')}
 }
 async function genHandoff(rid){
   toast('Generating handoff...','info',2000);
-  try{const r=await fetch(`${BASE}/api/run/${rid}/project-handoff`);if(!r.ok)throw new Error(await r.text());const h=await r.json();chat('ai',`<strong>Project handoff ready.</strong><br><br>${esc(h.executive_brief||'See artifacts.')}`);toast('Handoff ready','ok')}catch(e){toast(`Handoff failed: ${e.message.slice(0,60)}`,'err')}
+  try{const r=await apiFetch(`${BASE}/api/run/${rid}/project-handoff`);if(!r.ok)throw new Error(await r.text());const h=await r.json();chat('ai',`<strong>Project handoff ready.</strong><br><br>${esc(h.executive_brief||'See artifacts.')}`);toast('Handoff ready','ok')}catch(e){toast(`Handoff failed: ${e.message.slice(0,60)}`,'err')}
 }
 
 // ═══════════════════════════════════════════
@@ -1222,7 +1236,7 @@ async function pushCode(){
   if(!monacoEditor||!S.runId)return;
   const code=monacoEditor.getValue();
   try{
-    const r=await fetch(`${BASE}/api/run/${S.runId}/push-code`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
+    const r=await apiFetch(`${BASE}/api/run/${S.runId}/push-code`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
     if(r.ok){toast('Code saved to workspace','ok');document.getElementById('push-btn').textContent='Saved ✓';setTimeout(()=>document.getElementById('push-btn').textContent='Save to workspace',2000)}
     else toast('Failed to save code','err');
   }catch(e){toast(`Save failed: ${e.message.slice(0,60)}`,'err')}
@@ -1311,7 +1325,7 @@ async function cancelRun(){
   setBadge('STOPPING','warn');
   sbUpdate({status:'Stopping...',running:true});
   if(S.runId){
-    try{await fetch(`${BASE}/api/run/${S.runId}/cancel`,{method:'POST'})}catch(_){}
+    try{await apiFetch(`${BASE}/api/run/${S.runId}/cancel`,{method:'POST'})}catch(_){}
   }
   // Don't close EventSource yet — let the engine finish its current experiment
   // The SSE stream will send __DONE__ when the engine wraps up
@@ -1339,7 +1353,7 @@ function renderRunHistory(){
 }
 async function loadRunStatus(id){
   try{
-    const r=await fetch(`${BASE}/api/run/${id}/status`);if(!r.ok)return;
+    const r=await apiFetch(`${BASE}/api/run/${id}/status`);if(!r.ok)return;
     const st=await r.json();
     if(st.best){S.best=st.best;S.runId=id}
     if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
