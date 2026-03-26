@@ -4,55 +4,126 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>19Labs</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,200;0,14..32,300;0,14..32,400;0,14..32,500;1,14..32,300&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
-body{background:#09090b;color:#fff;font-family:'Inter',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+body{background:#060608;color:#fff;font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+
 canvas{position:fixed;inset:0;z-index:0}
 
-nav{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;height:60px;padding:0 28px;border-bottom:1px solid rgba(255,255,255,.06)}
-.n-logo{font-size:16px;font-weight:600;color:#fff;text-decoration:none;letter-spacing:-.3px}
-.n-logo span{color:rgba(255,255,255,.35);font-weight:400}
-.n-links{display:flex;align-items:center;gap:2px;margin-left:28px}
-.n-links a{font-size:13.5px;color:rgba(255,255,255,.5);text-decoration:none;padding:7px 12px;border-radius:7px;transition:all .15s;font-weight:400}
-.n-links a:hover{color:#fff;background:rgba(255,255,255,.07)}
-.n-r{margin-left:auto}
-.n-r a{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:500;color:#09090b;background:#fff;padding:8px 18px;border-radius:8px;text-decoration:none;transition:all .2s}
-.n-r a:hover{background:rgba(255,255,255,.88)}
+/* subtle radial glow behind content */
+.glow-bg{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 60% 50% at 50% 55%, rgba(99,102,241,.07) 0%, transparent 70%);
+}
 
-.page{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;pointer-events:none;text-align:center;padding-bottom:12px}
+/* ── Nav ── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:20;
+  display:flex;align-items:center;height:58px;padding:0 32px;
+}
+.n-logo{
+  font-size:15px;font-weight:500;color:#fff;text-decoration:none;letter-spacing:-.25px;
+}
+.n-logo em{font-style:normal;color:rgba(255,255,255,.3);font-weight:300}
+.n-links{display:flex;align-items:center;gap:1px;margin-left:32px}
+.n-links a{
+  font-size:13px;color:rgba(255,255,255,.42);text-decoration:none;
+  padding:6px 11px;border-radius:6px;transition:color .15s;font-weight:400;
+}
+.n-links a:hover{color:rgba(255,255,255,.85)}
+.n-r{margin-left:auto;display:flex;align-items:center;gap:10px}
+.n-r .n-app{
+  font-size:13px;font-weight:400;color:rgba(255,255,255,.5);text-decoration:none;transition:color .15s;
+}
+.n-r .n-app:hover{color:#fff}
+.n-r .n-dl{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:13px;font-weight:500;color:#fff;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);
+  padding:7px 16px;border-radius:8px;text-decoration:none;transition:all .2s;
+}
+.n-r .n-dl:hover{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.22)}
+
+/* ── Hero ── */
+.page{
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  z-index:10;pointer-events:none;text-align:center;
+}
 .page>*{pointer-events:auto}
 
-.badge{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:500;color:rgba(255,255,255,.45);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);padding:5px 14px;border-radius:99px;margin-bottom:28px;letter-spacing:.06em;text-transform:uppercase}
-.badge-dot{width:5px;height:5px;border-radius:50%;background:#22c55e;box-shadow:0 0 8px #22c55e;flex-shrink:0;animation:blink 2.4s ease-in-out infinite}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(255,255,255,.35);margin-bottom:26px;
+}
+.eyebrow-dot{
+  width:5px;height:5px;border-radius:50%;
+  background:#6366f1;box-shadow:0 0 10px #6366f1;
+  animation:pulse 2.5s ease-in-out infinite;
+}
 
-h1{font-size:58px;font-weight:300;line-height:1.08;letter-spacing:-2.5px;margin-bottom:18px;color:#fff}
-h1 strong{font-weight:600}
-.sub{font-size:15px;color:rgba(255,255,255,.4);line-height:1.7;margin-bottom:40px;font-weight:400}
+h1{
+  font-size:64px;font-weight:200;line-height:1.06;
+  letter-spacing:-3px;margin-bottom:20px;
+  color:#fff;
+}
+h1 strong{font-weight:500;letter-spacing:-3px}
 
-.dl-section{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:32px}
-.dl-btn{display:inline-flex;align-items:center;gap:9px;font-size:14.5px;font-weight:500;color:#09090b;background:#fff;padding:13px 28px;border-radius:10px;text-decoration:none;transition:all .2s;letter-spacing:-.2px}
-.dl-btn:hover{background:rgba(255,255,255,.9);transform:translateY(-1px);box-shadow:0 8px 28px rgba(0,0,0,.6)}
-.dl-btn svg{width:17px;height:17px}
-.dl-platforms{display:flex;align-items:center;gap:20px}
-.dl-platforms a{font-size:12px;color:rgba(255,255,255,.28);text-decoration:none;display:inline-flex;align-items:center;gap:5px;transition:color .15s}
-.dl-platforms a:hover{color:rgba(255,255,255,.65)}
-.dl-sep{color:rgba(255,255,255,.1);font-size:11px}
-.dl-or{font-size:13px;color:rgba(255,255,255,.28)}
-.dl-or a{color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
-.dl-or a:hover{color:#fff}
+.sub{
+  font-size:14.5px;color:rgba(255,255,255,.35);
+  line-height:1.75;margin-bottom:44px;font-weight:300;
+  letter-spacing:.01em;
+}
 
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-@media(max-width:640px){.n-links{display:none}h1{font-size:36px;letter-spacing:-1.5px}}
+/* ── Download CTA ── */
+.cta{display:flex;flex-direction:column;align-items:center;gap:16px}
+
+.cta-row{display:flex;align-items:center;gap:10px}
+
+.dl-primary{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:14px;font-weight:500;color:#fff;
+  background:linear-gradient(135deg,#6366f1,#8b5cf6);
+  padding:12px 26px;border-radius:9px;text-decoration:none;
+  transition:all .25s;letter-spacing:-.15px;
+  box-shadow:0 0 0 1px rgba(99,102,241,.3),0 4px 20px rgba(99,102,241,.25);
+}
+.dl-primary:hover{
+  transform:translateY(-1px);
+  box-shadow:0 0 0 1px rgba(99,102,241,.5),0 8px 30px rgba(99,102,241,.4);
+}
+.dl-primary svg{width:15px;height:15px;opacity:.85}
+
+.dl-secondary{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:14px;font-weight:400;color:rgba(255,255,255,.55);
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
+  padding:12px 22px;border-radius:9px;text-decoration:none;transition:all .2s;
+}
+.dl-secondary:hover{color:rgba(255,255,255,.9);background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.15)}
+
+.platforms{
+  display:flex;align-items:center;gap:18px;
+  font-size:11.5px;color:rgba(255,255,255,.22);
+}
+.platforms a{color:rgba(255,255,255,.22);text-decoration:none;transition:color .15s}
+.platforms a:hover{color:rgba(255,255,255,.6)}
+.platforms-sep{color:rgba(255,255,255,.1)}
+
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+@media(max-width:680px){.n-links{display:none}h1{font-size:40px;letter-spacing:-2px}.cta-row{flex-direction:column}}
 </style>
 </head>
 <body>
 
 <canvas id="c"></canvas>
+<div class="glow-bg"></div>
 
 <nav>
-  <a href="/" class="n-logo">19<span>Labs</span></a>
+  <a href="/" class="n-logo">19<em>Labs</em></a>
   <div class="n-links">
     <a href="/app">Product</a>
     <a href="#">Pricing</a>
@@ -60,207 +131,219 @@ h1 strong{font-weight:600}
     <a href="#">Docs</a>
   </div>
   <div class="n-r">
-    <a href="/app">Open App</a>
+    <a href="/app" class="n-app">Open App</a>
+    <a href="https://github.com/jargogn0/yc-able/releases/latest" class="n-dl" id="nav-dl">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span id="nav-dl-label">Download</span>
+    </a>
   </div>
 </nav>
 
 <div class="page">
-  <div class="badge"><span class="badge-dot"></span>v1.0 — Now Available</div>
-  <h1>The Cursor for<br><strong>Data Science</strong></h1>
-  <p class="sub">Drop a dataset. Describe your goal.<br>Get a trained model.</p>
+  <div class="eyebrow"><span class="eyebrow-dot"></span>Now in Early Access</div>
 
-  <div class="dl-section">
-    <a href="https://github.com/jargogn0/yc-able/releases/latest" class="dl-btn" id="dl-main">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      <span id="dl-label">Download for macOS</span>
-    </a>
-    <div class="dl-platforms">
-      <a href="https://github.com/jargogn0/yc-able/releases/latest">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11"/></svg>
-        macOS
+  <h1>The Cursor for<br><strong>Data Science</strong></h1>
+
+  <p class="sub">Drop a dataset. Describe your goal.<br>Get a trained model — no code needed.</p>
+
+  <div class="cta">
+    <div class="cta-row">
+      <a href="https://github.com/jargogn0/yc-able/releases/latest" class="dl-primary" id="dl-main">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span id="dl-label">Download for macOS</span>
       </a>
-      <span class="dl-sep">·</span>
-      <a href="https://github.com/jargogn0/yc-able/releases/latest">Windows</a>
-      <span class="dl-sep">·</span>
-      <a href="https://github.com/jargogn0/yc-able/releases/latest">Linux</a>
+      <a href="/app" class="dl-secondary">Use in browser</a>
     </div>
-    <p class="dl-or">or <a href="/app">use in browser →</a></p>
+    <div class="platforms">
+      <a href="https://github.com/jargogn0/yc-able/releases/latest">macOS</a>
+      <span class="platforms-sep">·</span>
+      <a href="https://github.com/jargogn0/yc-able/releases/latest">Windows</a>
+      <span class="platforms-sep">·</span>
+      <a href="https://github.com/jargogn0/yc-able/releases/latest">Linux</a>
+      <span class="platforms-sep">·</span>
+      <a href="https://github.com/jargogn0/yc-able/releases" style="color:rgba(255,255,255,.18)">All releases</a>
+    </div>
   </div>
 </div>
 
 <script>
-// ─── Neural Network Background ────────────────────────────────────────────────
+// ── Compact, elegant neural network ─────────────────────────────────────────
 const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
+const ctx    = canvas.getContext('2d');
 let W, H;
-const mouse = { x: -9999, y: -9999 };
+const mouse  = { x: -9999, y: -9999 };
 
-// Layer structure: nodes per layer
-const LAYER_SIZES = [5, 8, 11, 14, 14, 11, 8, 5];
-let nodes = [], edges = [], signals = [];
-let frame = 0;
+// Smaller, tighter architecture
+const ARCH = [3, 5, 7, 9, 7, 5, 3];
 
-const PALETTE = [
-  [139, 92, 246],  // violet
-  [99, 102, 241],  // indigo
-  [59, 130, 246],  // blue
-  [20, 184, 166],  // teal
-  [236, 72, 153],  // pink
-  [34, 197, 94],   // green
-  [251, 146, 60],  // orange
+const COLORS = [
+  [99,  102, 241],  // indigo
+  [139, 92,  246],  // violet
+  [168, 85,  247],  // purple
+  [59,  130, 246],  // blue
+  [20,  184, 166],  // teal
 ];
 
-function resize() {
-  W = canvas.width = innerWidth;
-  H = canvas.height = innerHeight;
-  buildGraph();
-}
+let nodes = [], edges = [], pulses = [];
+let tick = 0;
 
-function buildGraph() {
-  nodes = [];
-  edges = [];
-  signals = [];
+function rebuild() {
+  nodes = []; edges = []; pulses = [];
 
-  const nLayers = LAYER_SIZES.length;
-  const padX = W * 0.1;
-  const padY = H * 0.14;
-  const uw = W - padX * 2;
-  const uh = H - padY * 2;
+  // Network occupies center 55% of screen width, 60% height
+  const netW = Math.min(W * 0.55, 700);
+  const netH = Math.min(H * 0.55, 380);
+  const ox = (W - netW) / 2;
+  const oy = (H - netH) / 2 + 30; // shift down slightly
 
-  // Create nodes
-  LAYER_SIZES.forEach((count, li) => {
-    const lx = padX + (li / (nLayers - 1)) * uw;
+  ARCH.forEach((count, li) => {
+    const lx = ox + (li / (ARCH.length - 1)) * netW;
     for (let i = 0; i < count; i++) {
-      const ly = padY + ((i + 0.5) / count) * uh;
+      const ly = oy + ((i + 0.5) / count) * netH;
       nodes.push({
-        x: lx + (Math.random() - 0.5) * 40,
-        y: ly + (Math.random() - 0.5) * 30,
         bx: lx, by: ly,
+        x: lx, y: ly,
         vx: 0, vy: 0,
-        r: 2.5 + Math.random() * 1.5,
+        r: 2.8,
         layer: li,
         glow: 0,
-        color: PALETTE[li % PALETTE.length],
+        glowColor: COLORS[0],
       });
     }
   });
 
-  // Create edges between adjacent layers
-  let ni = 0;
-  for (let li = 0; li < nLayers; li++) {
-    const count = LAYER_SIZES[li];
-    const nextCount = LAYER_SIZES[li + 1];
-    if (!nextCount) { ni += count; continue; }
-    for (let i = 0; i < count; i++) {
-      for (let j = 0; j < nextCount; j++) {
-        edges.push({
-          a: ni + i,
-          b: ni + count + j,
-          alpha: 0.04 + Math.random() * 0.08,
-        });
+  // Connect all nodes in adjacent layers (classic MLP)
+  let base = 0;
+  for (let li = 0; li < ARCH.length - 1; li++) {
+    const c0 = ARCH[li], c1 = ARCH[li + 1];
+    for (let a = 0; a < c0; a++) {
+      for (let b = 0; b < c1; b++) {
+        edges.push({ a: base + a, b: base + c0 + b });
       }
     }
-    ni += count;
+    base += c0;
   }
 }
 
-function spawnSignal() {
-  if (edges.length === 0) return;
-  // Pick a random layer and fire forward
-  const li = Math.floor(Math.random() * (LAYER_SIZES.length - 1));
-  const candidateEdges = edges.filter(e => nodes[e.a].layer === li);
-  if (!candidateEdges.length) return;
-  const e = candidateEdges[Math.floor(Math.random() * candidateEdges.length)];
-  signals.push({
-    a: e.a, b: e.b, t: 0,
-    speed: 0.008 + Math.random() * 0.006,
-    color: PALETTE[li % PALETTE.length],
-    trail: [],
-  });
+function resize() {
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+  rebuild();
+}
+
+function layerStartIndex(li) {
+  let idx = 0;
+  for (let i = 0; i < li; i++) idx += ARCH[i];
+  return idx;
+}
+
+function fireSignal() {
+  // Pick a random layer→layer+1 edge and send a pulse
+  const li = Math.floor(Math.random() * (ARCH.length - 1));
+  const base = layerStartIndex(li);
+  const nextBase = base + ARCH[li];
+  const a = base + Math.floor(Math.random() * ARCH[li]);
+  const b = nextBase + Math.floor(Math.random() * ARCH[li + 1]);
+  const col = COLORS[Math.floor(Math.random() * COLORS.length)];
+  pulses.push({ a, b, t: 0, speed: 0.022 + Math.random() * 0.012, color: col });
 }
 
 function draw() {
-  frame++;
+  tick++;
   ctx.clearRect(0, 0, W, H);
 
-  // Update nodes (drift + mouse repulsion)
+  // Animate nodes (subtle drift + mouse repulsion)
   nodes.forEach(n => {
     const dx = n.x - mouse.x, dy = n.y - mouse.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 130 && d > 0) {
-      const f = ((130 - d) / 130) * 0.35;
+    const d  = Math.hypot(dx, dy);
+    if (d < 100 && d > 0) {
+      const f = ((100 - d) / 100) * 0.28;
       n.vx += dx / d * f;
       n.vy += dy / d * f;
     }
-    n.vx += (n.bx - n.x) * 0.025;
-    n.vy += (n.by - n.y) * 0.025;
-    n.vx *= 0.85;
-    n.vy *= 0.85;
-    n.x += n.vx;
-    n.y += n.vy;
-    if (n.glow > 0) n.glow -= 0.035;
+    n.vx += (n.bx - n.x) * 0.03;
+    n.vy += (n.by - n.y) * 0.03;
+    n.vx *= 0.82;
+    n.vy *= 0.82;
+    n.x  += n.vx;
+    n.y  += n.vy;
+    if (n.glow > 0) n.glow -= 0.03;
   });
 
   // Draw edges
+  ctx.lineWidth = 0.6;
   edges.forEach(e => {
     const a = nodes[e.a], b = nodes[e.b];
+    // Dim edge, slightly brighter if either endpoint is glowing
+    const glow  = Math.max(a.glow, b.glow);
+    const alpha = 0.06 + glow * 0.12;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
-    ctx.strokeStyle = `rgba(255,255,255,${e.alpha})`;
-    ctx.lineWidth = 0.7;
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
     ctx.stroke();
   });
 
-  // Draw signals
-  signals = signals.filter(s => s.t < 1);
-  signals.forEach(s => {
-    s.t += s.speed;
-    const a = nodes[s.a], b = nodes[s.b];
-    const px = a.x + (b.x - a.x) * s.t;
-    const py = a.y + (b.y - a.y) * s.t;
-    const [r, g, bl] = s.color;
+  // Draw pulses
+  pulses = pulses.filter(p => p.t < 1);
+  pulses.forEach(p => {
+    p.t += p.speed;
+    const a = nodes[p.a], b = nodes[p.b];
+    const px = a.x + (b.x - a.x) * p.t;
+    const py = a.y + (b.y - a.y) * p.t;
+    const [r, g, bl] = p.color;
 
-    // Bright dot
-    const grd = ctx.createRadialGradient(px, py, 0, px, py, 8);
-    grd.addColorStop(0, `rgba(${r},${g},${bl},1)`);
-    grd.addColorStop(0.4, `rgba(${r},${g},${bl},0.4)`);
-    grd.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    // Glow around the pulse
+    const grd = ctx.createRadialGradient(px, py, 0, px, py, 9);
+    grd.addColorStop(0,   `rgba(${r},${g},${bl},0.95)`);
+    grd.addColorStop(0.35,`rgba(${r},${g},${bl},0.3)`);
+    grd.addColorStop(1,   `rgba(${r},${g},${bl},0)`);
     ctx.beginPath();
-    ctx.arc(px, py, 8, 0, Math.PI * 2);
+    ctx.arc(px, py, 9, 0, Math.PI * 2);
     ctx.fillStyle = grd;
     ctx.fill();
 
-    // Trigger node glow on arrival
-    if (s.t >= 1) {
-      nodes[s.b].glow = 1;
-      nodes[s.b].color = s.color;
+    // Tiny bright core
+    ctx.beginPath();
+    ctx.arc(px, py, 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${bl},1)`;
+    ctx.fill();
+
+    if (p.t >= 0.98) {
+      nodes[p.b].glow      = 1;
+      nodes[p.b].glowColor = p.color;
     }
   });
 
   // Draw nodes
   nodes.forEach(n => {
-    const [r, g, bl] = n.color;
+    const [r, g, bl] = n.glow > 0.05 ? n.glowColor : [180, 180, 200];
     const glow = Math.max(0, n.glow);
-    if (glow > 0.01) {
-      const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 5 + glow * 10);
-      grd.addColorStop(0, `rgba(${r},${g},${bl},${glow * 0.7})`);
+
+    if (glow > 0.02) {
+      const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, 18);
+      grd.addColorStop(0, `rgba(${r},${g},${bl},${glow * 0.55})`);
       grd.addColorStop(1, `rgba(${r},${g},${bl},0)`);
       ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r * 5 + glow * 10, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, 18, 0, Math.PI * 2);
       ctx.fillStyle = grd;
       ctx.fill();
     }
+
     ctx.beginPath();
-    ctx.arc(n.x, n.y, n.r + glow * 2, 0, Math.PI * 2);
+    ctx.arc(n.x, n.y, n.r + glow * 1.8, 0, Math.PI * 2);
     ctx.fillStyle = glow > 0.05
-      ? `rgba(${r},${g},${bl},${0.6 + glow * 0.4})`
-      : 'rgba(255,255,255,0.35)';
+      ? `rgba(${r},${g},${bl},${0.7 + glow * 0.3})`
+      : 'rgba(255,255,255,0.22)';
     ctx.fill();
   });
 
-  // Spawn signals rhythmically
-  if (frame % 12 === 0 && signals.length < 40) spawnSignal();
+  // Fire pulses rhythmically — cascade through layers
+  if (tick % 22 === 0 && pulses.length < 18) fireSignal();
+  // Occasional multi-fire burst
+  if (tick % 110 === 0) {
+    for (let i = 0; i < 4; i++) setTimeout(fireSignal, i * 60);
+  }
 
   requestAnimationFrame(draw);
 }
@@ -278,11 +361,14 @@ draw();
 
 // OS detection
 (function() {
-  const lbl = document.getElementById('dl-label');
-  const ua = navigator.userAgent || '';
-  if (/Win/i.test(ua)) lbl.textContent = 'Download for Windows';
-  else if (/Linux/i.test(ua) && !/Android/i.test(ua)) lbl.textContent = 'Download for Linux';
-  else lbl.textContent = 'Download for macOS';
+  const lbl     = document.getElementById('dl-label');
+  const navLbl  = document.getElementById('nav-dl-label');
+  const ua      = navigator.userAgent || '';
+  let os = 'macOS';
+  if (/Win/i.test(ua))                           os = 'Windows';
+  else if (/Linux/i.test(ua) && !/Android/i.test(ua)) os = 'Linux';
+  lbl.textContent    = 'Download for ' + os;
+  navLbl.textContent = 'Download';
 })();
 </script>
 </body>
