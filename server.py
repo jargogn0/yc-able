@@ -779,6 +779,145 @@ async def chat_endpoint(req: ChatRequest):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+# ── INLINE CHART GENERATION ────────────────────────────────────
+class ChartRequest(BaseModel):
+    query: str           # e.g. "show me revenue by month"
+    csv_text: str = ""   # raw CSV data
+    headers: list[str] = []
+    sample_rows: list[list[str]] = []
+    api_key: str = ""
+    provider: str = "claude"
+
+@app.post("/api/chart")
+async def generate_chart(req: ChartRequest):
+    """Generate a chart from natural language + data. Returns chart spec for client-side rendering."""
+    api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(400, "API key required")
+
+    import pandas as pd, io, numpy as np
+
+    # Build a dataframe from whatever we have
+    if req.csv_text:
+        df = pd.read_csv(io.StringIO(req.csv_text), nrows=5000)
+    elif req.headers and req.sample_rows:
+        df = pd.DataFrame(req.sample_rows, columns=req.headers)
+    else:
+        raise HTTPException(400, "Provide csv_text or headers+sample_rows")
+
+    # Build a rich data summary for the LLM
+    col_info = []
+    for col in df.columns:
+        s = df[col].dropna()
+        info = {"name": col, "dtype": str(df[col].dtype)}
+        if pd.api.types.is_numeric_dtype(s):
+            info.update({"min": float(s.min()), "max": float(s.max()), "mean": float(s.mean()), "type": "numeric"})
+        else:
+            info.update({"unique": int(s.nunique()), "top3": s.value_counts().head(3).to_dict(), "type": "categorical"})
+        col_info.append(info)
+
+    from engine import ask, _init_client
+    _init_client(api_key, req.provider or "claude")
+
+    prompt = f"""Given this dataset and query, generate a chart specification.
+
+QUERY: {req.query}
+
+COLUMNS ({len(df.columns)}):
+{json.dumps(col_info, indent=1, default=str)[:3000]}
+
+SAMPLE (first 3 rows):
+{df.head(3).to_string(index=False)[:1000]}
+
+Return STRICT JSON with this format:
+{{
+  "chart_type": "bar|line|scatter|histogram|pie|heatmap|box",
+  "title": "Chart Title",
+  "x": {{"column": "col_name", "label": "X Label"}},
+  "y": {{"column": "col_name", "label": "Y Label", "agg": "sum|mean|count|max|min|none"}},
+  "color": {{"column": "col_name_or_null"}},
+  "insight": "One sentence insight about the data",
+  "sort": "asc|desc|none",
+  "limit": 20
+}}
+
+Pick the chart type that best answers the query. If the user asks about distribution, use histogram. If trends over time, use line. If comparison, use bar. If relationship, use scatter.
+For aggregations: if y needs grouping by x, set agg (sum/mean/count). If raw values, set "none".
+Return ONLY the JSON object, no markdown."""
+
+    try:
+        raw = ask("You generate chart specifications from natural language. Return only valid JSON.", prompt, 800)
+        # Parse JSON from response
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', raw)
+        if not json_match:
+            return {"ok": False, "error": "Could not parse chart spec"}
+        spec = json.loads(json_match.group())
+
+        # Now compute the actual data for the chart
+        chart_data = _compute_chart_data(df, spec)
+        spec["data"] = chart_data
+        spec["total_rows"] = len(df)
+        return {"ok": True, "spec": spec}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _compute_chart_data(df, spec):
+    """Compute the actual chart data arrays from the dataframe and spec."""
+    import pandas as pd, numpy as np
+
+    x_col = spec.get("x", {}).get("column", "")
+    y_col = spec.get("y", {}).get("column", "")
+    agg = spec.get("y", {}).get("agg", "none")
+    color_col = spec.get("color", {}).get("column")
+    chart_type = spec.get("chart_type", "bar")
+    limit = min(spec.get("limit", 20), 50)
+    sort = spec.get("sort", "none")
+
+    try:
+        if chart_type == "histogram":
+            col = y_col or x_col
+            if col and col in df.columns:
+                s = pd.to_numeric(df[col], errors="coerce").dropna()
+                counts, edges = np.histogram(s, bins=min(30, max(10, len(s) // 20)))
+                labels = [f"{edges[i]:.2f}-{edges[i+1]:.2f}" for i in range(len(counts))]
+                return {"labels": labels, "values": counts.tolist()}
+
+        if chart_type == "pie":
+            col = x_col or y_col
+            if col and col in df.columns:
+                vc = df[col].value_counts().head(limit)
+                return {"labels": vc.index.tolist(), "values": vc.values.tolist()}
+
+        if x_col and x_col in df.columns:
+            if agg and agg != "none" and y_col and y_col in df.columns:
+                grouped = df.groupby(x_col, dropna=True)[y_col].agg(agg).reset_index()
+                if sort == "desc":
+                    grouped = grouped.sort_values(y_col, ascending=False)
+                elif sort == "asc":
+                    grouped = grouped.sort_values(y_col, ascending=True)
+                grouped = grouped.head(limit)
+                labels = grouped[x_col].astype(str).tolist()
+                values = grouped[y_col].tolist()
+            elif y_col and y_col in df.columns:
+                sub = df[[x_col, y_col]].dropna().head(limit * 10)
+                labels = sub[x_col].astype(str).tolist()
+                values = pd.to_numeric(sub[y_col], errors="coerce").tolist()
+            else:
+                vc = df[x_col].value_counts().head(limit)
+                labels = vc.index.astype(str).tolist()
+                values = vc.values.tolist()
+
+            # Convert any numpy types
+            values = [float(v) if isinstance(v, (np.integer, np.floating)) else v for v in values]
+            return {"labels": labels, "values": values}
+
+    except Exception:
+        pass
+
+    return {"labels": [], "values": []}
+
 # ── CREATE INFERENCE API ────────────────────────────────────────
 @app.post("/api/run/{run_id}/create-api")
 async def create_api_server(run_id: str, request: Request):

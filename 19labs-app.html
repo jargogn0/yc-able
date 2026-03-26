@@ -224,6 +224,24 @@ input[type=file]{display:none}
 .dq-item{font-size:12px;color:var(--amber);margin-bottom:3px;line-height:1.5}
 .dq-item::before{content:'⚠ ';font-size:11px}
 
+/* Inline charts in chat */
+.cm-chart{margin:8px 0;border-radius:var(--r);overflow:hidden;background:var(--bg);border:1px solid var(--border);padding:12px}
+.cm-chart-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px}
+.cm-chart-insight{font-size:11px;color:var(--text-3);margin-top:6px;font-style:italic;line-height:1.5}
+.cm-chart svg{width:100%;display:block}
+
+/* Narration messages */
+.cm.narrate{background:linear-gradient(135deg,rgba(59,130,246,.04),rgba(167,139,250,.04));border:1px solid rgba(59,130,246,.12);align-self:flex-start;font-size:12px;color:var(--text-2);padding:8px 12px}
+.cm.narrate .cl{color:var(--purple);font-size:8px}
+
+/* Experiment plot thumbnails */
+.exp-plots{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.exp-plot-thumb{width:80px;height:56px;border-radius:4px;border:1px solid var(--border);overflow:hidden;cursor:pointer;transition:all var(--t);background:var(--bg)}
+.exp-plot-thumb:hover{border-color:var(--accent);transform:scale(1.05)}
+.exp-plot-thumb img{width:100%;height:100%;object-fit:cover}
+.exp-plot-modal{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px;cursor:pointer;animation:fi .15s ease}
+.exp-plot-modal img{max-width:90vw;max-height:90vh;border-radius:8px;border:1px solid var(--border)}
+
 /* Best banner */
 .bb{margin:16px;padding:20px;background:linear-gradient(135deg,rgba(59,130,246,.05),rgba(167,139,250,.03));border:1px solid rgba(59,130,246,.2);border-radius:var(--rl);animation:si .4s ease}
 .bb-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-3);margin-bottom:8px}
@@ -943,6 +961,11 @@ async function send(){
 // CHAT WITH AI
 // ═══════════════════════════════════════════
 async function chatWithAI(message){
+  // Detect chart/visualization requests → generate inline chart
+  if(isChartRequest(message)&&S.csv){
+    await chatGenerateChart(message);
+    return;
+  }
   typing(true);
   const key=C.key||gk(C.provider);
   const ctx={filename:S.file?.name,profile:S.discovery?.profile,best:S.best,objective:S.discovery?.objective||S.discovery?.discovery,history:S.exps};
@@ -1164,6 +1187,17 @@ async function launchRun(){
 
 function procMsg(d){
   const msg=d.msg,tag=d.tag;
+
+  // Narration messages → show as special chat bubbles
+  if(tag==='narrate'){
+    const el=document.createElement('div');el.className='cm narrate';
+    el.innerHTML=`<div class="cl">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
+    const c=document.getElementById('msgs');
+    const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
+    c.appendChild(el);if(atBottom)c.scrollTop=c.scrollHeight;
+    return;
+  }
+
   if(msg.includes('Profiling dataset')){setProg(10);toast('Profiling dataset...','info',2000)}
   else if(msg.includes('Inferring task')){setProg(22);toast('Inferring task type...','info',2000)}
   else if(msg.includes('objective.md'))setProg(30);
@@ -1214,7 +1248,7 @@ async function fetchTrainPy(){
   if(!S.runId)return;
   try{
     const r=await apiFetch(`${BASE}/api/run/${S.runId}/artifact/train_py`);
-    if(r.ok){const t=await r.text();updateMonaco(t)}
+    if(r.ok){const t=await r.text();streamToMonaco(t)}
   }catch(_){}
 }
 
@@ -1257,7 +1291,18 @@ function addExpCard(exp){
     if(allKeys.length)extraDetail=`<strong>All metrics:</strong><br>`+allKeys.map(k=>`  ${k}: ${typeof am[k]==='number'?am[k].toFixed(6):am[k]}`).join('<br>');
     if(exp.what_worked)detail+=`<br><span style="font-size:11px;color:var(--text-3)">${esc(exp.what_worked.slice(0,60))}</span>`;
   }else{detail=esc(classifyFail(exp));extraDetail=exp.error?`<strong>Error:</strong> ${esc(String(exp.error).slice(0,200))}`:''}
-  e.innerHTML=`<div class="exp-n">#${exp.num}</div><div class="exp-info"><div class="exp-model">${esc(exp.model||'Failed')}</div><div class="exp-detail">${detail}</div><div class="exp-extra">${extraDetail}</div></div><div class="exp-tag ${tc}">${tl}</div>`;
+  // Build plot thumbnails if run has artifacts
+  let plotsHtml='';
+  if(S.runId&&exp.success){
+    const plotKeys=[`exp_${String(exp.num).padStart(2,'0')}_predictions_png`,`exp_${String(exp.num).padStart(2,'0')}_residuals_png`,`exp_${String(exp.num).padStart(2,'0')}_feature_importance_png`];
+    const thumbs=plotKeys.map(k=>{
+      const url=`${BASE}/api/run/${S.runId}/artifact/${k}`;
+      return`<div class="exp-plot-thumb" onclick="event.stopPropagation();showPlotModal('${url}')"><img src="${url}" onerror="this.parentElement.style.display='none'" loading="lazy"></div>`;
+    }).join('');
+    if(thumbs)plotsHtml=`<div class="exp-plots">${thumbs}</div>`;
+  }
+
+  e.innerHTML=`<div class="exp-n">#${exp.num}</div><div class="exp-info"><div class="exp-model">${esc(exp.model||'Failed')}</div><div class="exp-detail">${detail}</div>${plotsHtml}<div class="exp-extra">${extraDetail}</div></div><div class="exp-tag ${tc}">${tl}</div>`;
   c.appendChild(e);c.scrollTop=c.scrollHeight;
   // Update charts
   renderMetricChart();
@@ -1903,6 +1948,168 @@ function updateCostDisplay(tu){
 // ═══════════════════════════════════════════
 function toggleExpCard(el){
   el.classList.toggle('expanded');
+}
+
+// ═══════════════════════════════════════════
+// INLINE CHART GENERATION (renders in chat)
+// ═══════════════════════════════════════════
+function renderInlineChart(spec){
+  const d=spec.data||{};
+  const labels=d.labels||[];const values=d.values||[];
+  if(!labels.length||!values.length)return'<div style="color:var(--text-3);font-size:11px">No data to chart.</div>';
+
+  const type=spec.chart_type||'bar';
+  const W=360,H=180,P={l:50,r:16,t:10,b:32};
+  const cW=W-P.l-P.r,cH=H-P.t-P.b;
+
+  const numericVals=values.map(v=>typeof v==='number'?v:parseFloat(v)||0);
+  const maxV=Math.max(...numericVals,0.001);
+  const minV=Math.min(...numericVals,0);
+  const range=maxV-minV||1;
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  // Background
+  svg+=`<rect x="${P.l}" y="${P.t}" width="${cW}" height="${cH}" fill="rgba(255,255,255,0.02)" rx="2"/>`;
+
+  if(type==='bar'||type==='histogram'){
+    const n=Math.min(labels.length,30);
+    const gap=2;
+    const bw=Math.max(4,(cW-gap*(n-1))/n);
+    // Grid
+    for(let i=0;i<=3;i++){
+      const gy=P.t+cH-(cH*i/3);
+      const gv=minV+(range*i/3);
+      svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="#27272a" stroke-width="0.5"/>`;
+      svg+=`<text x="${P.l-4}" y="${gy+3}" font-size="7" fill="#71717a" text-anchor="end" font-family="JetBrains Mono,monospace">${gv>=1000?(gv/1000).toFixed(1)+'k':gv.toFixed(gv<10?2:0)}</text>`;
+    }
+    for(let i=0;i<n;i++){
+      const x=P.l+i*(bw+gap);
+      const h=((numericVals[i]-minV)/range)*cH;
+      const y=P.t+cH-h;
+      svg+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" fill="#3b82f6" rx="1" opacity="0.85"><title>${labels[i]}: ${numericVals[i].toFixed(2)}</title></rect>`;
+      if(n<=15)svg+=`<text x="${x+bw/2}" y="${H-4}" font-size="6" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace" transform="rotate(-30 ${x+bw/2} ${H-4})">${String(labels[i]).slice(0,12)}</text>`;
+    }
+  } else if(type==='line'){
+    const n=labels.length;
+    const x=i=>P.l+(i/(Math.max(n-1,1)))*cW;
+    const y=v=>P.t+cH-(((v-minV)/range)*cH);
+    // Grid
+    for(let i=0;i<=3;i++){
+      const gy=P.t+cH-(cH*i/3);const gv=minV+(range*i/3);
+      svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="#27272a" stroke-width="0.5"/>`;
+      svg+=`<text x="${P.l-4}" y="${gy+3}" font-size="7" fill="#71717a" text-anchor="end" font-family="JetBrains Mono,monospace">${gv.toFixed(gv<10?2:0)}</text>`;
+    }
+    // Area fill
+    let area=`M ${x(0)} ${P.t+cH}`;
+    for(let i=0;i<n;i++) area+=` L ${x(i)} ${y(numericVals[i])}`;
+    area+=` L ${x(n-1)} ${P.t+cH} Z`;
+    svg+=`<path d="${area}" fill="url(#areaGrad)" opacity="0.3"/>`;
+    svg+=`<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3b82f6" stop-opacity="0.4"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs>`;
+    // Line
+    let path=`M ${x(0)} ${y(numericVals[0])}`;
+    for(let i=1;i<n;i++) path+=` L ${x(i)} ${y(numericVals[i])}`;
+    svg+=`<path d="${path}" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>`;
+    // Dots
+    for(let i=0;i<n;i++){
+      svg+=`<circle cx="${x(i)}" cy="${y(numericVals[i])}" r="2.5" fill="#3b82f6"><title>${labels[i]}: ${numericVals[i].toFixed(2)}</title></circle>`;
+    }
+    // X labels
+    const step=Math.max(1,Math.floor(n/8));
+    for(let i=0;i<n;i+=step){
+      svg+=`<text x="${x(i)}" y="${H-4}" font-size="6" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace">${String(labels[i]).slice(0,10)}</text>`;
+    }
+  } else if(type==='scatter'){
+    const n=Math.min(labels.length,200);
+    const x=i=>P.l+(i/(Math.max(n-1,1)))*cW;
+    const y=v=>P.t+cH-(((v-minV)/range)*cH);
+    for(let i=0;i<n;i++){
+      svg+=`<circle cx="${x(i)}" cy="${y(numericVals[i])}" r="2" fill="#3b82f6" opacity="0.6"><title>${labels[i]}: ${numericVals[i].toFixed(2)}</title></circle>`;
+    }
+  } else if(type==='pie'){
+    const total=numericVals.reduce((a,b)=>a+b,0);
+    if(total<=0)return'';
+    const cx=W/2,cy=H/2,r=Math.min(cW,cH)/2-10;
+    const colors=['#3b82f6','#a78bfa','#f59e0b','#ef4444','#10b981','#6366f1','#ec4899','#14b8a6','#f97316','#8b5cf6'];
+    let angle=0;
+    for(let i=0;i<Math.min(labels.length,10);i++){
+      const slice=(numericVals[i]/total)*Math.PI*2;
+      const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle);
+      const x2=cx+r*Math.cos(angle+slice),y2=cy+r*Math.sin(angle+slice);
+      const large=slice>Math.PI?1:0;
+      svg+=`<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${colors[i%10]}" opacity="0.85"><title>${labels[i]}: ${numericVals[i].toFixed(1)} (${(numericVals[i]/total*100).toFixed(1)}%)</title></path>`;
+      angle+=slice;
+    }
+  }
+
+  svg+=`</svg>`;
+  return svg;
+}
+
+async function chatGenerateChart(query){
+  if(!S.csv){toast('Upload data first','warn');return}
+  typing(true);
+  const key=C.key||gk(C.provider);
+  try{
+    const r=await apiFetch(`${BASE}/api/chart`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      query,csv_text:S.csv.slice(0,500000),headers:S.cols||[],api_key:key||undefined,provider:C.provider
+    })});
+    const j=await r.json();typing(false);
+    if(!j.ok){chat('err',j.error||'Chart generation failed');return}
+    const spec=j.spec;
+    const svg=renderInlineChart(spec);
+    const el=document.createElement('div');el.className='cm ai';
+    const title=spec.title||'Chart';
+    const insight=spec.insight||'';
+    el.innerHTML=`<div class="cl">19 Agent</div><div class="cm-chart"><div class="cm-chart-title">${esc(title)}</div>${svg}${insight?`<div class="cm-chart-insight">${esc(insight)}</div>`:''}</div><div class="cm-time">${chatTime()}</div>`;
+    const c=document.getElementById('msgs');c.appendChild(el);c.scrollTop=c.scrollHeight;
+  }catch(e){typing(false);chat('err',`Chart error: ${esc(e.message)}`)}
+}
+
+// Detect chart-like requests in chat mode
+function isChartRequest(text){
+  const lo=text.toLowerCase();
+  const patterns=[/show\s+(me\s+)?/,/plot\s/,/chart\s/,/graph\s/,/visuali[sz]e/,/distribution\s+of/,/histogram\s+of/,
+    /compare\s/,/trend\s/,/correlation\s/,/breakdown\s/,/\bby\b.*\b(month|year|week|day|category|group|type)\b/];
+  return patterns.some(p=>p.test(lo));
+}
+
+// ═══════════════════════════════════════════
+// EXPERIMENT PLOT THUMBNAILS
+// ═══════════════════════════════════════════
+function showPlotModal(src){
+  const bg=document.createElement('div');bg.className='exp-plot-modal';bg.onclick=()=>bg.remove();
+  bg.innerHTML=`<img src="${src}" alt="Plot">`;
+  document.body.appendChild(bg);
+}
+
+// ═══════════════════════════════════════════
+// STREAMING CODE IN MONACO (typewriter effect)
+// ═══════════════════════════════════════════
+let _monacoStreamQueue=[];
+let _monacoStreaming=false;
+function streamToMonaco(code){
+  if(!monacoEditor)return;
+  _monacoStreamQueue=code.split('');
+  if(_monacoStreaming)return;
+  _monacoStreaming=true;
+  monacoEditor.setValue('');
+  const chunkSize=8;// chars per frame
+  function tick(){
+    if(!_monacoStreamQueue.length){_monacoStreaming=false;return}
+    const chunk=_monacoStreamQueue.splice(0,chunkSize).join('');
+    const model=monacoEditor.getModel();
+    if(!model){_monacoStreaming=false;return}
+    const lastLine=model.getLineCount();
+    const lastCol=model.getLineMaxColumn(lastLine);
+    model.applyEdits([{range:{startLineNumber:lastLine,startColumn:lastCol,endLineNumber:lastLine,endColumn:lastCol},text:chunk}]);
+    // Auto-scroll to bottom
+    monacoEditor.revealLine(model.getLineCount());
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  // Ensure code tab has notification
+  const t=document.querySelector('.tab[data-t="code"]');
+  if(t&&!t.querySelector('.tab-badge'))t.innerHTML='Code <span class="tab-badge">!</span>';
 }
 
 // ═══════════════════════════════════════════

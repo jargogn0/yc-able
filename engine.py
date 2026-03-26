@@ -307,6 +307,62 @@ def git_get_commit_hash(ws):
     except Exception:
         return ""
 
+# ── LIVE NARRATION ─────────────────────────────────────────────
+def narrate(cb, event_type, **kwargs):
+    """Generate intelligent real-time narration for the chat during experiments."""
+    messages = {
+        "profiling_start": "Scanning your dataset... looking at distributions, correlations, missing values, and data types.",
+        "profiling_done": lambda: f"Found {kwargs.get('rows', '?'):,} rows × {kwargs.get('cols', '?')} columns. {kwargs.get('signals', '')}",
+        "domain_analysis": "Analyzing what domain this data belongs to and what modeling strategy fits best...",
+        "domain_done": lambda: f"Domain identified: {kwargs.get('domain', 'General')}. Strategy: {kwargs.get('strategy', 'standard ML pipeline')}",
+        "writing_plan": "Writing the research plan (program.md) — this is the blueprint for all experiments.",
+        "writing_code": lambda: f"Writing experiment #{kwargs.get('num', 1)} — {kwargs.get('approach', 'generating training code')}...",
+        "installing": lambda: f"Installing {kwargs.get('pkg', 'packages')}... (auto-detected from imports)",
+        "executing": lambda: f"Running experiment #{kwargs.get('num', 1)}... {kwargs.get('model', '')} training in progress.",
+        "metrics_parsed": lambda: _narrate_metrics(kwargs),
+        "keep_decision": lambda: f"KEEP — {kwargs.get('model', 'model')} achieved {kwargs.get('metric', 'metric')}={kwargs.get('val', 0):.4f}. {kwargs.get('reason', 'New best score.')}",
+        "discard_decision": lambda: f"DISCARD — {kwargs.get('reason', 'Score did not improve.')} Trying a different approach next.",
+        "crash_recovery": lambda: f"Experiment crashed ({kwargs.get('reason', 'error')}). Auto-repairing and retrying...",
+        "hard_reset": "3 crashes in a row — hard resetting to last known good checkpoint via git.",
+        "stagnation": "Stagnation detected — pivoting to a completely different modeling strategy.",
+        "good_enough": lambda: f"Hit the quality threshold! {kwargs.get('metric', 'metric')}={kwargs.get('val', 0):.4f} is excellent for this domain.",
+        "final_report": "Generating final report with findings, methodology, and deployment package...",
+        "overfitting_warning": lambda: f"Overfitting detected on #{kwargs.get('num', '?')}: train={kwargs.get('train', 0):.4f} vs test={kwargs.get('test', 0):.4f}. Next experiment will add regularization.",
+        "improvement": lambda: f"Improvement! {kwargs.get('metric', 'metric')} went from {kwargs.get('prev', 0):.4f} → {kwargs.get('curr', 0):.4f} ({kwargs.get('pct', 0):+.1f}%)",
+    }
+
+    template = messages.get(event_type)
+    if not template:
+        return
+    msg = template() if callable(template) else template
+    if cb:
+        cb("narrate", msg)
+
+def _narrate_metrics(kwargs):
+    """Build a rich narration from experiment metrics."""
+    model = kwargs.get('model', 'Model')
+    metrics = kwargs.get('metrics', {})
+    primary = kwargs.get('primary_metric', 'metric')
+    val = kwargs.get('val')
+
+    parts = [f"{model} finished"]
+    if val is not None:
+        parts.append(f"— {primary}={val:.4f}")
+
+    # Detect overfitting
+    train_key = f"train_{primary}"
+    test_key = f"test_{primary}"
+    if train_key in metrics and test_key in metrics:
+        train_v = metrics[train_key]
+        test_v = metrics[test_key]
+        ratio = abs(train_v - test_v) / max(abs(test_v), 1e-10)
+        if ratio > 0.3:
+            parts.append(f"(overfitting: train={train_v:.4f}, test={test_v:.4f})")
+        else:
+            parts.append(f"(good generalization: train={train_v:.4f} ≈ test={test_v:.4f})")
+
+    return " ".join(parts)
+
 # ── PROFILE ────────────────────────────────────────────────────
 def _read_csv_smart(csv_path):
     """Try multiple delimiters and encodings to load a CSV correctly."""
@@ -1945,20 +2001,30 @@ def run_research(
 
     # PROFILE
     log.engine("Profiling dataset...")
+    narrate(log_callback, "profiling_start")
     profile = profile_dataset(csv_path)
     log.engine(f"{profile['rows']:,} rows × {profile['cols']} cols | numeric={profile['numeric']} | cat={profile['categorical']}")
     log.engine(f"Signals: {' | '.join(profile.get('signals', []))}")
+    narrate(log_callback, "profiling_done", rows=profile['rows'], cols=profile['cols'], signals='; '.join(profile.get('signals', [])[:2]))
     (ws / "profile.json").write_text(json.dumps(profile, indent=2, default=str))
 
     # DOMAIN INTELLIGENCE — reason like a senior data scientist
     log.engine("Analyzing domain and data quality...")
+    narrate(log_callback, "domain_analysis")
     domain_analysis = analyze_domain(profile, user_hint)
     (ws / "domain_analysis.md").write_text(domain_analysis)
     # Log key lines from domain analysis
+    domain_name = ""
+    strategy_name = ""
     for line in domain_analysis.split("\n"):
         line = line.strip()
         if line and any(line.startswith(k) for k in ("INDUSTRY:", "PROBLEM_TYPE:", "MODELING_STRATEGY:", "CRITICAL_WARNINGS:")):
             log.claude(line[:200])
+            if line.startswith("INDUSTRY:"):
+                domain_name = line[len("INDUSTRY:"):].strip()[:80]
+            if line.startswith("MODELING_STRATEGY:"):
+                strategy_name = line[len("MODELING_STRATEGY:"):].strip()[:80]
+    narrate(log_callback, "domain_done", domain=domain_name or "General", strategy=strategy_name or "standard ML pipeline")
 
     # INFER
     log.engine("Inferring task from data...")
@@ -1999,10 +2065,12 @@ def run_research(
     consecutive_crashes = 0
 
     init_results_tsv(ws)
+    narrate(log_callback, "writing_plan")
     program_md = write_program_md(profile, obj, history, insights, domain_analysis=domain_analysis)
     (ws / "program.md").write_text(program_md)
     log.engine("program.md written (research spec — drives all experiments)")
 
+    narrate(log_callback, "writing_code", num=1, approach="initial baseline model")
     train_py = write_train_py(program_md, profile, obj, 1, history, domain_analysis=domain_analysis)
     train_py, initial_notes = apply_code_guardrails(train_py)
     if initial_notes:
@@ -2034,8 +2102,10 @@ def run_research(
         installed = auto_install_packages(train_py, log)
         if installed:
             log.engine(f"Auto-installed: {', '.join(installed)}")
+            narrate(log_callback, "installing", pkg=', '.join(installed))
 
         # RUN — all output to run.log, grep metrics from log
+        narrate(log_callback, "executing", num=n, model=_infer_model_name(train_py))
         res = execute(train_py, csv_path, ws, n, data_sep=profile.get("detected_sep", ","))
 
         score = None
@@ -2111,11 +2181,16 @@ def run_research(
                 secondary = " · ".join(f"{k}={v:.4f}" for k, v in all_metrics.items() if k != metric_name and k != "what_worked")
                 sec_str = f" ({secondary})" if secondary else ""
                 log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f}{sec_str} ({res['elapsed']:.1f}s)")
+                narrate(log_callback, "metrics_parsed", model=model_name, metrics=all_metrics, primary_metric=metric_name, val=metric_val)
                 # Log train/test split if available
                 tr_key = f"train_{metric_name}"
                 te_key = f"test_{metric_name}"
                 if tr_key in all_metrics and te_key in all_metrics:
                     log.engine(f"  ↳ {metric_name.upper()}: train={all_metrics[tr_key]:.4f} → test={all_metrics[te_key]:.4f}")
+                    # Detect overfitting
+                    _ov_ratio = abs(all_metrics[tr_key] - all_metrics[te_key]) / max(abs(all_metrics[te_key]), 1e-10)
+                    if _ov_ratio > 0.3:
+                        narrate(log_callback, "overfitting_warning", num=n, train=all_metrics[tr_key], test=all_metrics[te_key])
         
         if not res["success"]:
             if not error:
@@ -2126,6 +2201,7 @@ def run_research(
 
             # ── CRASH RECOVERY (Karpathy: trivial fix → rerun, fundamental → skip) ──
             if failure_reason in {"data_path", "invalid_hyperparameter", "bad_output_format", "missing_package", "runtime_error"}:
+                narrate(log_callback, "crash_recovery", reason=failure_reason)
                 repaired = auto_fix(train_py, error)
                 repaired, fix_notes = apply_code_guardrails(repaired)
                 if repaired.strip() and repaired.strip() != train_py.strip():
@@ -2166,6 +2242,7 @@ def run_research(
 
                 # If 3+ consecutive crashes, HARD RESET to last known good state
                 if consecutive_crashes >= 3 and best_train_py and git_ok:
+                    narrate(log_callback, "hard_reset")
                     log.engine("3 consecutive crashes — hard resetting to last known good train.py")
                     train_py = best_train_py
                     (ws / "train.py").write_text(f"DATA_PATH = {repr(str(csv_path))}\nDATA_SEP = {repr(profile.get('detected_sep', ','))}\nTIME_BUDGET = {TIME_BUDGET}\n\n{train_py}")
@@ -2260,6 +2337,13 @@ def run_research(
             insights.append(f"Exp {n}: KEEP — {reasoning}")
             train_py = train_py_candidate or train_py
             log.result(f"KEEP — {reasoning}")
+            narrate(log_callback, "keep_decision", model=model_name, metric=metric_name, val=metric_val, reason=reasoning[:100])
+            # Narrate improvement if there was a previous best
+            if best_val is not None and best and best.get("metric_val") is not None:
+                _prev_best = best["metric_val"]
+                if _prev_best != metric_val and _prev_best != 0:
+                    _pct = ((metric_val - _prev_best) / abs(_prev_best)) * 100
+                    narrate(log_callback, "improvement", metric=metric_name, prev=_prev_best, curr=metric_val, pct=_pct)
 
             # GIT: commit this winning state (branch advances)
             if git_ok:
@@ -2271,6 +2355,7 @@ def run_research(
             if res.get("success"):
                 no_improve_rounds += 1
             insights.append(f"Exp {n}: DISCARD — {reasoning}")
+            narrate(log_callback, "discard_decision", reason=reasoning[:120])
 
             # GIT: revert to last known good state (Karpathy: git reset --hard)
             if git_ok and best_train_py:
@@ -2341,11 +2426,13 @@ Output ONLY a complete ```python block.""", 4200)
             except ValueError:
                 pass
         if keep and thresh and ((lower and metric_val <= thresh) or ((not lower) and metric_val >= thresh)):
+            narrate(log_callback, "good_enough", metric=metric_name, val=metric_val)
             log.engine(f"Hit good-enough threshold ({thresh}) on {metric_name}. Mission accomplished.")
             break
 
         # In continuous mode: stagnation triggers STRATEGY PIVOT, not exit
         if continuous and no_improve_rounds >= 5:
+            narrate(log_callback, "stagnation")
             log.engine(f"Stagnation ({no_improve_rounds} rounds) — pivoting strategy, NOT stopping")
             pivot_insight = f"STAGNATION ALERT: {no_improve_rounds} rounds without improvement. RADICALLY change approach."
             insights.append(pivot_insight)
@@ -2382,6 +2469,7 @@ Output ONLY a complete ```python block.""", 4200)
             log.engine(f"Fallback best: {best['model']} {best['metric_name']}={best['metric_val']:.6f} (exp {best['num']})")
 
     if best:
+        narrate(log_callback, "final_report")
         best["all_history"] = history
         report = generate_report(ws, obj, profile, history, best)
         log.engine("Packaging deployment...")
