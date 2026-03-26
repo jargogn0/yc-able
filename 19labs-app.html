@@ -92,10 +92,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 .btn-deploy-skip{padding:8px 12px;background:none;color:var(--text-3);border:1px solid var(--border);border-radius:var(--r);font-size:12px;cursor:pointer;transition:all var(--t)}
 .btn-deploy-skip:hover{color:var(--text-2);border-color:var(--border-2)}
 
-/* Chat mode indicator */
-.chat-mode-bar{display:none;padding:6px 16px;background:var(--accent-soft);border-bottom:1px solid rgba(59,130,246,.2);font-size:11px;font-weight:500;color:var(--accent);align-items:center;gap:8px;flex-shrink:0}
-.chat-mode-bar.show{display:flex}
-.chat-mode-bar span{flex:1}
+/* Mode switcher */
+.mode-switcher{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:3px;flex:1}
+.mode-btn{flex:1;padding:5px 0;font-size:11px;font-weight:600;border:none;border-radius:5px;background:none;color:var(--text-3);cursor:pointer;transition:all var(--t);font-family:var(--sans);letter-spacing:.2px}
+.mode-btn:hover{color:var(--text-2)}
+.mode-btn.active{background:var(--surface-3);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.mode-btn.active[id="mode-agent"]{color:var(--accent)}
+.mode-btn.active[id="mode-plan"]{color:var(--purple)}
+.mode-btn.active[id="mode-chat"]{color:var(--green)}
 .prog{height:2px;background:var(--surface);flex-shrink:0;overflow:hidden}.prog-f{height:100%;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s ease;width:0}
 
 /* ── LAYOUT ── */
@@ -209,7 +213,7 @@ input[type=file]{display:none}
 
 /* ── CHAT ── */
 .chat{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);min-height:0}
-.chat-h{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.chat-h{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
 .chat-h h3{font-size:13px;font-weight:700}
 .chat-dot{width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-left:auto;transition:background .3s}
 .chat-dot.on{background:var(--accent);animation:pulse 1.5s infinite}
@@ -434,8 +438,7 @@ input[type=file]{display:none}
   <div class="topbar-tag">AI Data Science</div>
   <div class="topbar-r">
     <button class="stop-btn" id="stop-btn" style="display:none" onclick="cancelRun()" data-tip="Stop current run">Stop</button>
-    <button class="tbtn" id="chat-mode-btn" onclick="toggleChatMode()" data-tip="Chat mode — ask questions about your data without triggering training">Chat</button>
-    <div class="badge" id="badge" onclick="onBadgeClick()" style="cursor:pointer" data-tip="Click to view plan">IDLE</div>
+    <div class="badge" id="badge">IDLE</div>
     <button class="tbtn" onclick="openCmd()" data-tip="Command Palette (⌘K)">⌘K</button>
     <button class="tbtn" id="tb-prov" onclick="openSettings()" data-tip="Provider settings (⌘,)">Claude</button>
   </div>
@@ -519,10 +522,13 @@ input[type=file]{display:none}
 
   <!-- CHAT -->
   <div class="chat">
-    <div class="chat-h"><h3>19 Agent</h3><div class="chat-dot" id="cdot"></div></div>
-    <div class="chat-mode-bar" id="chat-mode-bar">
-      <span>Chat mode — ask anything about your data or model</span>
-      <button onclick="toggleChatMode()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:11px;font-weight:600">Exit</button>
+    <div class="chat-h">
+      <div class="mode-switcher">
+        <button class="mode-btn" id="mode-chat" onclick="setMode('chat')" data-tip="Ask questions about your data — no execution">Chat</button>
+        <button class="mode-btn" id="mode-plan" onclick="setMode('plan')" data-tip="Analyze dataset and build a plan — review before running">Plan</button>
+        <button class="mode-btn active" id="mode-agent" onclick="setMode('agent')" data-tip="Autonomous ML research — runs experiments automatically">Agent</button>
+      </div>
+      <div class="chat-dot" id="cdot"></div>
     </div>
     <div class="chat-msgs" id="msgs">
       <div class="cw" id="cw">
@@ -585,7 +591,7 @@ function apiFetch(url,options={}){
   });
 }
 function sseUrl(path){return ACCESS_TOKEN?`${path}?token=${encodeURIComponent(ACCESS_TOKEN)}`:path;}
-const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,chatMode:false};
+const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent'};
 
 // ═══════════════════════════════════════════
 // SETTINGS
@@ -838,7 +844,31 @@ async function handleFile(f){
 }
 
 // ═══════════════════════════════════════════
-// SMART SEND
+// MODES: chat | plan | agent
+// ═══════════════════════════════════════════
+const MODE_PLACEHOLDERS={
+  chat:'Ask anything about your data or model...',
+  plan:'Describe your goal — I\'ll build a plan for review...',
+  agent:'Describe what you want to build...'
+};
+const MODE_WELCOME={
+  chat:'<strong>Chat mode.</strong> Ask me anything — explain a model, interpret results, suggest next steps. No training will run.',
+  plan:'<strong>Plan mode.</strong> Describe your goal and I\'ll analyze the dataset and build a research plan. Review it before anything runs.',
+  agent:'<strong>Agent mode.</strong> I\'ll autonomously profile your data, plan experiments, run them, and iterate until I find the best model.'
+};
+function setMode(m){
+  S.mode=m;
+  localStorage.setItem('19labs_mode',m);
+  ['chat','plan','agent'].forEach(x=>{
+    const btn=document.getElementById('mode-'+x);
+    if(btn)btn.classList.toggle('active',x===m);
+  });
+  document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];
+  chat('sys',MODE_WELCOME[m]);
+}
+
+// ═══════════════════════════════════════════
+// SEND — routes by mode
 // ═══════════════════════════════════════════
 async function send(){
   const inp=document.getElementById('cin');
@@ -847,109 +877,74 @@ async function send(){
   chat('user',text);
   const lo=text.toLowerCase();
 
-  // Chat mode — route all messages to /api/chat
-  if(S.chatMode){await chatWithAI(text);return}
-
-  if(!S.file&&!lo.includes('setting')&&!lo.includes('key')&&!lo.includes('help')){
-    chat('ai',"Drop a CSV in the sidebar first — I'll analyze it and we'll figure out the best approach together.");return;
+  // ── CHAT MODE ──────────────────────────────
+  if(S.mode==='chat'){
+    if(!S.file&&!lo.includes('setting')&&!lo.includes('key')){
+      chat('ai',"Drop a CSV first so I have context — then ask me anything about your data.");return;
+    }
+    await chatWithAI(text);return;
   }
+
+  // ── PLAN MODE ──────────────────────────────
+  if(S.mode==='plan'){
+    if(!S.file){chat('ai',"Drop a CSV first so I can analyze it.");return}
+    if(lo.includes('setting')||lo.includes('api key')){openSettings();chat('sys','Settings opened.');return}
+    const isExecute=/^(execute|run|go|launch|start|do it|confirm|yes|yep|yeah|approved|lgtm)$/i.test(lo.trim());
+    // If plan exists and user confirms → switch to agent and run
+    if(isExecute&&S.analyzed){
+      setMode('agent');
+      S.confirmed=true;
+      chat('ai',"Switching to <strong>Agent mode</strong> and launching experiments now.");
+      await launchRun();return;
+    }
+    // Otherwise analyze / re-analyze
+    S.hint=text;
+    chat('ai','Analyzing your dataset and building a plan...');
+    await runDiscover(text);
+    // Auto-show plan card after analysis
+    if(S.analyzed)setTimeout(showPlanCard,400);
+    return;
+  }
+
+  // ── AGENT MODE ─────────────────────────────
   if(lo.includes('setting')||lo.includes('config')||lo.includes('api key')){openSettings();chat('sys','Settings opened.');return}
   if(lo==='help'||lo==='?'){
-    chat('ai','<strong>How I work:</strong><br>1. Drop a CSV dataset<br>2. Tell me what to predict (or say "go" for autopilot)<br>3. I profile, plan, and run experiments<br>4. Best model gets packaged<br><br>Just talk to me in plain English.');return;
+    chat('ai','<strong>Modes:</strong><br>• <strong>Chat</strong> — ask questions, no training<br>• <strong>Plan</strong> — analyze dataset, review plan before running<br>• <strong>Agent</strong> — autonomous ML research loop<br><br>Switch modes using the buttons at the top of this panel.');return;
   }
+  if(!S.file){chat('ai',"Drop a CSV in the sidebar first.");return}
 
-  // Budget detection (e.g. "run 10 experiments", "20 rounds", "budget 15")
   const budgetMatch=lo.match(/(\d+)\s*(?:experiment|round|iteration|run|step|trial|budget)/i)||lo.match(/(?:experiment|round|iteration|run|step|trial|budget)\s*(?:of|=|:)?\s*(\d+)/i);
-  if(budgetMatch){
-    const num=parseInt(budgetMatch[1]||budgetMatch[2]);
-    if(num>=1&&num<=100){S.budget=num;toast(`Budget set to ${num} experiments`,'ok');chat('ai',`Got it — will run <strong>${num} experiments</strong>. Say <strong>"go"</strong> when ready.`);return}
-  }
+  if(budgetMatch){const num=parseInt(budgetMatch[1]||budgetMatch[2]);if(num>=1&&num<=100){S.budget=num;toast(`Budget set to ${num} experiments`,'ok');chat('ai',`Got it — will run <strong>${num} experiments</strong>. Say <strong>"go"</strong> when ready.`);return}}
 
-  // Autopilot triggers
   const isGo=/^(go|do it|just do it|run|launch|start|execute|autopilot|analyze|let'?s go|ship it|run it|yolo)$/i.test(lo.trim());
   const isContinuous=/never stop|run forever|continuous|don'?t stop|infinite|keep going|karpathy mode|beast mode/i.test(lo);
   const isYes=/^(yes|yep|yeah|sure|ok|okay|confirm|go ahead|looks good|perfect|lgtm|approved)$/i.test(lo.trim());
   const isNo=/^(no|nah|nope|change|different|wrong|redo|try again)$/i.test(lo.trim());
 
-  // Continuous mode trigger
-  if(isContinuous&&S.file){
-    S.continuous=true;
-    chat('ai','<strong>Continuous mode activated.</strong> I will NEVER STOP experimenting until I hit the best possible score or you manually stop me. Karpathy discipline engaged.');
-    if(!S.analyzed){await autoDiscover()}
-    if(S.analyzed){S.confirmed=true;await launchRun()}
-    return;
-  }
+  if(isContinuous){S.continuous=true;chat('ai','<strong>Continuous mode activated.</strong> Running until peak performance or manually stopped.');if(!S.analyzed){await autoDiscover()}if(S.analyzed){S.confirmed=true;await launchRun()}return}
+  if(S.running){chat('ai',"Experiments running — check the Experiments tab for live results.");return}
 
-  // File loaded, not analyzed yet
-  if(S.file&&!S.analyzed){
-    S.hint=text;
-    if(isGo){
-      chat('ai','Running full autopilot — analyzing data and launching experiments...');
-      await autoDiscover();
-      if(S.analyzed){S.confirmed=true;await launchRun()}
-      return;
-    }
-    chat('ai','Got it — analyzing your data with that goal in mind...');
-    await runDiscover(text);
-    return;
-  }
-
-  // Analyzed, waiting for confirmation
-  if(S.file&&S.analyzed&&!S.confirmed){
-    if(isYes||isGo){S.confirmed=true;chat('ai',"Launching experiments now. I'll keep you posted.");await launchRun();return}
-    if(isNo){chat('ai',"No problem — tell me what to change and I'll adjust the plan.");return}
-    S.hint=text;chat('ai','Adjusting the plan...');await runDiscover(text);return;
-  }
-
-  // Confirmed but not running
-  if(S.file&&S.confirmed&&!S.running){
-    if(isGo||isYes||lo.includes('run')||lo.includes('launch')){await launchRun();return}
-    S.hint=text;S.confirmed=false;S.analyzed=false;
-    chat('ai','Got it, re-analyzing with your new direction...');
-    await runDiscover(text);return;
-  }
-
-  // Running
-  if(S.running){chat('ai',"Experiments are running — I'll update you as results come in. Check the Experiments tab.");return}
-
-  // Post-run
   if(S.best){
-    if(lo.includes('deploy api')||lo.includes('deploy as api')||lo.includes('create api')||lo.includes('make api')||lo.includes('live api')){if(S.runId)deployAsAPI(S.runId);return}
-    if(lo.includes('download')||lo.includes('export')){if(S.runId)dlDeploy(S.runId);return}
-    if(lo.includes('deploy')&&!lo.includes('api')){if(S.runId)deployAsAPI(S.runId);return}
-    if(lo.includes('again')||lo.includes('rerun')||lo.includes('more')||lo.includes('iterate')){
-      S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];
-      document.getElementById('p-exp').innerHTML='';
-      chat('ai',"Let's iterate. What would you like to change?");return;
-    }
-    chat('ai','Your model is ready. Say <strong>"download"</strong> for the model zip, <strong>"deploy"</strong> to create a live API, <strong>"run again"</strong> to iterate, or describe a new direction.');return;
+    if(lo.includes('deploy api')||lo.includes('deploy as api')||lo.includes('create api')||lo.includes('live api')){deployAsAPI(S.runId);return}
+    if(lo.includes('download')||lo.includes('export')){dlDeploy(S.runId);return}
+    if(lo.includes('deploy')){deployAsAPI(S.runId);return}
+    if(lo.includes('again')||lo.includes('rerun')||lo.includes('more')||lo.includes('iterate')){S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai',"Let's iterate — what would you like to change?");return}
+    chat('ai','Model ready. Say <strong>"deploy"</strong> for a live API, <strong>"download"</strong> for the model zip, or <strong>"run again"</strong> to iterate.');return;
   }
 
-  chat('ai',"Tell me what you'd like to predict or analyze. I'll take it from there.");
+  if(!S.analyzed){S.hint=text;if(isGo){chat('ai','Autopilot — analyzing and launching...');await autoDiscover();if(S.analyzed){S.confirmed=true;await launchRun()}return}chat('ai','Got it — analyzing your data...');await runDiscover(text);return}
+  if(S.analyzed&&!S.confirmed){if(isYes||isGo){S.confirmed=true;chat('ai',"Launching experiments.");await launchRun();return}if(isNo){chat('ai',"Tell me what to change.");return}S.hint=text;chat('ai','Adjusting plan...');await runDiscover(text);return}
+  if(S.confirmed&&!S.running){if(isGo||isYes){await launchRun();return}S.hint=text;S.confirmed=false;S.analyzed=false;chat('ai','Re-analyzing with new direction...');await runDiscover(text);return}
+  chat('ai',"Tell me what you'd like to predict or analyze.");
 }
 
 // ═══════════════════════════════════════════
-// CHAT MODE
+// CHAT WITH AI
 // ═══════════════════════════════════════════
-function toggleChatMode(){
-  S.chatMode=!S.chatMode;
-  document.getElementById('chat-mode-btn').classList.toggle('active',S.chatMode);
-  document.getElementById('chat-mode-bar').classList.toggle('show',S.chatMode);
-  const inp=document.getElementById('cin');
-  inp.placeholder=S.chatMode?'Ask anything about your data or model...':'Describe what you want to build...';
-  if(S.chatMode)chat('sys','Chat mode active. Ask me anything about your data, model, or results — no training will run.');
-}
-
 async function chatWithAI(message){
   typing(true);
   const key=C.key||gk(C.provider);
-  const ctx={
-    filename:S.file?.name,
-    profile:S.discovery?.profile,
-    best:S.best,
-    objective:S.discovery?.objective||S.discovery?.discovery,
-    history:S.exps
-  };
+  const ctx={filename:S.file?.name,profile:S.discovery?.profile,best:S.best,objective:S.discovery?.objective||S.discovery?.discovery,history:S.exps};
   try{
     const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,context:ctx})});
     const j=await r.json();typing(false);
@@ -959,49 +954,31 @@ async function chatWithAI(message){
 }
 
 // ═══════════════════════════════════════════
-// PLAN MODE
+// PLAN CARD
 // ═══════════════════════════════════════════
 function showPlanCard(){
   if(!S.discovery)return;
-  const d=S.discovery.discovery||{};
-  const obj=S.discovery.objective||{};
-  const fields=document.getElementById('plan-fields');
-  fields.innerHTML='';
-  const add=(label,val,full)=>{
-    if(!val)return;
-    const div=document.createElement('div');
-    div.className='plan-field'+(full?' full':'');
-    div.innerHTML=`<div class="plan-field-l">${label}</div><div class="plan-field-v">${esc(val)}</div>`;
-    fields.appendChild(div);
-  };
+  const d=S.discovery.discovery||{};const obj=S.discovery.objective||{};
+  const fields=document.getElementById('plan-fields');fields.innerHTML='';
+  const add=(label,val,full)=>{if(!val)return;const div=document.createElement('div');div.className='plan-field'+(full?' full':'');div.innerHTML=`<div class="plan-field-l">${label}</div><div class="plan-field-v">${esc(String(val))}</div>`;fields.appendChild(div)};
   add('Objective',d.recommended_objective||obj.task,true);
-  add('Task',obj.task);add('Target',obj.target);add('Metric',obj.metric);
+  add('Task',obj.task);add('Target Column',obj.target);add('Metric',obj.metric);
   if(d.first_iteration_plan)add('Plan',d.first_iteration_plan,true);
   const risksEl=document.getElementById('plan-risks');
-  if(d.risks&&d.risks.length){
-    risksEl.style.display='';
-    risksEl.innerHTML='<div class="plan-field-l" style="color:var(--amber)">⚠ Risks</div>'+d.risks.map(r=>`<div class="plan-risk-item">• ${esc(r)}</div>`).join('');
-  }else{risksEl.style.display='none'}
+  if(d.risks&&d.risks.length){risksEl.style.display='';risksEl.innerHTML='<div class="plan-field-l" style="color:var(--amber)">⚠ Risks</div>'+d.risks.map(r=>`<div class="plan-risk-item">• ${esc(r)}</div>`).join('')}else{risksEl.style.display='none'}
   document.getElementById('plan-overlay').classList.add('show');
 }
 function hidePlanCard(){document.getElementById('plan-overlay').classList.remove('show')}
-function onBadgeClick(){
-  const badge=document.getElementById('badge');
-  if(badge.textContent==='PLAN READY'&&S.analyzed&&!S.confirmed)showPlanCard();
-}
 function modifyPlan(){
-  const val=document.getElementById('plan-modify-in').value.trim();
-  if(!val)return;
-  hidePlanCard();
-  S.hint=val;
-  chat('ai',`Adjusting plan: "${esc(val)}"...`);
-  runDiscover(val);
+  const val=document.getElementById('plan-modify-in').value.trim();if(!val)return;
+  document.getElementById('plan-modify-in').value='';
+  hidePlanCard();S.hint=val;chat('ai',`Updating plan: "${esc(val)}"...`);runDiscover(val);
+  setTimeout(()=>{if(S.analyzed)showPlanCard()},2000);
 }
 function executePlan(){
   hidePlanCard();
-  S.confirmed=true;
-  chat('ai',"Launching experiments now. I'll keep you posted.");
-  launchRun();
+  if(S.mode==='plan')setMode('agent');
+  S.confirmed=true;chat('ai',"Plan confirmed. Switching to <strong>Agent mode</strong> and launching experiments.");launchRun();
 }
 
 // ═══════════════════════════════════════════
@@ -1057,8 +1034,8 @@ async function runDiscover(hint){
     msg+=`<strong>Metric:</strong> <code>${esc(obj.metric||'auto')}</code> (${esc(obj.direction||'optimize')})<br>`;
     if(d.first_iteration_plan)msg+=`<br><strong>Plan:</strong> ${esc(d.first_iteration_plan)}<br>`;
     if(d.risks&&d.risks.length)msg+=`<br><strong>Risks:</strong> ${d.risks.map(r=>esc(r)).join('; ')}<br>`;
-    msg+=`<br>Say <strong>"go"</strong> to start, or tell me what to change.`;
-    msg+=`<br><em style="font-size:11px;color:var(--text-3)">Click <strong>PLAN READY</strong> badge above to view full plan, or say "go" to start.</em>`;
+    if(S.mode==='plan')msg+=`<br>Review the plan below, modify if needed, then click <strong>Execute Plan</strong>.`;
+    else msg+=`<br>Say <strong>"go"</strong> to start, or tell me what to change.`;
     chat('ai',msg);setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
     toast('Analysis complete — plan ready','ok');
@@ -1684,6 +1661,8 @@ function playDone(){
 document.getElementById('cin').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
 warmKey();spUI(C.provider);
 setBadge(C.key?'READY':'IDLE','');
+// Apply saved mode on load (without showing the welcome toast)
+{const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
 ['p-exp','p-art','p-rpt','p-log'].forEach(id=>showEmpty(id));
 </script>
