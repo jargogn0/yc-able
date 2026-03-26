@@ -2231,7 +2231,7 @@ def run_research(
                         failure_reason = ""
                         consecutive_crashes = 0
                         train_py = repaired
-                        log.result(f"Exp {n}: recovery succeeded → {model_name} {metric_name}={metric_val:.6f}")
+                        log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f} (recovered)")
                     else:
                         error = retry_res.get("error", error)
                         failure_reason = classify_failure_reason(error)
@@ -2290,6 +2290,15 @@ def run_research(
                 log.engine(f"Overriding KEEP → DISCARD: metric regressed ({metric_val:.4f} vs {best_val:.4f})")
 
         status = "keep" if keep else ("crash" if not res["success"] else "discard")
+
+        # Emit a structured result log that the frontend regex can parse
+        if res.get("success"):
+            _is_nb = (best_val is None) or (lower and metric_val < best_val) or (not lower and metric_val > best_val)
+            _tag = "NEW BEST" if (keep and _is_nb) else ("KEEP" if keep else "DISCARD")
+            log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f} {_tag}")
+        else:
+            log.result(f"Exp {n}: CRASH → {failure_reason or 'error'}")
+
         history.append({
             "num": n,
             "status": status,

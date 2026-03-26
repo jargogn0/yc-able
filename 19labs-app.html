@@ -765,13 +765,14 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function nl2br(s){return s.replace(/\n/g,'<br>')}
 function safeHtml(s){
   const t=esc(String(s));
-  const tags=['strong','code','em','br','p','ul','ol','li','h1','h2','h3','h4','pre','b','i','span'];
+  const tags=['strong','code','em','br','p','ul','ol','li','h1','h2','h3','h4','pre','b','i','span','div'];
   let r=t;
   tags.forEach(tag=>{
     r=r.replace(new RegExp(`&lt;${tag}(\\s[^&]*?)?&gt;`,'gi'),(m,attrs)=>{
       if(!attrs)return `<${tag}>`;
       const clean=attrs.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
-      const safeAttrs=clean.replace(/on\w+\s*=/gi,'');
+      // Allow class but strip event handlers
+      const safeAttrs=clean.replace(/on\w+\s*=\s*["'][^"']*["']/gi,'').replace(/on\w+\s*=[^\s>]*/gi,'');
       return `<${tag}${safeAttrs}>`;
     });
     r=r.replace(new RegExp(`&lt;/${tag}&gt;`,'gi'),`</${tag}>`);
@@ -1197,15 +1198,29 @@ async function launchRun(){
       await new Promise(r=>setTimeout(r,3000));
       st=await(await apiFetch(`${BASE}/api/run/${run_id}/status`)).json();
     }
+    // Retry if result hasn't landed yet (rare race: __DONE__ arrived before result was written)
+    if(!st.best&&!st.history?.length&&st.status==='done'){
+      await new Promise(r=>setTimeout(r,2500));
+      st=await(await apiFetch(`${BASE}/api/run/${run_id}/status`)).json();
+    }
     if(st.status==='error'&&!st.best&&!st.history?.length)throw new Error(st.error||'Run failed');
-    if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
+
+    // Merge history from server (authoritative) — avoids partial SSE-stream state
+    const serverHistory=st.history||[];
+    serverHistory.forEach(exp=>{
+      const idx=S.exps.findIndex(e=>e.num===exp.num);
+      if(idx===-1){S.exps.push(exp);addExpCard(exp)}
+      else{S.exps[idx]={...S.exps[idx],...exp}} // merge in status/model from server
+    });
+
     if(st.best){S.best=st.best;showBest(st.best,st.objective,run_id)}
     if(st.report){S.report=st.report;showRpt(st.report)}
     if(st.artifacts){S.artifacts=st.artifacts;showArts(run_id,st.artifacts);updArtSide()}
 
     const score=st.diagnostics?.yc_readiness_score||0;
-    const totalExp=st.total_experiments||S.exps.length;
-    const kept=S.exps.filter(e=>e.success).length;
+    // Use server history as source-of-truth for counts
+    const totalExp=serverHistory.length||st.total_experiments||S.exps.length;
+    const kept=serverHistory.filter(e=>e.status==='keep').length||S.exps.filter(e=>e.is_best||e.status==='keep').length;
     const tu=st.token_usage||{};
     if(tu.input)updateCostDisplay(tu);
     const cost=estimateCost(C.provider,tu.input||0,tu.output||0);
@@ -1216,10 +1231,23 @@ async function launchRun(){
     const ttPrimary=fmtTrainTest(bam,pk);
     const extraKeys=['rmse','mape','mae','r2','nse'].filter(k=>k!==pk&&(bam['test_'+k]!=null||bam[k]!=null));
     const secLine=extraKeys.map(k=>{const tt=fmtTrainTest(bam,k);return tt?`<code>${k.toUpperCase()}: ${tt}</code>`:null}).filter(Boolean).join(' · ');
-    const wasStop=st.status==='stopping'||st.status==='done'&&S.exps.length<S.budget;
+    const wasStop=st.status==='stopping'||(st.status==='done'&&S.exps.length<S.budget);
     const stopLabel=wasStop&&S.exps.length>0?'Stopped early — showing results from completed experiments.':'';
     const rid=run_id;
-    chat('ai',`<strong>Research ${wasStop?'stopped':'complete'}!</strong>${stopLabel?' '+stopLabel:''}<br><br>Experiments: <strong>${totalExp}</strong> (${kept} kept)<br>Quality: <strong>${score}/100</strong><br>Best: <strong>${esc(S.best?.model||'N/A')}</strong><br>Primary: <code>${esc(pk.toUpperCase())}: ${ttPrimary||(S.best?.metric_val!=null?Number(S.best.metric_val).toFixed(4):'N/A')}</code>${secLine?'<br>Metrics: '+secLine:''}${tokStr}<br><br><div class="deploy-prompt"><h4>🚀 Deploy your model</h4><p>Create a live <strong>FastAPI inference server</strong> — ready to deploy on Railway, Docker, or any cloud in one command.</p><div class="deploy-prompt-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div></div>`);
+
+    // Build summary chat message (no deploy card here — rendered as real DOM below)
+    chat('ai',`<strong>Research ${wasStop?'stopped':'complete'}!</strong>${stopLabel?' '+stopLabel:''}<br><br>Experiments: <strong>${totalExp}</strong> (${kept} kept)<br>Quality: <strong>${score>0?score:'—'}/100</strong><br>Best: <strong>${esc(S.best?.model||'N/A')}</strong><br>Primary: <code>${esc(pk.toUpperCase()||'—')}: ${ttPrimary||(S.best?.metric_val!=null?Number(S.best.metric_val).toFixed(4):'N/A')}</code>${secLine?'<br>Metrics: '+secLine:''}${tokStr}`);
+
+    // Append deploy card as real DOM (bypasses safeHtml stripping)
+    if(S.best){
+      const card=document.createElement('div');
+      card.className='deploy-prompt';
+      card.style.marginTop='12px';
+      card.innerHTML=`<h4>🚀 Deploy your model</h4><p>Create a live <strong>FastAPI inference server</strong> — ready to deploy on Railway, Docker, or any cloud in one command.</p><div class="deploy-prompt-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div>`;
+      const msgs=document.getElementById('msgs');
+      if(msgs.lastElementChild)msgs.lastElementChild.appendChild(card);
+    }
+
     setProg(100);setBadge('DONE','ok');document.getElementById('cdot').className='chat-dot ok';
     addRunHistory(S.runId,'done',`${S.best?.model||''}`.trim()||S.file?.name||'Done');
     toast(`Research complete — ${kept}/${totalExp} experiments kept`,'ok',6000);
@@ -1275,9 +1303,11 @@ function procMsg(d){
     else{setProg(30+(cur/tot)*54)}
   }
   if(tag==='result'){
+    // Format: "Exp N: ModelName → metric=val [NEW BEST|KEEP|DISCARD|(recovered)]"
     const m=msg.match(/Exp\s+(\d+):\s+(.+?)\s+→\s+([A-Za-z0-9_]+)=([0-9eE+.\-]+)/);
-    if(m){
-      const exp={num:parseInt(m[1]),model:m[2].trim(),metric_name:m[3],metric_val:parseFloat(m[4]),success:true,is_best:msg.includes('NEW BEST'),all_metrics:{}};
+    if(m&&!msg.includes('CRASH')){
+      const isDiscard=msg.includes('DISCARD');
+      const exp={num:parseInt(m[1]),model:m[2].trim(),metric_name:m[3],metric_val:parseFloat(m[4]),success:true,is_best:msg.includes('NEW BEST'),status:isDiscard?'discard':'keep',all_metrics:{}};
       // Parse ALL metrics from parenthetical including train_/test_ prefixed ones
       const sec=msg.match(/\(([^)]*\d+\.\d+[^)]*)\)\s*\(/);
       if(sec){sec[1].split('·').forEach(p=>{const kv=p.trim().split('=');if(kv.length===2&&!isNaN(parseFloat(kv[1])))exp.all_metrics[kv[0].trim()]=parseFloat(kv[1])})}
