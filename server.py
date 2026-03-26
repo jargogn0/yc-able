@@ -130,6 +130,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"error": str(exc)})
 
 RUNS: dict[str, dict] = {}
+_shared_results: dict[str, dict] = {}
 APP_HTML = Path(__file__).parent / "19labs-app.html"
 
 def _cleanup_old_workspaces():
@@ -1092,6 +1093,439 @@ async def predict_csv(run_id: str, request: Request):
     csv_text = body.decode("utf-8")
     req = PredictRequest(csv_text=csv_text)
     return await predict(run_id, req)
+
+
+# ── TIER 2: URL Data Connector ────────────────────────────────
+
+class FetchURLRequest(BaseModel):
+    url: str
+
+@app.post("/api/fetch-url")
+async def fetch_url_data(req: FetchURLRequest):
+    """Fetch CSV/JSON data from a URL."""
+    import urllib.request, io
+    try:
+        url = req.url.strip()
+        # Google Sheets → export as CSV
+        if 'docs.google.com/spreadsheets' in url:
+            # Extract sheet ID and convert to CSV export URL
+            import re
+            match = re.search(r'/d/([a-zA-Z0-9-_]+)', url)
+            if match:
+                sheet_id = match.group(1)
+                url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+        req_obj = urllib.request.Request(url, headers={"User-Agent": "19Labs/1.0"})
+        with urllib.request.urlopen(req_obj, timeout=30) as resp:
+            data = resp.read()
+            if len(data) > 10 * 1024 * 1024:
+                raise HTTPException(413, "File too large (>10MB)")
+            text = data.decode("utf-8", errors="replace")
+
+        # Detect if JSON
+        text_stripped = text.strip()
+        if text_stripped.startswith('[') or text_stripped.startswith('{'):
+            import pandas as pd
+            df = pd.read_json(io.StringIO(text_stripped))
+            text = df.to_csv(index=False)
+            return {"ok": True, "csv": text, "filename": "fetched_data.csv", "converted_from": "json", "rows": len(df)}
+
+        return {"ok": True, "csv": text, "filename": "fetched_data.csv"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── TIER 2: Data Transform ───────────────────────────────────
+
+class TransformRequest(BaseModel):
+    csv_text: str
+    transforms: list[dict]  # [{"column": "col1", "action": "drop_nulls"}, ...]
+
+@app.post("/api/transform")
+async def transform_data(req: TransformRequest):
+    """Apply column-level transforms to data and return modified CSV."""
+    import pandas as pd, io, numpy as np
+    try:
+        df = pd.read_csv(io.StringIO(req.csv_text))
+        log = []
+        for t in req.transforms:
+            col = t.get("column", "")
+            action = t.get("action", "")
+            if col and col not in df.columns:
+                log.append(f"Column '{col}' not found, skipped")
+                continue
+
+            if action == "drop_nulls":
+                before = len(df)
+                df = df.dropna(subset=[col])
+                log.append(f"Dropped {before - len(df)} rows with null '{col}'")
+            elif action == "fill_mean":
+                mean_val = pd.to_numeric(df[col], errors="coerce").mean()
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(mean_val)
+                log.append(f"Filled nulls in '{col}' with mean ({mean_val:.4f})")
+            elif action == "fill_median":
+                median_val = pd.to_numeric(df[col], errors="coerce").median()
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(median_val)
+                log.append(f"Filled nulls in '{col}' with median ({median_val:.4f})")
+            elif action == "fill_mode":
+                mode_val = df[col].mode().iloc[0] if len(df[col].mode()) > 0 else ""
+                df[col] = df[col].fillna(mode_val)
+                log.append(f"Filled nulls in '{col}' with mode ({mode_val})")
+            elif action == "one_hot":
+                dummies = pd.get_dummies(df[col], prefix=col, drop_first=True)
+                df = pd.concat([df.drop(columns=[col]), dummies], axis=1)
+                log.append(f"One-hot encoded '{col}' → {len(dummies.columns)} new columns")
+            elif action == "label_encode":
+                from sklearn.preprocessing import LabelEncoder
+                le = LabelEncoder()
+                df[col] = le.fit_transform(df[col].astype(str))
+                log.append(f"Label encoded '{col}' ({len(le.classes_)} classes)")
+            elif action == "log_transform":
+                df[col] = np.log1p(pd.to_numeric(df[col], errors="coerce").fillna(0).clip(lower=0))
+                log.append(f"Applied log1p transform to '{col}'")
+            elif action == "standardize":
+                s = pd.to_numeric(df[col], errors="coerce")
+                df[col] = (s - s.mean()) / (s.std() + 1e-10)
+                log.append(f"Standardized '{col}' (mean=0, std=1)")
+            elif action == "bin":
+                bins = t.get("bins", 5)
+                df[col + "_binned"] = pd.qcut(pd.to_numeric(df[col], errors="coerce"), q=bins, labels=False, duplicates="drop")
+                log.append(f"Binned '{col}' into {bins} quantile groups")
+            elif action == "drop_column":
+                df = df.drop(columns=[col])
+                log.append(f"Dropped column '{col}'")
+            elif action == "to_numeric":
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+                log.append(f"Converted '{col}' to numeric")
+            elif action == "to_datetime":
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+                # Extract useful features
+                df[col + "_year"] = df[col].dt.year
+                df[col + "_month"] = df[col].dt.month
+                df[col + "_dayofweek"] = df[col].dt.dayofweek
+                df = df.drop(columns=[col])
+                log.append(f"Extracted date features from '{col}' (year, month, dayofweek)")
+
+        csv_out = df.to_csv(index=False)
+        return {"ok": True, "csv": csv_out, "log": log, "rows": len(df), "cols": len(df.columns)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── TIER 2: SHAP Explainability ──────────────────────────────
+
+@app.get("/api/run/{run_id}/explain")
+async def explain_model(run_id: str):
+    """Generate SHAP-based model explainability data."""
+    if run_id not in RUNS:
+        raise HTTPException(404, "Run not found")
+    run = RUNS[run_id]
+    result = run.get("result")
+    if not result:
+        raise HTTPException(400, "Run not finished yet")
+
+    ws = Path(run.get("ws", ""))
+    deploy_path = result.get("deploy_path")
+    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else ws
+
+    # Find model
+    model_path = None
+    for pattern in ["model.pkl", "*.pkl", "*.joblib"]:
+        for f in list(dp.glob(pattern)) + list(ws.glob(pattern)):
+            if f.is_file():
+                model_path = f
+                break
+        if model_path:
+            break
+
+    if not model_path:
+        return {"ok": False, "error": "No model found"}
+
+    import joblib, pandas as pd, numpy as np
+    try:
+        model = joblib.load(model_path)
+
+        # Load training data for SHAP background
+        csv_path = run.get("csv", "")
+        if not csv_path or not Path(csv_path).exists():
+            return {"ok": False, "error": "Training data not found"}
+
+        df = pd.read_csv(csv_path, nrows=500)
+        obj = result.get("objective") or {}
+        target = obj.get("target", "")
+        if target and target in df.columns:
+            df = df.drop(columns=[target])
+
+        # Encode categoricals
+        cat_cols = df.select_dtypes(include=["object", "category"]).columns
+        for col in cat_cols:
+            df[col] = pd.factorize(df[col])[0]
+        df = df.fillna(0)
+
+        # Try to compute feature importance
+        feature_names = list(df.columns)
+        importance = {}
+
+        # Method 1: Built-in feature_importances_
+        if hasattr(model, "feature_importances_"):
+            imp = model.feature_importances_
+            if len(imp) == len(feature_names):
+                importance = {feature_names[i]: float(imp[i]) for i in range(len(imp))}
+
+        # Method 2: coef_ (linear models)
+        elif hasattr(model, "coef_"):
+            coef = np.abs(model.coef_).flatten()
+            if len(coef) == len(feature_names):
+                importance = {feature_names[i]: float(coef[i]) for i in range(len(coef))}
+
+        # Method 3: Try SHAP
+        shap_values_data = None
+        try:
+            import shap
+            sample = df.head(100)
+            if hasattr(model, "predict"):
+                explainer = shap.Explainer(model, sample, feature_names=feature_names)
+                shap_vals = explainer(sample)
+                # Mean absolute SHAP values per feature
+                mean_shap = np.abs(shap_vals.values).mean(axis=0)
+                if len(mean_shap.shape) > 1:
+                    mean_shap = mean_shap.mean(axis=1)
+                importance = {feature_names[i]: float(mean_shap[i]) for i in range(min(len(feature_names), len(mean_shap)))}
+                # Top feature interactions
+                shap_values_data = {
+                    "sample_size": len(sample),
+                    "method": "shap"
+                }
+        except Exception:
+            pass  # SHAP not available or failed
+
+        if not importance:
+            return {"ok": False, "error": "Could not compute feature importance for this model type"}
+
+        # Sort by importance
+        sorted_imp = sorted(importance.items(), key=lambda x: abs(x[1]), reverse=True)
+        top_features = sorted_imp[:20]
+
+        # Compute basic partial dependence for top 3 features
+        pdp_data = {}
+        try:
+            for feat_name, _ in top_features[:3]:
+                if feat_name not in df.columns:
+                    continue
+                col_vals = df[feat_name].dropna()
+                if len(col_vals) < 10:
+                    continue
+                grid = np.linspace(col_vals.quantile(0.05), col_vals.quantile(0.95), 20)
+                predictions = []
+                for val in grid:
+                    temp_df = df.head(50).copy()
+                    temp_df[feat_name] = val
+                    try:
+                        preds = model.predict(temp_df)
+                        predictions.append(float(np.mean(preds)))
+                    except Exception:
+                        break
+                if len(predictions) == len(grid):
+                    pdp_data[feat_name] = {
+                        "grid": grid.tolist(),
+                        "predictions": predictions
+                    }
+        except Exception:
+            pass
+
+        return {
+            "ok": True,
+            "feature_importance": [{"feature": k, "importance": v} for k, v in top_features],
+            "partial_dependence": pdp_data,
+            "method": shap_values_data.get("method", "builtin") if shap_values_data else "builtin",
+            "model_type": type(model).__name__,
+            "n_features": len(feature_names),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── TIER 2: Share Results ─────────────────────────────────────
+
+@app.post("/api/run/{run_id}/share")
+async def share_results(run_id: str):
+    """Generate a shareable snapshot of run results."""
+    if run_id not in RUNS:
+        raise HTTPException(404, "Run not found")
+    run = RUNS[run_id]
+    result = run.get("result")
+    if not result:
+        raise HTTPException(400, "Run not finished yet")
+
+    share_id = str(uuid.uuid4())[:8]
+    best = result.get("best") or {}
+    obj = result.get("objective") or {}
+    diagnostics = result.get("diagnostics") or {}
+    history = result.get("history") or []
+
+    _shared_results[share_id] = {
+        "share_id": share_id,
+        "created": time.time(),
+        "run_id": run_id,
+        "filename": Path(run.get("csv", "")).name if run.get("csv") else "",
+        "best": best,
+        "objective": obj,
+        "diagnostics": diagnostics,
+        "history": [{"num": h.get("num"), "model": h.get("model"), "metric_name": h.get("metric_name"), "metric_val": h.get("metric_val"), "success": h.get("success"), "is_best": h.get("is_best")} for h in history],
+        "report": result.get("report", ""),
+        "executive_brief": result.get("executive_brief") or diagnostics.get("executive_brief", ""),
+        "token_usage": result.get("token_usage", {}),
+    }
+
+    return {"ok": True, "share_id": share_id, "url": f"/shared/{share_id}"}
+
+
+@app.get("/shared/{share_id}")
+async def view_shared(share_id: str):
+    """Render a shared results page."""
+    if share_id not in _shared_results:
+        return HTMLResponse("<h1>Not found</h1><p>This shared result has expired or does not exist.</p>", status_code=404)
+
+    data = _shared_results[share_id]
+    best = data.get("best", {})
+    obj = data.get("objective", {})
+    diag = data.get("diagnostics", {})
+    history = data.get("history", [])
+
+    # Build a standalone HTML page
+    experiments_html = ""
+    for h in history:
+        if h.get("success"):
+            cls = "best" if h.get("is_best") else ""
+            experiments_html += f'<div class="exp {cls}"><span class="num">#{h["num"]}</span><span class="model">{h.get("model","?")}</span><span class="val">{h.get("metric_name","metric")}={float(h.get("metric_val",0)):.4f}</span></div>'
+
+    score = diag.get("yc_readiness_score", "N/A")
+    grade = diag.get("yc_grade", "N/A")
+    brief = data.get("executive_brief", "")
+    report = data.get("report", "")
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>19Labs Results — {best.get('model','ML Model')}</title>
+<style>*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:'Inter',system-ui,sans-serif;background:#0a0a0b;color:#fafafa;padding:40px 20px;max-width:720px;margin:0 auto}}
+h1{{font-size:24px;font-weight:800;margin-bottom:4px}}h2{{font-size:16px;font-weight:700;margin:24px 0 8px;color:#a1a1aa}}
+.sub{{color:#71717a;font-size:14px;margin-bottom:24px}}.metric{{font-size:32px;font-weight:900;color:#3b82f6;margin:8px 0}}
+.card{{background:#111113;border:1px solid #27272a;border-radius:12px;padding:16px 20px;margin-bottom:12px}}
+.row{{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #1e1e22}}.row:last-child{{border:none}}
+.label{{color:#71717a}}.value{{font-weight:600;font-family:'JetBrains Mono',monospace}}
+.exp{{display:flex;gap:12px;align-items:center;padding:8px 12px;border-radius:8px;margin-bottom:4px;font-size:13px;background:#111113;border:1px solid #27272a}}
+.exp.best{{border-color:rgba(59,130,246,.3);background:rgba(59,130,246,.05)}}
+.num{{font-family:'JetBrains Mono',monospace;color:#71717a;font-size:11px;width:30px}}.model{{flex:1;font-weight:600}}.val{{font-family:'JetBrains Mono',monospace;color:#a1a1aa;font-size:12px}}
+.report{{font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.8;color:#a1a1aa;white-space:pre-wrap;background:#111113;border:1px solid #27272a;border-radius:12px;padding:16px;max-height:400px;overflow-y:auto}}
+.badge{{display:inline-block;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(59,130,246,.1);color:#3b82f6;border:1px solid rgba(59,130,246,.3)}}
+.footer{{margin-top:40px;text-align:center;color:#3f3f46;font-size:12px}}
+.footer a{{color:#3b82f6;text-decoration:none}}
+</style></head><body>
+<h1>{best.get('model', 'ML Model')}</h1>
+<div class="sub">Generated by 19Labs Autonomous ML Research · {data.get('filename','')}</div>
+<div class="card">
+<div class="metric">{best.get('metric_name','metric').upper()} = {float(best.get('metric_val',0)):.4f}</div>
+<div class="row"><span class="label">Task</span><span class="value">{obj.get('task','N/A')}</span></div>
+<div class="row"><span class="label">Target</span><span class="value">{obj.get('target','N/A')}</span></div>
+<div class="row"><span class="label">Quality Score</span><span class="value">{score}/100 ({grade})</span></div>
+<div class="row"><span class="label">Experiments</span><span class="value">{len(history)}</span></div>
+</div>
+{f'<h2>Executive Brief</h2><div class="card" style="color:#a1a1aa;font-size:13px;line-height:1.7">{brief}</div>' if brief else ''}
+<h2>Experiments</h2>
+{experiments_html}
+{f'<h2>Report</h2><div class="report">{report[:3000]}</div>' if report else ''}
+<div class="footer">Powered by <a href="/">19Labs</a> · Autonomous ML Research</div>
+</body></html>"""
+
+    return HTMLResponse(html)
+
+
+# ── TIER 2: Multi-dataset Join ────────────────────────────────
+
+class JoinRequest(BaseModel):
+    datasets: list[dict]  # [{"name": "file1.csv", "csv": "..."}, ...]
+    hint: str = ""
+    api_key: str = ""
+    provider: str = "claude"
+
+@app.post("/api/join-datasets")
+async def join_datasets(req: JoinRequest):
+    """AI-powered multi-dataset join. Detects join keys automatically."""
+    import pandas as pd, io
+    if len(req.datasets) < 2:
+        return {"ok": False, "error": "Need at least 2 datasets to join"}
+
+    dfs = {}
+    for ds in req.datasets:
+        try:
+            dfs[ds["name"]] = pd.read_csv(io.StringIO(ds["csv"]))
+        except Exception as e:
+            return {"ok": False, "error": f"Failed to parse {ds['name']}: {e}"}
+
+    # Try to find common columns for joining
+    names = list(dfs.keys())
+    all_cols = {name: set(df.columns) for name, df in dfs.items()}
+
+    # Find pairwise common columns
+    common = set.intersection(*all_cols.values()) if len(all_cols) > 1 else set()
+
+    # Smart join key detection
+    join_key = None
+    join_candidates = []
+    for col in common:
+        # Check if it looks like an ID/key column
+        is_key = any([
+            col.lower().endswith('_id'),
+            col.lower().endswith('id'),
+            col.lower() in ('id', 'key', 'index', 'code', 'name', 'date', 'timestamp'),
+            all(dfs[n][col].nunique() > len(dfs[n]) * 0.5 for n in names),  # High cardinality
+        ])
+        if is_key:
+            join_candidates.append(col)
+
+    if not join_candidates and common:
+        join_candidates = list(common)[:3]
+
+    if not join_candidates:
+        # No common columns — suggest concat
+        try:
+            result = pd.concat(list(dfs.values()), ignore_index=True)
+            csv_out = result.to_csv(index=False)
+            return {
+                "ok": True,
+                "csv": csv_out,
+                "method": "concat",
+                "join_key": None,
+                "rows": len(result),
+                "cols": len(result.columns),
+                "log": f"No common columns found. Concatenated {len(dfs)} datasets vertically ({len(result)} rows)."
+            }
+        except Exception as e:
+            return {"ok": False, "error": f"Join failed: {e}"}
+
+    join_key = join_candidates[0]
+
+    # Perform sequential left join
+    result = list(dfs.values())[0]
+    for i, (name, df) in enumerate(list(dfs.items())[1:]):
+        # Rename overlapping columns (except join key)
+        overlap = set(result.columns) & set(df.columns) - {join_key}
+        if overlap:
+            suffix = f"_{name.split('.')[0]}"
+            df = df.rename(columns={c: c + suffix for c in overlap})
+        result = result.merge(df, on=join_key, how="outer")
+
+    csv_out = result.to_csv(index=False)
+    return {
+        "ok": True,
+        "csv": csv_out,
+        "method": "merge",
+        "join_key": join_key,
+        "join_candidates": join_candidates,
+        "rows": len(result),
+        "cols": len(result.columns),
+        "log": f"Joined {len(dfs)} datasets on '{join_key}' → {len(result)} rows, {len(result.columns)} columns."
+    }
 
 
 # ── HEALTH ─────────────────────────────────────────────────────

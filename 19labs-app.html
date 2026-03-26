@@ -399,6 +399,56 @@ input[type=file]{display:none}
 .cp-btn:hover{color:var(--text);border-color:var(--accent);background:var(--accent-soft)}
 .cp-btn.copied{color:var(--accent);border-color:rgba(59,130,246,.3)}
 
+/* ── URL CONNECTOR ── */
+.url-row{display:flex;gap:6px;margin:8px;align-items:center}
+.url-in{flex:1;padding:7px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:11px;outline:none}
+.url-in:focus{border-color:var(--accent)}
+.url-in::placeholder{color:var(--text-3)}
+.url-btn{padding:7px 12px;font-size:11px;font-weight:600;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:all var(--t);white-space:nowrap}
+.url-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+/* ── DATA TRANSFORMS ── */
+.dt-bar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
+.dt-bar-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);width:100%;margin-bottom:4px}
+.dt-chip{padding:4px 10px;font-size:10px;font-weight:600;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:all var(--t)}
+.dt-chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.dt-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.dt-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);animation:si .2s ease}
+.dt-action-btn{padding:5px 10px;font-size:10px;font-weight:600;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);color:var(--text-2);cursor:pointer;transition:all var(--t)}
+.dt-action-btn:hover{border-color:var(--accent);color:var(--accent)}
+.dt-log{margin-top:8px;font-size:11px;color:var(--text-3);font-family:var(--mono);line-height:1.6}
+.dt-log-item{padding:2px 0}
+.dt-log-item::before{content:'✓ ';color:var(--accent)}
+
+/* ── EXPLAIN TAB ── */
+.explain-panel{padding:16px;display:flex;flex-direction:column;gap:16px}
+.explain-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px}
+.explain-card h3{font-size:14px;font-weight:700;margin-bottom:12px}
+.fi-bar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.fi-name{font-size:12px;font-weight:600;color:var(--text-2);width:140px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.fi-track{flex:1;height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+.fi-fill{height:100%;border-radius:4px;background:var(--accent);transition:width .6s ease}
+.fi-val{font-size:10px;font-family:var(--mono);color:var(--text-3);width:60px;text-align:right;flex-shrink:0}
+.pdp-chart{margin-top:8px}
+.pdp-chart svg{width:100%;display:block}
+
+/* ── SHARE BUTTON ── */
+.share-btn{padding:8px 14px;font-size:12px;font-weight:600;border-radius:var(--r);border:1px solid rgba(167,139,250,.3);background:rgba(167,139,250,.08);color:var(--purple);cursor:pointer;transition:all var(--t);display:inline-flex;align-items:center;gap:6px}
+.share-btn:hover{background:rgba(167,139,250,.15);border-color:rgba(167,139,250,.5)}
+.share-url{padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);font-family:var(--mono);font-size:11px;color:var(--accent);margin-top:8px;cursor:pointer;transition:all var(--t);word-break:break-all}
+.share-url:hover{background:var(--accent-soft);border-color:var(--accent)}
+
+/* ── MULTI-DATASET ── */
+.multi-ds{margin:8px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r)}
+.multi-ds-item{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px}
+.multi-ds-name{flex:1;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.multi-ds-size{font-size:10px;color:var(--text-3);font-family:var(--mono)}
+.multi-ds-x{cursor:pointer;color:var(--text-3);font-size:14px;width:18px;text-align:center;transition:color var(--t)}
+.multi-ds-x:hover{color:var(--red)}
+.join-bar{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.join-btn{padding:5px 12px;font-size:11px;font-weight:600;border-radius:var(--r);border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);cursor:pointer;transition:all var(--t)}
+.join-btn:hover{background:var(--accent);color:#fff}
+
 /* ── NOTIFICATION BADGES ── */
 .tab-badge{font-size:8px;font-weight:700;min-width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:var(--accent);color:#fff;margin-left:4px;padding:0 4px;vertical-align:middle}
 
@@ -514,8 +564,13 @@ input[type=file]{display:none}
         <div class="dz-icon" id="dz-icon">+</div>
         <div class="dz-title" id="dz-title">Add Dataset</div>
         <div class="dz-sub" id="dz-sub">CSV, Excel, JSON, TSV</div>
-        <input type="file" id="fi" accept=".csv,.xlsx,.xls,.json,.tsv,.txt" onchange="onFile(event)">
+        <input type="file" id="fi" accept=".csv,.xlsx,.xls,.json,.tsv,.txt" multiple onchange="onFile(event)">
       </div>
+      <div class="url-row">
+        <input class="url-in" id="url-in" placeholder="Paste URL or Google Sheets link..." onkeydown="if(event.key==='Enter')fetchFromURL()">
+        <button class="url-btn" onclick="fetchFromURL()">Fetch</button>
+      </div>
+      <div id="multi-ds-panel"></div>
       <div id="file-list"></div>
       <div id="run-history"></div>
       <div id="art-list"></div>
@@ -554,6 +609,7 @@ input[type=file]{display:none}
       <div class="tab" data-t="exp" onclick="stab('exp')">Experiments</div>
       <div class="tab" data-t="art" onclick="stab('art')">Artifacts</div>
       <div class="tab" data-t="predict" onclick="stab('predict')">Predict</div>
+      <div class="tab" data-t="explain" onclick="stab('explain')">Explain</div>
       <div class="tab" data-t="rpt" onclick="stab('rpt')">Report</div>
       <div class="tab" data-t="log" onclick="stab('log')">Logs</div>
     </div>
@@ -575,6 +631,7 @@ input[type=file]{display:none}
       <div id="p-exp" class="exp-feed" style="display:none"></div>
       <div id="p-art" class="art-grid" style="display:none"></div>
       <div id="p-predict" style="display:none"></div>
+      <div id="p-explain" class="explain-panel" style="display:none"></div>
       <div id="p-rpt" class="rpt" style="display:none"></div>
       <div id="p-log" class="logs" style="display:none"></div>
     </div>
@@ -733,7 +790,7 @@ function stab(name){
     t.classList.toggle('on',t.dataset.t===name);
     if(t.dataset.t===name){const b=t.querySelector('.tab-badge');if(b)b.remove()}
   });
-  ['data','code','exp','art','predict','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':''):'none'});
+  ['data','code','exp','art','predict','explain','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':''):'none'});
   const em=document.getElementById('ws-empty');
   if(em)em.style.display=(name==='data'&&!S.cols)?'':'none';
   if(name==='code'&&monacoEditor)monacoEditor.layout();
@@ -858,7 +915,7 @@ const dz=document.getElementById('dz');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handleFile(f)});
-function onFile(e){const f=e.target.files[0];if(f)handleFile(f)}
+function onFile(e){const files=e.target.files;if(!files||!files.length)return;for(let i=0;i<files.length;i++)handleFile(files[i])}
 
 // handleFile is defined below in the "FILE FORMAT SUPPORT" section
 
@@ -1167,10 +1224,13 @@ async function launchRun(){
     addRunHistory(S.runId,'done',`${S.best?.model||''}`.trim()||S.file?.name||'Done');
     toast(`Research complete — ${kept}/${totalExp} experiments kept`,'ok',6000);
     sbUpdate({status:'Done',running:false,stopTimer:true,tokens:tu.input?`${((tu.input+tu.output)/1000).toFixed(1)}k (~${costStr})`:''});
-    // Enable predict panel
+    // Enable predict panel + explain panel
     showPredictPanel();
+    loadExplainability();
     const predTab=document.querySelector('.tab[data-t="predict"]');
     if(predTab&&!predTab.querySelector('.tab-badge'))predTab.innerHTML='Predict <span class="tab-badge">!</span>';
+    const explTab=document.querySelector('.tab[data-t="explain"]');
+    if(explTab&&!explTab.querySelector('.tab-badge'))explTab.innerHTML='Explain <span class="tab-badge">!</span>';
     // Final chart render
     renderMetricChart();renderComparison();
     playDone();
@@ -1327,7 +1387,7 @@ function showBest(best,obj,runId){
   const secLines=extraKeys.map(k=>{const tt=fmtTrainTest(am,k);return tt?`${k.toUpperCase()}: ${tt}`:null}).filter(Boolean);
   const secHtml=secLines.length?`<div class="bb-s" style="font-size:12px;color:var(--text-2);margin-top:4px">${secLines.join(' · ')}</div>`:'';
   const summary=`${best.model} — ${pk.toUpperCase()} = ${Number(best.metric_val).toFixed(4)}`;
-  e.innerHTML=`<div class="bb-l">Best Model <button class="cp-btn" onclick="copyText(\`${esc(summary)}\`,this)">Copy</button></div><div class="bb-m">${esc(best.model)}</div><div class="bb-s">${primaryLine}</div>${secHtml}<div class="bb-d">${esc((obj?.domain||'')+' · '+(obj?.task||'')+' · target: '+(obj?.target||''))}</div><div class="bb-a"><button class="abtn p" onclick="dlDeploy('${runId}')">Download Model</button><button class="abtn" onclick="dlPack('${runId}')">Project Pack</button><button class="abtn" onclick="genHandoff('${runId}')">Handoff</button></div>`;
+  e.innerHTML=`<div class="bb-l">Best Model <button class="cp-btn" onclick="copyText(\`${esc(summary)}\`,this)">Copy</button></div><div class="bb-m">${esc(best.model)}</div><div class="bb-s">${primaryLine}</div>${secHtml}<div class="bb-d">${esc((obj?.domain||'')+' · '+(obj?.task||'')+' · target: '+(obj?.target||''))}</div><div class="bb-a"><button class="abtn p" onclick="dlDeploy('${runId}')">Download Model</button><button class="abtn" onclick="dlPack('${runId}')">Project Pack</button><button class="abtn" onclick="genHandoff('${runId}')">Handoff</button><button class="share-btn" onclick="shareResults('${runId}')">Share</button></div><div id="share-url-container"></div>`;
   c.insertBefore(e,c.firstChild);
 }
 function showRpt(rpt){
@@ -1466,8 +1526,9 @@ const CMDS=[
   {label:'Experiments Tab',key:'⌘3',action:()=>stab('exp')},
   {label:'Artifacts Tab',key:'⌘4',action:()=>stab('art')},
   {label:'Predict Tab',key:'⌘5',action:()=>stab('predict')},
-  {label:'Report Tab',key:'⌘6',action:()=>stab('rpt')},
-  {label:'Logs Tab',key:'⌘7',action:()=>stab('log')},
+  {label:'Explain Tab',key:'⌘6',action:()=>stab('explain')},
+  {label:'Report Tab',key:'⌘7',action:()=>stab('rpt')},
+  {label:'Logs Tab',key:'⌘8',action:()=>stab('log')},
   {label:'Open Settings',key:'⌘,',action:()=>openSettings()},
   {label:'Run Autopilot',action:()=>{if(S.file){S.confirmed=true;launchRun()}}},
   {label:'Run Continuous (Never Stop)',action:()=>{if(S.file){S.continuous=true;S.confirmed=true;launchRun()}}},
@@ -1516,7 +1577,7 @@ document.addEventListener('keydown',e=>{
   if(isCmd&&e.key===','){e.preventDefault();openSettings();return}
   if(isCmd&&e.key>='1'&&e.key<='7'){
     e.preventDefault();
-    const tabs=['data','code','exp','art','predict','rpt','log'];
+    const tabs=['data','code','exp','art','predict','explain','rpt','log'];
     stab(tabs[parseInt(e.key)-1]);return;
   }
 });
@@ -1653,6 +1714,7 @@ const emptyStates={
   'p-exp':{icon:'🧪',title:'No experiments yet',sub:'Start a run and experiments will appear here in real time with a live metric chart.'},
   'p-art':{icon:'📦',title:'No artifacts yet',sub:'Artifacts like notebooks, charts, and reports are generated after experiments.'},
   'p-predict':{icon:'🔮',title:'No model ready',sub:'Complete a training run, then test predictions on new data here.'},
+  'p-explain':{icon:'🔬',title:'No model to explain',sub:'Complete a training run, then view feature importance, SHAP values, and partial dependence plots here.'},
   'p-rpt':{icon:'📝',title:'No report yet',sub:'A comprehensive report is generated at the end of each run.'},
   'p-log':{icon:'📋',title:'No logs yet',sub:'Streaming logs will appear here once a run starts.'},
 };
@@ -2113,9 +2175,276 @@ function streamToMonaco(code){
 }
 
 // ═══════════════════════════════════════════
+// TIER 2: SMART DATA CONNECTORS
+// ═══════════════════════════════════════════
+async function fetchFromURL(){
+  const inp=document.getElementById('url-in');
+  const url=(inp.value||'').trim();
+  if(!url){toast('Enter a URL','warn');return}
+  toast('Fetching data from URL...','info',3000);
+  try{
+    const r=await apiFetch(`${BASE}/api/fetch-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const j=await r.json();
+    if(!j.ok)throw new Error(j.error||'Fetch failed');
+    inp.value='';
+    const fname=j.filename||'fetched_data.csv';
+    const blob=new Blob([j.csv],{type:'text/csv'});
+    const file=new File([blob],fname);
+    handleFile(file,j.csv);
+    toast(`Loaded ${fname}${j.converted_from?' (converted from '+j.converted_from+')':''}${j.rows?' — '+j.rows+' rows':''}` ,'ok',4000);
+    if(j.converted_from)chat('ai',`Fetched data from URL and converted from <strong>${esc(j.converted_from)}</strong> to CSV.`);
+  }catch(e){toast(`Fetch failed: ${e.message.slice(0,80)}`,'err')}
+}
+
+// Clipboard paste support for data
+document.addEventListener('paste',async(e)=>{
+  // Only handle paste if not focused on an input
+  const active=document.activeElement;
+  if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'))return;
+  const text=(e.clipboardData||window.clipboardData).getData('text');
+  if(!text||text.length<20)return;
+  // Check if it looks like CSV/TSV data
+  const lines=text.split('\n').filter(l=>l.trim());
+  if(lines.length<2)return;
+  const sep=lines[0].includes('\t')?'\t':(lines[0].split(',').length>1?',':null);
+  if(!sep)return;
+  const colCount=lines[0].split(sep).length;
+  if(colCount<2)return;
+  e.preventDefault();
+  const blob=new Blob([text],{type:'text/csv'});
+  const file=new File([blob],'pasted_data.csv');
+  handleFile(file,text);
+  toast(`Pasted ${lines.length-1} rows × ${colCount} columns`,'ok',4000);
+  chat('ai',`Loaded pasted data — <strong>${lines.length-1} rows × ${colCount} columns</strong>.`);
+});
+
+// ═══════════════════════════════════════════
+// TIER 2: INLINE DATA TRANSFORMS
+// ═══════════════════════════════════════════
+let _selectedTransformCol=null;
+function showTransformBar(){
+  if(!S.cols||!S.rows)return;
+  const el=document.getElementById('p-data');
+  if(el.querySelector('.dt-bar'))return;// already shown
+  const bar=document.createElement('div');bar.className='dt-bar';bar.id='dt-bar';
+  let h=`<div class="dt-bar-label">Transform columns — click a column to see actions</div>`;
+  S.cols.forEach(c=>{
+    const type=S.colTypes[c]||'categorical';
+    h+=`<div class="dt-chip" data-col="${esc(c)}" onclick="selectTransformCol('${esc(c)}')">${esc(c)} <span style="font-size:8px;color:var(--text-3)">${type.slice(0,3)}</span></div>`;
+  });
+  bar.innerHTML=h;
+  el.insertBefore(bar,el.children[1]||null);
+}
+function selectTransformCol(col){
+  _selectedTransformCol=col;
+  document.querySelectorAll('.dt-chip').forEach(c=>c.classList.toggle('active',c.dataset.col===col));
+  // Remove old actions
+  const old=document.getElementById('dt-actions');if(old)old.remove();
+  const type=S.colTypes[col]||'categorical';
+  const nullPct=S.rows.length?Math.round((S.colNulls[col]||0)/S.rows.length*100):0;
+  const bar=document.getElementById('dt-bar');
+  const actions=document.createElement('div');actions.className='dt-actions';actions.id='dt-actions';
+  let h=`<span style="font-size:11px;font-weight:600;color:var(--text);width:100%;margin-bottom:4px">${esc(col)} <span style="color:var(--text-3);font-weight:400">${type} · ${nullPct}% null</span></span>`;
+  // Common actions
+  if(nullPct>0){
+    h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','drop_nulls')">Drop nulls</button>`;
+    if(type==='numeric'){
+      h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','fill_mean')">Fill mean</button>`;
+      h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','fill_median')">Fill median</button>`;
+    }else{
+      h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','fill_mode')">Fill mode</button>`;
+    }
+  }
+  if(type==='categorical'){
+    h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','one_hot')">One-hot encode</button>`;
+    h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','label_encode')">Label encode</button>`;
+  }
+  if(type==='numeric'){
+    h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','log_transform')">Log transform</button>`;
+    h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','standardize')">Standardize</button>`;
+    h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','bin')">Bin (5 groups)</button>`;
+  }
+  h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','to_numeric')">To numeric</button>`;
+  h+=`<button class="dt-action-btn" onclick="applyTransform('${esc(col)}','to_datetime')">Extract dates</button>`;
+  h+=`<button class="dt-action-btn" style="color:var(--red);border-color:rgba(239,68,68,.2)" onclick="applyTransform('${esc(col)}','drop_column')">Drop column</button>`;
+  actions.innerHTML=h;
+  bar.after(actions);
+}
+async function applyTransform(col,action){
+  if(!S.csv){toast('No data loaded','warn');return}
+  toast(`Applying ${action} on ${col}...`,'info',2000);
+  try{
+    const r=await apiFetch(`${BASE}/api/transform`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csv_text:S.csv,transforms:[{column:col,action}]})});
+    const j=await r.json();
+    if(!j.ok)throw new Error(j.error||'Transform failed');
+    // Update state with transformed data
+    S.csv=j.csv;
+    const parsed=parseCSV(j.csv);
+    S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+    showDataPreview();showDataQualityWarnings();
+    // Rebuild transform bar
+    const oldBar=document.getElementById('dt-bar');if(oldBar)oldBar.remove();
+    const oldActions=document.getElementById('dt-actions');if(oldActions)oldActions.remove();
+    showTransformBar();
+    // Show log
+    const logMsg=j.log.join(' | ');
+    toast(logMsg,'ok',4000);
+    chat('sys',`Transform applied: ${logMsg}. Data: ${j.rows} rows × ${j.cols} cols.`);
+  }catch(e){toast(`Transform failed: ${e.message.slice(0,60)}`,'err')}
+}
+
+// ═══════════════════════════════════════════
+// TIER 2: MODEL EXPLAINABILITY
+// ═══════════════════════════════════════════
+async function loadExplainability(){
+  if(!S.runId||!S.best)return;
+  const el=document.getElementById('p-explain');
+  clearEmpty('p-explain');
+  el.innerHTML='<div style="padding:24px;color:var(--text-3);font-size:13px">Loading model explainability...</div>';
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${S.runId}/explain`);
+    const j=await r.json();
+    if(!j.ok){el.innerHTML=`<div class="explain-card"><h3>Explainability</h3><p style="color:var(--text-3);font-size:12px">${esc(j.error||'Could not explain this model')}</p></div>`;return}
+    let h='';
+    // Feature importance
+    if(j.feature_importance&&j.feature_importance.length){
+      const maxImp=Math.max(...j.feature_importance.map(f=>Math.abs(f.importance)));
+      h+=`<div class="explain-card"><h3>Feature Importance <span style="font-weight:400;color:var(--text-3);font-size:11px">(${esc(j.method)} · ${j.model_type})</span></h3>`;
+      j.feature_importance.forEach(f=>{
+        const pct=maxImp>0?(Math.abs(f.importance)/maxImp*100):0;
+        h+=`<div class="fi-bar"><div class="fi-name" title="${esc(f.feature)}">${esc(f.feature)}</div><div class="fi-track"><div class="fi-fill" style="width:${pct}%"></div></div><div class="fi-val">${f.importance.toFixed(4)}</div></div>`;
+      });
+      h+=`</div>`;
+    }
+    // Partial dependence plots
+    if(j.partial_dependence&&Object.keys(j.partial_dependence).length){
+      h+=`<div class="explain-card"><h3>Partial Dependence</h3>`;
+      for(const[feat,data]of Object.entries(j.partial_dependence)){
+        h+=`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px">${esc(feat)}</div>`;
+        h+=renderPDPChart(feat,data);
+        h+=`</div>`;
+      }
+      h+=`</div>`;
+    }
+    if(!h)h=`<div class="explain-card"><h3>Explainability</h3><p style="color:var(--text-3);font-size:12px">No explanations available for this model type.</p></div>`;
+    el.innerHTML=h;
+  }catch(e){el.innerHTML=`<div class="explain-card"><h3>Explainability</h3><p style="color:var(--red);font-size:12px">Error: ${esc(e.message)}</p></div>`}
+}
+function renderPDPChart(feat,data){
+  const grid=data.grid||[];const preds=data.predictions||[];
+  if(!grid.length)return'';
+  const W=400,H=140,P={l:55,r:16,t:10,b:28};
+  const cW=W-P.l-P.r,cH=H-P.t-P.b;
+  const minX=Math.min(...grid),maxX=Math.max(...grid);
+  const minY=Math.min(...preds),maxY=Math.max(...preds);
+  const rangeX=maxX-minX||1,rangeY=maxY-minY||1;
+  const x=v=>P.l+((v-minX)/rangeX)*cW;
+  const y=v=>P.t+cH-((v-minY)/rangeY)*cH;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  // Grid
+  for(let i=0;i<=3;i++){
+    const gv=minY+(rangeY*i/3);const gy=y(gv);
+    svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="#27272a" stroke-width="0.5"/>`;
+    svg+=`<text x="${P.l-6}" y="${gy+3}" font-size="7" fill="#71717a" text-anchor="end" font-family="JetBrains Mono,monospace">${gv.toFixed(gv<1?4:2)}</text>`;
+  }
+  // Line + area
+  let area=`M ${x(grid[0])} ${P.t+cH}`;
+  for(let i=0;i<grid.length;i++)area+=` L ${x(grid[i])} ${y(preds[i])}`;
+  area+=` L ${x(grid[grid.length-1])} ${P.t+cH} Z`;
+  svg+=`<path d="${area}" fill="rgba(167,139,250,0.08)"/>`;
+  let path=`M ${x(grid[0])} ${y(preds[0])}`;
+  for(let i=1;i<grid.length;i++)path+=` L ${x(grid[i])} ${y(preds[i])}`;
+  svg+=`<path d="${path}" stroke="#a78bfa" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+  // X labels
+  const step=Math.max(1,Math.floor(grid.length/5));
+  for(let i=0;i<grid.length;i+=step){
+    svg+=`<text x="${x(grid[i])}" y="${H-4}" font-size="7" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace">${grid[i].toFixed(grid[i]<1?3:1)}</text>`;
+  }
+  svg+=`</svg>`;
+  return`<div class="pdp-chart">${svg}</div>`;
+}
+
+// ═══════════════════════════════════════════
+// TIER 2: SHAREABLE RESULTS URL
+// ═══════════════════════════════════════════
+async function shareResults(runId){
+  if(!runId){toast('No run to share','warn');return}
+  toast('Creating shareable link...','info',2000);
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${runId}/share`,{method:'POST'});
+    const j=await r.json();
+    if(!j.ok)throw new Error(j.error||'Share failed');
+    const fullUrl=`${window.location.origin}${j.url}`;
+    const container=document.getElementById('share-url-container');
+    if(container){
+      container.innerHTML=`<div class="share-url" onclick="copyText('${fullUrl}',this)" title="Click to copy">${fullUrl}</div>`;
+    }
+    navigator.clipboard.writeText(fullUrl).catch(()=>{});
+    toast('Share link copied to clipboard!','ok',4000);
+    chat('ai',`Results shared! Anyone with this link can view your model results:<br><a href="${fullUrl}" target="_blank" style="color:var(--accent)">${esc(fullUrl)}</a>`);
+  }catch(e){toast(`Share failed: ${e.message.slice(0,60)}`,'err')}
+}
+
+// ═══════════════════════════════════════════
+// TIER 2: MULTI-DATASET JOINS
+// ═══════════════════════════════════════════
+const _extraDatasets=[];// [{name, csv, size}]
+function updateMultiDSPanel(){
+  const el=document.getElementById('multi-ds-panel');
+  if(!_extraDatasets.length){el.innerHTML='';return}
+  let h=`<div class="multi-ds"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-bottom:6px">Additional datasets (${_extraDatasets.length})</div>`;
+  _extraDatasets.forEach((d,i)=>{
+    h+=`<div class="multi-ds-item"><span style="font-size:14px">📊</span><span class="multi-ds-name">${esc(d.name)}</span><span class="multi-ds-size">${(d.size/1024).toFixed(1)}K</span><span class="multi-ds-x" onclick="removeExtraDS(${i})">✕</span></div>`;
+  });
+  if(S.csv&&_extraDatasets.length>=1){
+    h+=`<div class="join-bar"><button class="join-btn" onclick="joinDatasets()">Join All Datasets</button><span style="font-size:10px;color:var(--text-3);padding:5px 0">AI will detect join keys automatically</span></div>`;
+  }
+  h+=`</div>`;
+  el.innerHTML=h;
+}
+function removeExtraDS(idx){
+  _extraDatasets.splice(idx,1);
+  updateMultiDSPanel();
+}
+async function joinDatasets(){
+  if(!S.csv||!_extraDatasets.length){toast('Need primary + at least 1 extra dataset','warn');return}
+  toast('Joining datasets...','info',3000);
+  const datasets=[{name:S.file?.name||'primary.csv',csv:S.csv},..._extraDatasets.map(d=>({name:d.name,csv:d.csv}))];
+  try{
+    const r=await apiFetch(`${BASE}/api/join-datasets`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({datasets})});
+    const j=await r.json();
+    if(!j.ok)throw new Error(j.error||'Join failed');
+    // Replace current data with joined result
+    S.csv=j.csv;
+    const parsed=parseCSV(j.csv);
+    S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+    S.analyzed=false;S.confirmed=false;// re-analyze after join
+    showDataPreview();showDataQualityWarnings();
+    const oldBar=document.getElementById('dt-bar');if(oldBar)oldBar.remove();
+    const oldActions=document.getElementById('dt-actions');if(oldActions)oldActions.remove();
+    showTransformBar();
+    _extraDatasets.length=0;
+    updateMultiDSPanel();
+    const method=j.method==='merge'?`Merged on <code>${esc(j.join_key)}</code>`:'Concatenated vertically';
+    toast(`${j.log}`,'ok',5000);
+    chat('ai',`<strong>Datasets joined!</strong> ${method} — <strong>${j.rows.toLocaleString()} rows × ${j.cols} columns</strong>.<br>${esc(j.log)}`);
+    stab('data');
+  }catch(e){toast(`Join failed: ${e.message.slice(0,60)}`,'err')}
+}
+
+// ═══════════════════════════════════════════
 // FILE FORMAT SUPPORT (Excel, JSON)
 // ═══════════════════════════════════════════
-async function handleFile(f){
+async function handleFile(f,preloadedText){
+  // If we already have a primary dataset and this is additional, add to extras
+  if(S.csv&&S.file&&S.file.name!==f.name){
+    const extraText=preloadedText||await readF(f);
+    _extraDatasets.push({name:f.name,csv:extraText,size:f.size||extraText.length});
+    updateMultiDSPanel();
+    toast(`Added ${f.name} as extra dataset — click "Join" to merge`,'ok',4000);
+    chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset. Click <strong>Join All Datasets</strong> in the sidebar to merge them.`);
+    return;
+  }
   S.file=f;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
   document.getElementById('dz-icon').textContent='📊';
   document.getElementById('dz-title').textContent=f.name;
@@ -2127,10 +2456,12 @@ async function handleFile(f){
   document.getElementById('ws-empty').style.display='none';
   toast(`Loaded ${f.name}`,'ok',3000);
 
-  let text;
+  let text=preloadedText||null;
   const ext=f.name.split('.').pop().toLowerCase();
 
-  if(ext==='json'){
+  if(text){
+    // Already have the text (from URL fetch or paste)
+  } else if(ext==='json'){
     // JSON → convert to CSV
     const raw=await readF(f);
     try{
@@ -2169,6 +2500,7 @@ async function handleFile(f){
   document.getElementById('p-exp').innerHTML='';
   showDataPreview();
   showDataQualityWarnings();
+  showTransformBar();
   stab('data');
 
   const numCols=S.cols.filter(c=>S.colTypes[c]==='numeric');
@@ -2198,7 +2530,7 @@ setBadge(C.key?'READY':'IDLE','');
 // Apply saved mode on load (without showing the welcome toast)
 {const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
-['p-exp','p-art','p-predict','p-rpt','p-log'].forEach(id=>showEmpty(id));
+['p-exp','p-art','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
 </script>
 </body>
 </html>
