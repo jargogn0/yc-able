@@ -3,372 +3,331 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>19Labs</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,200;0,14..32,300;0,14..32,400;0,14..32,500;1,14..32,300&display=swap" rel="stylesheet">
+<title>19Labs — The Cursor for Data Science</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
+:root{
+  --bg:#05050a;
+  --fg:#ffffff;
+  --fg2:rgba(255,255,255,.45);
+  --fg3:rgba(255,255,255,.18);
+  --border:rgba(255,255,255,.07);
+  --accent:#6366f1;
+  --accent-glow:rgba(99,102,241,.25);
+}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
-body{background:#060608;color:#fff;font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-
-canvas{position:fixed;inset:0;z-index:0}
-
-/* subtle radial glow behind content */
-.glow-bg{
-  position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:radial-gradient(ellipse 60% 50% at 50% 55%, rgba(99,102,241,.07) 0%, transparent 70%);
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  font-size:14px;line-height:1.5;
 }
+canvas{position:fixed;inset:0;z-index:0;opacity:.7}
 
 /* ── Nav ── */
 nav{
   position:fixed;top:0;left:0;right:0;z-index:20;
-  display:flex;align-items:center;height:58px;padding:0 32px;
+  height:52px;display:flex;align-items:center;
+  padding:0 32px;
+  border-bottom:1px solid var(--border);
+  background:rgba(5,5,10,.8);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
 }
-.n-logo{
-  font-size:15px;font-weight:500;color:#fff;text-decoration:none;letter-spacing:-.25px;
+.logo{
+  font-size:13.5px;font-weight:500;color:var(--fg);
+  text-decoration:none;letter-spacing:-.25px;
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
 }
-.n-logo em{font-style:normal;color:rgba(255,255,255,.3);font-weight:300}
-.n-links{display:flex;align-items:center;gap:1px;margin-left:32px}
-.n-links a{
-  font-size:13px;color:rgba(255,255,255,.42);text-decoration:none;
-  padding:6px 11px;border-radius:6px;transition:color .15s;font-weight:400;
+.logo-icon{
+  width:22px;height:22px;border-radius:6px;
+  background:var(--accent);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:600;color:#fff;letter-spacing:0;
 }
-.n-links a:hover{color:rgba(255,255,255,.85)}
-.n-r{margin-left:auto;display:flex;align-items:center;gap:10px}
-.n-r .n-app{
-  font-size:13px;font-weight:400;color:rgba(255,255,255,.5);text-decoration:none;transition:color .15s;
+.nav-links{
+  display:flex;align-items:center;gap:1px;margin-left:20px;
 }
-.n-r .n-app:hover{color:#fff}
-.n-r .n-dl{
+.nav-links a{
+  font-size:12.5px;color:var(--fg2);text-decoration:none;
+  padding:5px 10px;border-radius:6px;transition:color .12s;
+}
+.nav-links a:hover{color:var(--fg)}
+.nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn-ghost{
+  font-size:12.5px;color:var(--fg2);text-decoration:none;
+  padding:6px 12px;border-radius:7px;border:1px solid transparent;
+  transition:all .15s;background:none;cursor:pointer;
+}
+.btn-ghost:hover{color:var(--fg);border-color:var(--border)}
+.btn-solid{
   display:inline-flex;align-items:center;gap:6px;
-  font-size:13px;font-weight:500;color:#fff;
-  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);
-  padding:7px 16px;border-radius:8px;text-decoration:none;transition:all .2s;
+  font-size:12.5px;font-weight:500;color:#fff;
+  background:var(--accent);
+  padding:7px 16px;border-radius:7px;text-decoration:none;
+  transition:all .18s;border:none;cursor:pointer;
+  box-shadow:0 0 0 1px rgba(99,102,241,.5),0 2px 12px rgba(99,102,241,.2);
 }
-.n-r .n-dl:hover{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.22)}
+.btn-solid:hover{background:#5558e8;box-shadow:0 0 0 1px rgba(99,102,241,.7),0 4px 20px rgba(99,102,241,.35)}
 
 /* ── Hero ── */
-.page{
-  position:fixed;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
+.hero{
+  position:fixed;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
   z-index:10;pointer-events:none;text-align:center;
+  padding:0 24px;
 }
-.page>*{pointer-events:auto}
+.hero>*{pointer-events:auto}
 
-.eyebrow{
-  display:inline-flex;align-items:center;gap:8px;
-  font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;
-  color:rgba(255,255,255,.35);margin-bottom:26px;
+.pill{
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);
+  padding:4px 12px;border-radius:99px;margin-bottom:28px;
+  font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  font-weight:500;color:rgba(99,102,241,.9);cursor:default;
 }
-.eyebrow-dot{
+.pill-dot{
   width:5px;height:5px;border-radius:50%;
-  background:#6366f1;box-shadow:0 0 10px #6366f1;
-  animation:pulse 2.5s ease-in-out infinite;
+  background:var(--accent);
+  animation:blink 2.4s ease-in-out infinite;
 }
 
-h1{
-  font-size:64px;font-weight:200;line-height:1.06;
-  letter-spacing:-3px;margin-bottom:20px;
-  color:#fff;
+.headline{
+  font-size:clamp(36px,5vw,64px);
+  font-weight:300;
+  letter-spacing:clamp(-1.5px,-0.04em,-3px);
+  line-height:1.06;
+  color:var(--fg);
+  margin-bottom:18px;
 }
-h1 strong{font-weight:500;letter-spacing:-3px}
+.headline strong{
+  font-weight:500;
+  background:linear-gradient(135deg,#fff 30%,rgba(255,255,255,.6));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
 
 .sub{
-  font-size:14.5px;color:rgba(255,255,255,.35);
-  line-height:1.75;margin-bottom:44px;font-weight:300;
-  letter-spacing:.01em;
+  font-size:14px;font-weight:300;
+  color:var(--fg2);line-height:1.7;
+  margin-bottom:40px;
+  max-width:340px;
 }
 
-/* ── Download CTA ── */
-.cta{display:flex;flex-direction:column;align-items:center;gap:16px}
-
-.cta-row{display:flex;align-items:center;gap:10px}
-
+/* ── CTA ── */
+.cta{display:flex;flex-direction:column;align-items:center;gap:14px}
+.cta-btns{display:flex;align-items:center;gap:8px}
 .dl-primary{
-  display:inline-flex;align-items:center;gap:8px;
-  font-size:14px;font-weight:500;color:#fff;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6);
-  padding:12px 26px;border-radius:9px;text-decoration:none;
-  transition:all .25s;letter-spacing:-.15px;
-  box-shadow:0 0 0 1px rgba(99,102,241,.3),0 4px 20px rgba(99,102,241,.25);
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:13px;font-weight:500;color:#fff;
+  background:rgba(255,255,255,.95);color:#05050a;
+  padding:10px 22px;border-radius:8px;text-decoration:none;
+  transition:all .18s;letter-spacing:-.15px;
+  box-shadow:0 1px 2px rgba(0,0,0,.4);
 }
-.dl-primary:hover{
-  transform:translateY(-1px);
-  box-shadow:0 0 0 1px rgba(99,102,241,.5),0 8px 30px rgba(99,102,241,.4);
+.dl-primary:hover{background:#fff;transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.5)}
+.dl-primary svg{width:14px;height:14px;opacity:.7}
+.dl-web{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:12.5px;color:var(--fg3);text-decoration:none;
+  padding:10px 16px;border-radius:8px;border:1px solid var(--border);
+  transition:all .18s;
 }
-.dl-primary svg{width:15px;height:15px;opacity:.85}
-
-.dl-secondary{
-  display:inline-flex;align-items:center;gap:8px;
-  font-size:14px;font-weight:400;color:rgba(255,255,255,.55);
-  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
-  padding:12px 22px;border-radius:9px;text-decoration:none;transition:all .2s;
-}
-.dl-secondary:hover{color:rgba(255,255,255,.9);background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.15)}
+.dl-web:hover{color:var(--fg2);border-color:rgba(255,255,255,.14)}
 
 .platforms{
-  display:flex;align-items:center;gap:18px;
-  font-size:11.5px;color:rgba(255,255,255,.22);
+  display:flex;align-items:center;gap:14px;
+  font-size:11px;color:var(--fg3);
 }
-.platforms a{color:rgba(255,255,255,.22);text-decoration:none;transition:color .15s}
-.platforms a:hover{color:rgba(255,255,255,.6)}
-.platforms-sep{color:rgba(255,255,255,.1)}
+.platforms a{color:var(--fg3);text-decoration:none;transition:color .15s}
+.platforms a:hover{color:var(--fg2)}
+.sep{color:rgba(255,255,255,.08)}
 
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
-@media(max-width:680px){.n-links{display:none}h1{font-size:40px;letter-spacing:-2px}.cta-row{flex-direction:column}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+@media(max-width:600px){
+  .nav-links{display:none}
+  .headline{font-size:32px}
+  .cta-btns{flex-direction:column;width:100%}
+  .dl-primary,.dl-web{justify-content:center;width:100%}
+}
 </style>
 </head>
 <body>
-
 <canvas id="c"></canvas>
-<div class="glow-bg"></div>
 
 <nav>
-  <a href="/" class="n-logo">19<em>Labs</em></a>
-  <div class="n-links">
+  <a href="/" class="logo">
+    <div class="logo-icon">19</div>
+    Labs
+  </a>
+  <div class="nav-links">
     <a href="/app">Product</a>
     <a href="#">Pricing</a>
     <a href="https://github.com/jargogn0/yc-able" target="_blank">GitHub</a>
     <a href="#">Docs</a>
   </div>
-  <div class="n-r">
-    <a href="/app" class="n-app">Open App</a>
-    <a href="https://github.com/jargogn0/yc-able/releases/latest" class="n-dl" id="nav-dl">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      <span id="nav-dl-label">Download</span>
+  <div class="nav-r">
+    <a href="/app" class="btn-ghost">Sign in</a>
+    <a href="https://github.com/jargogn0/yc-able/releases/latest" class="btn-solid" id="nav-dl">
+      Download
     </a>
   </div>
 </nav>
 
-<div class="page">
-  <div class="eyebrow"><span class="eyebrow-dot"></span>Now in Early Access</div>
+<div class="hero">
+  <div class="pill"><span class="pill-dot"></span>Early Access</div>
 
-  <h1>The Cursor for<br><strong>Data Science</strong></h1>
+  <h1 class="headline">
+    The Cursor<br>for <strong>Data Science</strong>
+  </h1>
 
-  <p class="sub">Drop a dataset. Describe your goal.<br>Get a trained model — no code needed.</p>
+  <p class="sub">
+    Drop a dataset. Describe your goal.<br>
+    Get a trained model — no code needed.
+  </p>
 
   <div class="cta">
-    <div class="cta-row">
-      <a href="https://github.com/jargogn0/yc-able/releases/latest" class="dl-primary" id="dl-main">
+    <div class="cta-btns">
+      <a class="dl-primary" href="https://github.com/jargogn0/yc-able/releases/latest" id="dl-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span id="dl-label">Download for macOS</span>
       </a>
-      <a href="/app" class="dl-secondary">Use in browser</a>
+      <a class="dl-web" href="/app">
+        Use in browser →
+      </a>
     </div>
     <div class="platforms">
       <a href="https://github.com/jargogn0/yc-able/releases/latest">macOS</a>
-      <span class="platforms-sep">·</span>
+      <span class="sep">·</span>
       <a href="https://github.com/jargogn0/yc-able/releases/latest">Windows</a>
-      <span class="platforms-sep">·</span>
+      <span class="sep">·</span>
       <a href="https://github.com/jargogn0/yc-able/releases/latest">Linux</a>
-      <span class="platforms-sep">·</span>
-      <a href="https://github.com/jargogn0/yc-able/releases" style="color:rgba(255,255,255,.18)">All releases</a>
     </div>
   </div>
 </div>
 
 <script>
-// ── Compact, elegant neural network ─────────────────────────────────────────
-const canvas = document.getElementById('c');
-const ctx    = canvas.getContext('2d');
-let W, H;
-const mouse  = { x: -9999, y: -9999 };
+// ── Minimal neural net — small, elegant, centered ─────────────────
+const C=document.getElementById('c'),X=C.getContext('2d');
+let W,H,mouse={x:-9e9,y:-9e9};
 
-// Smaller, tighter architecture
-const ARCH = [3, 5, 7, 9, 7, 5, 3];
-
-const COLORS = [
-  [99,  102, 241],  // indigo
-  [139, 92,  246],  // violet
-  [168, 85,  247],  // purple
-  [59,  130, 246],  // blue
-  [20,  184, 166],  // teal
+// Tight MLP: small node count, occupies center strip
+const ARCH=[3,5,7,7,5,3];
+const COLS=[
+  [99,102,241],   // indigo
+  [139,92,246],   // violet
+  [59,130,246],   // blue
+  [20,184,166],   // teal
+  [236,72,153],   // pink
 ];
 
-let nodes = [], edges = [], pulses = [];
-let tick = 0;
+let nodes=[],edges=[],pulses=[],tick=0;
 
-function rebuild() {
-  nodes = []; edges = []; pulses = [];
-
-  // Network occupies center 55% of screen width, 60% height
-  const netW = Math.min(W * 0.55, 700);
-  const netH = Math.min(H * 0.55, 380);
-  const ox = (W - netW) / 2;
-  const oy = (H - netH) / 2 + 30; // shift down slightly
-
-  ARCH.forEach((count, li) => {
-    const lx = ox + (li / (ARCH.length - 1)) * netW;
-    for (let i = 0; i < count; i++) {
-      const ly = oy + ((i + 0.5) / count) * netH;
-      nodes.push({
-        bx: lx, by: ly,
-        x: lx, y: ly,
-        vx: 0, vy: 0,
-        r: 2.8,
-        layer: li,
-        glow: 0,
-        glowColor: COLORS[0],
-      });
+function build(){
+  nodes=[];edges=[];pulses=[];
+  const nL=ARCH.length;
+  const nW=Math.min(W*.48,520),nH=Math.min(H*.44,300);
+  const ox=(W-nW)/2,oy=(H-nH)/2+20;
+  ARCH.forEach((cnt,li)=>{
+    const lx=ox+(li/(nL-1))*nW;
+    for(let i=0;i<cnt;i++){
+      const ly=oy+((i+.5)/cnt)*nH;
+      nodes.push({bx:lx,by:ly,x:lx,y:ly,vx:0,vy:0,r:2.2,layer:li,glow:0,gc:COLS[li%COLS.length]});
     }
   });
-
-  // Connect all nodes in adjacent layers (classic MLP)
-  let base = 0;
-  for (let li = 0; li < ARCH.length - 1; li++) {
-    const c0 = ARCH[li], c1 = ARCH[li + 1];
-    for (let a = 0; a < c0; a++) {
-      for (let b = 0; b < c1; b++) {
-        edges.push({ a: base + a, b: base + c0 + b });
-      }
-    }
-    base += c0;
+  let base=0;
+  for(let li=0;li<nL-1;li++){
+    for(let a=0;a<ARCH[li];a++)
+      for(let b=0;b<ARCH[li+1];b++)
+        edges.push({a:base+a,b:base+ARCH[li]+b});
+    base+=ARCH[li];
   }
 }
+function resize(){W=C.width=innerWidth;H=C.height=innerHeight;build()}
 
-function resize() {
-  W = canvas.width = innerWidth;
-  H = canvas.height = innerHeight;
-  rebuild();
+function layerBase(li){let s=0;for(let i=0;i<li;i++)s+=ARCH[i];return s}
+
+function pulse(){
+  const li=Math.floor(Math.random()*(ARCH.length-1));
+  const b=layerBase(li),nb=b+ARCH[li];
+  const a=b+Math.floor(Math.random()*ARCH[li]);
+  const bNode=nb+Math.floor(Math.random()*ARCH[li+1]);
+  const col=COLS[Math.floor(Math.random()*COLS.length)];
+  pulses.push({a,b:bNode,t:0,spd:.016+Math.random()*.01,col});
 }
 
-function layerStartIndex(li) {
-  let idx = 0;
-  for (let i = 0; i < li; i++) idx += ARCH[i];
-  return idx;
-}
-
-function fireSignal() {
-  // Pick a random layer→layer+1 edge and send a pulse
-  const li = Math.floor(Math.random() * (ARCH.length - 1));
-  const base = layerStartIndex(li);
-  const nextBase = base + ARCH[li];
-  const a = base + Math.floor(Math.random() * ARCH[li]);
-  const b = nextBase + Math.floor(Math.random() * ARCH[li + 1]);
-  const col = COLORS[Math.floor(Math.random() * COLORS.length)];
-  pulses.push({ a, b, t: 0, speed: 0.022 + Math.random() * 0.012, color: col });
-}
-
-function draw() {
+function frame(){
   tick++;
-  ctx.clearRect(0, 0, W, H);
+  X.clearRect(0,0,W,H);
 
-  // Animate nodes (subtle drift + mouse repulsion)
-  nodes.forEach(n => {
-    const dx = n.x - mouse.x, dy = n.y - mouse.y;
-    const d  = Math.hypot(dx, dy);
-    if (d < 100 && d > 0) {
-      const f = ((100 - d) / 100) * 0.28;
-      n.vx += dx / d * f;
-      n.vy += dy / d * f;
+  nodes.forEach(n=>{
+    const dx=n.x-mouse.x,dy=n.y-mouse.y,d=Math.hypot(dx,dy);
+    if(d<90&&d>0){const f=(90-d)/90*.22;n.vx+=dx/d*f;n.vy+=dy/d*f}
+    n.vx+=(n.bx-n.x)*.028;n.vy+=(n.by-n.y)*.028;
+    n.vx*=.8;n.vy*=.8;n.x+=n.vx;n.y+=n.vy;
+    if(n.glow>0)n.glow-=.028;
+  });
+
+  // Edges
+  X.lineWidth=.55;
+  edges.forEach(e=>{
+    const a=nodes[e.a],b=nodes[e.b];
+    const g=Math.max(a.glow,b.glow);
+    X.beginPath();X.moveTo(a.x,a.y);X.lineTo(b.x,b.y);
+    X.strokeStyle=`rgba(255,255,255,${.055+g*.1})`;X.stroke();
+  });
+
+  // Pulses
+  pulses=pulses.filter(p=>p.t<1);
+  pulses.forEach(p=>{
+    p.t+=p.spd;
+    const a=nodes[p.a],b=nodes[p.b];
+    const px=a.x+(b.x-a.x)*p.t,py=a.y+(b.y-a.y)*p.t;
+    const[r,g,bl]=p.col;
+    const gr=X.createRadialGradient(px,py,0,px,py,7);
+    gr.addColorStop(0,`rgba(${r},${g},${bl},1)`);
+    gr.addColorStop(.4,`rgba(${r},${g},${bl},.35)`);
+    gr.addColorStop(1,`rgba(${r},${g},${bl},0)`);
+    X.beginPath();X.arc(px,py,7,0,Math.PI*2);X.fillStyle=gr;X.fill();
+    X.beginPath();X.arc(px,py,1.8,0,Math.PI*2);X.fillStyle=`rgba(${r},${g},${bl},1)`;X.fill();
+    if(p.t>=.98){nodes[p.b].glow=1;nodes[p.b].gc=p.col}
+  });
+
+  // Nodes
+  nodes.forEach(n=>{
+    const[r,g,bl]=n.glow>.04?n.gc:[200,200,220];
+    const gv=Math.max(0,n.glow);
+    if(gv>.02){
+      const gr=X.createRadialGradient(n.x,n.y,0,n.x,n.y,16);
+      gr.addColorStop(0,`rgba(${r},${g},${bl},${gv*.5})`);
+      gr.addColorStop(1,`rgba(${r},${g},${bl},0)`);
+      X.beginPath();X.arc(n.x,n.y,16,0,Math.PI*2);X.fillStyle=gr;X.fill();
     }
-    n.vx += (n.bx - n.x) * 0.03;
-    n.vy += (n.by - n.y) * 0.03;
-    n.vx *= 0.82;
-    n.vy *= 0.82;
-    n.x  += n.vx;
-    n.y  += n.vy;
-    if (n.glow > 0) n.glow -= 0.03;
+    X.beginPath();X.arc(n.x,n.y,n.r+gv*1.5,0,Math.PI*2);
+    X.fillStyle=gv>.04?`rgba(${r},${g},${bl},${.65+gv*.35})`:`rgba(255,255,255,.2)`;
+    X.fill();
   });
 
-  // Draw edges
-  ctx.lineWidth = 0.6;
-  edges.forEach(e => {
-    const a = nodes[e.a], b = nodes[e.b];
-    // Dim edge, slightly brighter if either endpoint is glowing
-    const glow  = Math.max(a.glow, b.glow);
-    const alpha = 0.06 + glow * 0.12;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-    ctx.stroke();
-  });
-
-  // Draw pulses
-  pulses = pulses.filter(p => p.t < 1);
-  pulses.forEach(p => {
-    p.t += p.speed;
-    const a = nodes[p.a], b = nodes[p.b];
-    const px = a.x + (b.x - a.x) * p.t;
-    const py = a.y + (b.y - a.y) * p.t;
-    const [r, g, bl] = p.color;
-
-    // Glow around the pulse
-    const grd = ctx.createRadialGradient(px, py, 0, px, py, 9);
-    grd.addColorStop(0,   `rgba(${r},${g},${bl},0.95)`);
-    grd.addColorStop(0.35,`rgba(${r},${g},${bl},0.3)`);
-    grd.addColorStop(1,   `rgba(${r},${g},${bl},0)`);
-    ctx.beginPath();
-    ctx.arc(px, py, 9, 0, Math.PI * 2);
-    ctx.fillStyle = grd;
-    ctx.fill();
-
-    // Tiny bright core
-    ctx.beginPath();
-    ctx.arc(px, py, 2, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${r},${g},${bl},1)`;
-    ctx.fill();
-
-    if (p.t >= 0.98) {
-      nodes[p.b].glow      = 1;
-      nodes[p.b].glowColor = p.color;
-    }
-  });
-
-  // Draw nodes
-  nodes.forEach(n => {
-    const [r, g, bl] = n.glow > 0.05 ? n.glowColor : [180, 180, 200];
-    const glow = Math.max(0, n.glow);
-
-    if (glow > 0.02) {
-      const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, 18);
-      grd.addColorStop(0, `rgba(${r},${g},${bl},${glow * 0.55})`);
-      grd.addColorStop(1, `rgba(${r},${g},${bl},0)`);
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, 18, 0, Math.PI * 2);
-      ctx.fillStyle = grd;
-      ctx.fill();
-    }
-
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, n.r + glow * 1.8, 0, Math.PI * 2);
-    ctx.fillStyle = glow > 0.05
-      ? `rgba(${r},${g},${bl},${0.7 + glow * 0.3})`
-      : 'rgba(255,255,255,0.22)';
-    ctx.fill();
-  });
-
-  // Fire pulses rhythmically — cascade through layers
-  if (tick % 22 === 0 && pulses.length < 18) fireSignal();
-  // Occasional multi-fire burst
-  if (tick % 110 === 0) {
-    for (let i = 0; i < 4; i++) setTimeout(fireSignal, i * 60);
-  }
-
-  requestAnimationFrame(draw);
+  if(tick%20===0&&pulses.length<16)pulse();
+  if(tick%100===0)for(let i=0;i<3;i++)setTimeout(pulse,i*50);
+  requestAnimationFrame(frame);
 }
 
-addEventListener('resize', resize);
-addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; });
-addEventListener('touchmove', e => {
-  if (e.touches[0]) { mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; }
-}, { passive: true });
-addEventListener('touchend', () => { mouse.x = -9999; mouse.y = -9999; });
-
-resize();
-draw();
+addEventListener('resize',resize);
+addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY});
+addEventListener('mouseleave',()=>{mouse.x=-9e9;mouse.y=-9e9});
+addEventListener('touchmove',e=>{if(e.touches[0]){mouse.x=e.touches[0].clientX;mouse.y=e.touches[0].clientY}},{passive:true});
+addEventListener('touchend',()=>{mouse.x=-9e9;mouse.y=-9e9});
+resize();frame();
 
 // OS detection
-(function() {
-  const lbl     = document.getElementById('dl-label');
-  const navLbl  = document.getElementById('nav-dl-label');
-  const ua      = navigator.userAgent || '';
-  let os = 'macOS';
-  if (/Win/i.test(ua))                           os = 'Windows';
-  else if (/Linux/i.test(ua) && !/Android/i.test(ua)) os = 'Linux';
-  lbl.textContent    = 'Download for ' + os;
-  navLbl.textContent = 'Download';
+(function(){
+  const l=document.getElementById('dl-label');
+  const ua=navigator.userAgent||'';
+  if(/Win/i.test(ua))l.textContent='Download for Windows';
+  else if(/Linux/i.test(ua)&&!/Android/i.test(ua))l.textContent='Download for Linux';
+  else l.textContent='Download for macOS';
 })();
 </script>
 </body>
