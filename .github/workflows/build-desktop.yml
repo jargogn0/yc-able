@@ -32,15 +32,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build ${{ matrix.platform }}
         run: npm run build:${{ matrix.platform }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          CSC_IDENTITY_AUTO_DISCOVERY: false   # skip code-signing
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -60,6 +62,9 @@ jobs:
         with:
           path: artifacts
 
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
       - name: Create or update release
         uses: softprops/action-gh-release@v2
         with:
@@ -73,12 +78,18 @@ jobs:
 
             **The Cursor for Data Science** — autonomous ML research in a native app.
 
-            ### Downloads
+            ### Download
             | Platform | File |
             |----------|------|
             | macOS | `19Labs-1.0.0.dmg` |
             | Windows | `19Labs Setup 1.0.0.exe` |
             | Linux | `19Labs-1.0.0.AppImage` |
+
+            ### What's included
+            - Full 19Labs ML research platform wrapped in a native desktop window
+            - Splash screen with animated loader
+            - Native app menu (File, Edit, View, Window, Help)
+            - Auto-detects your OS for the right download
 
             ### Or use in the browser
             → [yc-able.com/app](https://yc-able.com/app)
