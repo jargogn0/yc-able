@@ -4,60 +4,47 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>19Labs</title>
-<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
-body{background:#fff;color:#202124;font-family:'Inter','Google Sans',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+body{background:#09090b;color:#fff;font-family:'Inter',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 canvas{position:fixed;inset:0;z-index:0}
 
-nav{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;height:64px;padding:0 24px 0 28px}
-.n-logo{font-size:15px;font-weight:500;color:#202124;text-decoration:none;display:flex;align-items:center;gap:6px;letter-spacing:-.2px}
-.n-logo svg{width:24px;height:24px}
-.n-logo span{font-weight:400;color:#5f6368}
-.n-links{display:flex;align-items:center;gap:8px;margin-left:24px}
-.n-links a{font-size:14px;color:#3c4043;text-decoration:none;padding:8px 12px;font-weight:400;border-radius:6px;transition:background .15s}
-.n-links a:hover{background:rgba(0,0,0,.04)}
-.n-links .has-arrow::after{content:'';display:inline-block;width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid #5f6368;margin-left:6px;vertical-align:middle;position:relative;top:-0.5px}
+nav{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;height:60px;padding:0 28px;border-bottom:1px solid rgba(255,255,255,.06)}
+.n-logo{font-size:16px;font-weight:600;color:#fff;text-decoration:none;letter-spacing:-.3px}
+.n-logo span{color:rgba(255,255,255,.35);font-weight:400}
+.n-links{display:flex;align-items:center;gap:2px;margin-left:28px}
+.n-links a{font-size:13.5px;color:rgba(255,255,255,.5);text-decoration:none;padding:7px 12px;border-radius:7px;transition:all .15s;font-weight:400}
+.n-links a:hover{color:#fff;background:rgba(255,255,255,.07)}
 .n-r{margin-left:auto}
-.n-r a{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:#fff;background:#202124;padding:10px 20px;border-radius:8px;text-decoration:none;transition:all .2s;border:none}
-.n-r a:hover{background:#1a73e8}
-.n-r a svg{width:16px;height:16px}
+.n-r a{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:500;color:#09090b;background:#fff;padding:8px 18px;border-radius:8px;text-decoration:none;transition:all .2s}
+.n-r a:hover{background:rgba(255,255,255,.88)}
 
-.page{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;pointer-events:none;text-align:center;padding-bottom:20px}
+.page{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;pointer-events:none;text-align:center;padding-bottom:12px}
 .page>*{pointer-events:auto}
-.logo-mark{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:24px}
-.logo-mark svg{width:36px;height:36px}
-.logo-mark .wordmark{font-size:28px;font-weight:400;color:#202124;letter-spacing:-.5px}
-.logo-mark .wordmark b{font-weight:400}
-h1{font-size:22px;font-weight:400;color:#202124;margin-bottom:16px}
-.sub{font-size:14px;color:#5f6368;line-height:1.6;margin-bottom:28px}
-.sub a{color:#1a73e8;text-decoration:none}
-.sub a:hover{text-decoration:underline}
 
-.dl-section{display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:24px}
-.dl-btn{display:inline-flex;align-items:center;gap:10px;font-size:15px;font-weight:500;color:#fff;background:#202124;padding:14px 32px;border-radius:12px;text-decoration:none;transition:all .2s;border:none;cursor:pointer;letter-spacing:-.2px}
-.dl-btn:hover{background:#1a73e8;transform:translateY(-1px);box-shadow:0 4px 16px rgba(26,115,232,.3)}
-.dl-btn svg{width:20px;height:20px}
-.dl-platforms{display:flex;align-items:center;gap:16px;font-size:12px;color:#5f6368}
-.dl-platforms a{color:#5f6368;text-decoration:none;display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;transition:all .15s}
-.dl-platforms a:hover{color:#202124;background:rgba(0,0,0,.04)}
-.dl-platforms a svg{width:14px;height:14px}
-.dl-or{font-size:13px;color:#5f6368;margin-bottom:4px}
-.dl-or a{color:#1a73e8;text-decoration:none;font-weight:500}
-.dl-or a:hover{text-decoration:underline}
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:500;color:rgba(255,255,255,.45);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);padding:5px 14px;border-radius:99px;margin-bottom:28px;letter-spacing:.06em;text-transform:uppercase}
+.badge-dot{width:5px;height:5px;border-radius:50%;background:#22c55e;box-shadow:0 0 8px #22c55e;flex-shrink:0;animation:blink 2.4s ease-in-out infinite}
 
-.foot-links{display:flex;align-items:center;gap:4px;font-size:13px}
-.foot-links a{color:#1a73e8;text-decoration:none;padding:4px 8px}
-.foot-links a:hover{text-decoration:underline}
-.foot-links .sep{color:#dadce0;font-size:12px;user-select:none}
+h1{font-size:58px;font-weight:300;line-height:1.08;letter-spacing:-2.5px;margin-bottom:18px;color:#fff}
+h1 strong{font-weight:600}
+.sub{font-size:15px;color:rgba(255,255,255,.4);line-height:1.7;margin-bottom:40px;font-weight:400}
 
-@media(max-width:640px){
-  .n-links{display:none}
-  .logo-mark .wordmark{font-size:22px}
-  h1{font-size:18px}
-  .dl-btn{padding:12px 24px;font-size:14px}
-}
+.dl-section{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:32px}
+.dl-btn{display:inline-flex;align-items:center;gap:9px;font-size:14.5px;font-weight:500;color:#09090b;background:#fff;padding:13px 28px;border-radius:10px;text-decoration:none;transition:all .2s;letter-spacing:-.2px}
+.dl-btn:hover{background:rgba(255,255,255,.9);transform:translateY(-1px);box-shadow:0 8px 28px rgba(0,0,0,.6)}
+.dl-btn svg{width:17px;height:17px}
+.dl-platforms{display:flex;align-items:center;gap:20px}
+.dl-platforms a{font-size:12px;color:rgba(255,255,255,.28);text-decoration:none;display:inline-flex;align-items:center;gap:5px;transition:color .15s}
+.dl-platforms a:hover{color:rgba(255,255,255,.65)}
+.dl-sep{color:rgba(255,255,255,.1);font-size:11px}
+.dl-or{font-size:13px;color:rgba(255,255,255,.28)}
+.dl-or a{color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
+.dl-or a:hover{color:#fff}
+
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+@media(max-width:640px){.n-links{display:none}h1{font-size:36px;letter-spacing:-1.5px}}
 </style>
 </head>
 <body>
@@ -65,163 +52,237 @@ h1{font-size:22px;font-weight:400;color:#202124;margin-bottom:16px}
 <canvas id="c"></canvas>
 
 <nav>
-  <a href="/" class="n-logo">
-    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L2 19.5h4l6-11 6 11h4L12 2z" fill="#4285f4"/><path d="M8.5 14.5L6 19.5h4l1-2.5-2.5-2.5z" fill="#ea4335"/><path d="M15.5 14.5L18 19.5h-4l-1-2.5 2.5-2.5z" fill="#fbbc04"/><path d="M12 8l-3.5 6.5h7L12 8z" fill="#34a853"/></svg>
-    <b>19Labs</b> <span>Autonomous ML</span>
-  </a>
+  <a href="/" class="n-logo">19<span>Labs</span></a>
   <div class="n-links">
     <a href="/app">Product</a>
-    <a href="#" class="has-arrow">Use Cases</a>
-    <a href="/app">Pricing</a>
+    <a href="#">Pricing</a>
     <a href="https://github.com/jargogn0/yc-able" target="_blank">GitHub</a>
-    <a href="#" class="has-arrow">Resources</a>
+    <a href="#">Docs</a>
   </div>
   <div class="n-r">
-    <a href="/app">Launch App <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></a>
+    <a href="/app">Open App</a>
   </div>
 </nav>
 
 <div class="page">
-  <div class="logo-mark">
-    <svg viewBox="0 0 48 48" fill="none"><path d="M24 4L4 39h8l12-22 12 22h8L24 4z" fill="#4285f4"/><path d="M17 29L12 39h8l2-5-5-5z" fill="#ea4335"/><path d="M31 29l5 10h-8l-2-5 5-5z" fill="#fbbc04"/><path d="M24 16l-7 13h14L24 16z" fill="#34a853"/></svg>
-    <div class="wordmark"><b>19Labs</b></div>
-  </div>
-  <h1>Autonomous ML Research Platform</h1>
-  <p class="sub">Drop a dataset, describe your goal, get a deployed model.</p>
+  <div class="badge"><span class="badge-dot"></span>v1.0 — Now Available</div>
+  <h1>The Cursor for<br><strong>Data Science</strong></h1>
+  <p class="sub">Drop a dataset. Describe your goal.<br>Get a trained model.</p>
 
   <div class="dl-section">
-    <a href="#" class="dl-btn" id="dl-main">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <a href="https://github.com/jargogn0/yc-able/releases/latest" class="dl-btn" id="dl-main">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span id="dl-label">Download for macOS</span>
     </a>
     <div class="dl-platforms">
-      <a href="https://github.com/jargogn0/yc-able/releases/latest" id="dl-mac">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83"/><path d="M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11"/></svg>
+      <a href="https://github.com/jargogn0/yc-able/releases/latest">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11"/></svg>
         macOS
       </a>
-      <a href="https://github.com/jargogn0/yc-able/releases/latest" id="dl-win">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 12V6.75l8-1.25V12H3zm0 .5h8v6.5l-8-1.25V12.5zm9 0h9v7L12 21V12.5zm0-.5V4l9-1.5V12h-9z"/></svg>
-        Windows
-      </a>
-      <a href="https://github.com/jargogn0/yc-able/releases/latest" id="dl-linux">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 2c-1.77 0-3.15 1.49-3.46 3.47-.2.72.02 1.47.14 2.18L6.5 9.5c-.48.38-.75.97-.75 1.61v.39c-.75.63-1.25 1.55-1.25 2.6 0 1.22.62 2.3 1.55 2.94-.07.31-.05.66.07.97.27.73.97 1.2 1.74 1.17.26-.01.51-.08.73-.2.6.82 1.54 1.4 2.62 1.52.12.57.34 1.12.69 1.57.53.69 1.35 1.08 2.21 1.03.79-.04 1.52-.43 2.01-1.04.38-.47.62-1.03.76-1.63 1.04-.17 1.94-.76 2.51-1.57.19.1.4.16.63.17.77.04 1.47-.43 1.75-1.15.14-.35.14-.73.03-1.08.86-.65 1.42-1.68 1.42-2.84 0-1.01-.44-1.91-1.13-2.54v-.45c0-.63-.27-1.22-.73-1.59l-2.72-1.88c.12-.7.33-1.44.14-2.14C15.65 3.49 14.27 2 12.5 2z"/></svg>
-        Linux
-      </a>
+      <span class="dl-sep">·</span>
+      <a href="https://github.com/jargogn0/yc-able/releases/latest">Windows</a>
+      <span class="dl-sep">·</span>
+      <a href="https://github.com/jargogn0/yc-able/releases/latest">Linux</a>
     </div>
-    <p class="dl-or">or <a href="/app">use in browser</a></p>
-  </div>
-
-  <div class="foot-links">
-    <a href="/app">Docs</a>
-    <span class="sep">|</span>
-    <a href="https://github.com/jargogn0/yc-able" target="_blank">GitHub</a>
-    <span class="sep">|</span>
-    <a href="https://github.com/jargogn0/yc-able/releases" target="_blank">All Releases</a>
+    <p class="dl-or">or <a href="/app">use in browser →</a></p>
   </div>
 </div>
 
 <script>
-const c=document.getElementById('c'),g=c.getContext('2d');
-let W,H,mx=-9e3,my=-9e3;
+// ─── Neural Network Background ────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+const mouse = { x: -9999, y: -9999 };
 
-// Multi-color palette matching Antigravity: blue, red, purple, orange
-const COLORS=[
-  [66,133,244],  // google blue
-  [66,133,244],  // blue again (dominant)
-  [66,133,244],  // blue (heavy weight)
-  [100,100,244], // blue-purple
-  [120,90,220],  // purple
-  [234,67,53],   // red
-  [234,67,53],   // red
-  [180,60,60],   // dark red
-  [251,188,4],   // yellow (rare)
-  [100,120,230], // indigo
+// Layer structure: nodes per layer
+const LAYER_SIZES = [5, 8, 11, 14, 14, 11, 8, 5];
+let nodes = [], edges = [], signals = [];
+let frame = 0;
+
+const PALETTE = [
+  [139, 92, 246],  // violet
+  [99, 102, 241],  // indigo
+  [59, 130, 246],  // blue
+  [20, 184, 166],  // teal
+  [236, 72, 153],  // pink
+  [34, 197, 94],   // green
+  [251, 146, 60],  // orange
 ];
 
-const N=220, R=160, pts=[];
-
-function sz(){
-  W=c.width=innerWidth;
-  H=c.height=innerHeight;
-  if(!pts.length)init();
+function resize() {
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+  buildGraph();
 }
 
-function init(){
-  pts.length=0;
-  for(let i=0;i<N;i++){
-    const s=.8+Math.random()*2;
-    const col=COLORS[Math.floor(Math.random()*COLORS.length)];
-    pts.push({
-      x:Math.random()*W, y:Math.random()*H,
-      hx:0, hy:0,
-      vx:0, vy:0,
-      s,
-      len:s*(2+Math.random()*5),
-      a:Math.random()*Math.PI*2,
-      ra:(Math.random()-.5)*.012,
-      o:.1+Math.random()*.3,
-      col,
-    });
-    pts[i].hx=pts[i].x;
-    pts[i].hy=pts[i].y;
-  }
-}
+function buildGraph() {
+  nodes = [];
+  edges = [];
+  signals = [];
 
-function draw(){
-  g.clearRect(0,0,W,H);
-  for(const p of pts){
-    const dx=p.x-mx, dy=p.y-my, d=Math.sqrt(dx*dx+dy*dy);
-    if(d<R&&d>0){
-      const f=(R-d)/R*.5;
-      p.vx+=dx/d*f;
-      p.vy+=dy/d*f;
+  const nLayers = LAYER_SIZES.length;
+  const padX = W * 0.1;
+  const padY = H * 0.14;
+  const uw = W - padX * 2;
+  const uh = H - padY * 2;
+
+  // Create nodes
+  LAYER_SIZES.forEach((count, li) => {
+    const lx = padX + (li / (nLayers - 1)) * uw;
+    for (let i = 0; i < count; i++) {
+      const ly = padY + ((i + 0.5) / count) * uh;
+      nodes.push({
+        x: lx + (Math.random() - 0.5) * 40,
+        y: ly + (Math.random() - 0.5) * 30,
+        bx: lx, by: ly,
+        vx: 0, vy: 0,
+        r: 2.5 + Math.random() * 1.5,
+        layer: li,
+        glow: 0,
+        color: PALETTE[li % PALETTE.length],
+      });
     }
-    p.vx+=(p.hx-p.x)*.015;
-    p.vy+=(p.hy-p.y)*.015;
-    p.vx*=.94;
-    p.vy*=.94;
-    p.x+=p.vx;
-    p.y+=p.vy;
-    p.a+=p.ra;
+  });
 
-    g.save();
-    g.translate(p.x,p.y);
-    g.rotate(p.a);
-    g.beginPath();
-    g.moveTo(-p.len/2,0);
-    g.lineTo(p.len/2,0);
-    g.strokeStyle=`rgba(${p.col[0]},${p.col[1]},${p.col[2]},${p.o})`;
-    g.lineWidth=p.s;
-    g.lineCap='round';
-    g.stroke();
-    g.restore();
+  // Create edges between adjacent layers
+  let ni = 0;
+  for (let li = 0; li < nLayers; li++) {
+    const count = LAYER_SIZES[li];
+    const nextCount = LAYER_SIZES[li + 1];
+    if (!nextCount) { ni += count; continue; }
+    for (let i = 0; i < count; i++) {
+      for (let j = 0; j < nextCount; j++) {
+        edges.push({
+          a: ni + i,
+          b: ni + count + j,
+          alpha: 0.04 + Math.random() * 0.08,
+        });
+      }
+    }
+    ni += count;
   }
+}
+
+function spawnSignal() {
+  if (edges.length === 0) return;
+  // Pick a random layer and fire forward
+  const li = Math.floor(Math.random() * (LAYER_SIZES.length - 1));
+  const candidateEdges = edges.filter(e => nodes[e.a].layer === li);
+  if (!candidateEdges.length) return;
+  const e = candidateEdges[Math.floor(Math.random() * candidateEdges.length)];
+  signals.push({
+    a: e.a, b: e.b, t: 0,
+    speed: 0.008 + Math.random() * 0.006,
+    color: PALETTE[li % PALETTE.length],
+    trail: [],
+  });
+}
+
+function draw() {
+  frame++;
+  ctx.clearRect(0, 0, W, H);
+
+  // Update nodes (drift + mouse repulsion)
+  nodes.forEach(n => {
+    const dx = n.x - mouse.x, dy = n.y - mouse.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 130 && d > 0) {
+      const f = ((130 - d) / 130) * 0.35;
+      n.vx += dx / d * f;
+      n.vy += dy / d * f;
+    }
+    n.vx += (n.bx - n.x) * 0.025;
+    n.vy += (n.by - n.y) * 0.025;
+    n.vx *= 0.85;
+    n.vy *= 0.85;
+    n.x += n.vx;
+    n.y += n.vy;
+    if (n.glow > 0) n.glow -= 0.035;
+  });
+
+  // Draw edges
+  edges.forEach(e => {
+    const a = nodes[e.a], b = nodes[e.b];
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = `rgba(255,255,255,${e.alpha})`;
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
+  });
+
+  // Draw signals
+  signals = signals.filter(s => s.t < 1);
+  signals.forEach(s => {
+    s.t += s.speed;
+    const a = nodes[s.a], b = nodes[s.b];
+    const px = a.x + (b.x - a.x) * s.t;
+    const py = a.y + (b.y - a.y) * s.t;
+    const [r, g, bl] = s.color;
+
+    // Bright dot
+    const grd = ctx.createRadialGradient(px, py, 0, px, py, 8);
+    grd.addColorStop(0, `rgba(${r},${g},${bl},1)`);
+    grd.addColorStop(0.4, `rgba(${r},${g},${bl},0.4)`);
+    grd.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.beginPath();
+    ctx.arc(px, py, 8, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Trigger node glow on arrival
+    if (s.t >= 1) {
+      nodes[s.b].glow = 1;
+      nodes[s.b].color = s.color;
+    }
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    const [r, g, bl] = n.color;
+    const glow = Math.max(0, n.glow);
+    if (glow > 0.01) {
+      const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 5 + glow * 10);
+      grd.addColorStop(0, `rgba(${r},${g},${bl},${glow * 0.7})`);
+      grd.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * 5 + glow * 10, 0, Math.PI * 2);
+      ctx.fillStyle = grd;
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r + glow * 2, 0, Math.PI * 2);
+    ctx.fillStyle = glow > 0.05
+      ? `rgba(${r},${g},${bl},${0.6 + glow * 0.4})`
+      : 'rgba(255,255,255,0.35)';
+    ctx.fill();
+  });
+
+  // Spawn signals rhythmically
+  if (frame % 12 === 0 && signals.length < 40) spawnSignal();
+
   requestAnimationFrame(draw);
 }
 
-addEventListener('resize',sz);
-addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY});
-addEventListener('mouseleave',()=>{mx=-9e3;my=-9e3});
-addEventListener('touchmove',e=>{if(e.touches[0]){mx=e.touches[0].clientX;my=e.touches[0].clientY}},{passive:true});
-addEventListener('touchend',()=>{mx=-9e3;my=-9e3});
-sz();draw();
+addEventListener('resize', resize);
+addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; });
+addEventListener('touchmove', e => {
+  if (e.touches[0]) { mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; }
+}, { passive: true });
+addEventListener('touchend', () => { mouse.x = -9999; mouse.y = -9999; });
 
-// OS detection for download button
-(function(){
-  const btn=document.getElementById('dl-main');
-  const lbl=document.getElementById('dl-label');
-  const ua=navigator.userAgent||navigator.platform||'';
-  const base='https://github.com/jargogn0/yc-able/releases/latest';
-  let os='macOS',icon='';
-  if(/Win/.test(ua)){os='Windows'}
-  else if(/Linux/.test(ua)&&!/Android/.test(ua)){os='Linux'}
-  else{os='macOS'}
-  lbl.textContent='Download for '+os;
-  btn.href=base;
-  // Highlight current platform
-  const id=os==='macOS'?'dl-mac':os==='Windows'?'dl-win':'dl-linux';
-  const el=document.getElementById(id);
-  if(el)el.style.fontWeight='600';
+resize();
+draw();
+
+// OS detection
+(function() {
+  const lbl = document.getElementById('dl-label');
+  const ua = navigator.userAgent || '';
+  if (/Win/i.test(ua)) lbl.textContent = 'Download for Windows';
+  else if (/Linux/i.test(ua) && !/Android/i.test(ua)) lbl.textContent = 'Download for Linux';
+  else lbl.textContent = 'Download for macOS';
 })();
 </script>
 </body>
