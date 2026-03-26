@@ -279,70 +279,209 @@ def profile_dataset(csv_path):
     cols = []
     for col in df.columns:
         s = df[col].dropna()
+        if len(s) == 0:
+            cols.append(dict(name=col, type="empty", unique=0, nulls=len(df), sample="[]"))
+            continue
+
         nr = pd.to_numeric(s, errors='coerce').notna().mean()
         is_date = False
         if nr < 0.7:
             try:
                 pd.to_datetime(s.iloc[:5])
-                if any(str(v) for v in s.iloc[:3] if "-" in str(v) or "/" in str(v)):
+                if any("-" in str(v) or "/" in str(v) for v in s.iloc[:3]):
                     is_date = True
             except: pass
 
         str_s = s.astype(str)
         avg_len = str_s.str.len().mean()
-        # Long free text (avg > 40 chars, low numeric ratio) → text/nlp column
         is_long_text = avg_len > 40 and nr < 0.3
-        # Image/file path heuristic
-        is_path = avg_len > 5 and str_s.str.contains(r'\.(jpg|jpeg|png|gif|bmp|tiff|webp|csv|json|txt)$', case=False, regex=True).mean() > 0.5
+        is_path = avg_len > 5 and str_s.str.contains(
+            r'\.(jpg|jpeg|png|gif|bmp|tiff|webp|csv|json|txt)$', case=False, regex=True).mean() > 0.5
 
-        if is_date:
-            typ = "datetime"
-        elif nr > 0.8:
-            typ = "numeric"
-        elif is_path:
-            typ = "filepath"
-        elif is_long_text:
-            typ = "text"
-        elif s.nunique() / max(len(s), 1) < 0.05:
-            typ = "categorical"
-        else:
-            typ = "high_cardinality"
+        if is_date:            typ = "datetime"
+        elif nr > 0.8:         typ = "numeric"
+        elif is_path:          typ = "filepath"
+        elif is_long_text:     typ = "text"
+        elif s.nunique() / max(len(s), 1) < 0.05: typ = "categorical"
+        else:                  typ = "high_cardinality"
 
-        cols.append(dict(name=col, type=typ, unique=int(s.nunique()),
+        col_info = dict(
+            name=col, type=typ,
+            unique=int(s.nunique()),
             nulls=int(df[col].isna().sum()),
+            null_pct=round(df[col].isna().mean() * 100, 1),
             sample=str(list(s.dropna().iloc[:3].values)),
-            avg_len=round(avg_len, 1) if typ in ("text", "high_cardinality", "filepath") else None,
-            mean=float(pd.to_numeric(s, errors='coerce').mean()) if typ == "numeric" else None,
-            std =float(pd.to_numeric(s, errors='coerce').std())  if typ == "numeric" else None))
+        )
+
+        if typ == "numeric":
+            num = pd.to_numeric(s, errors='coerce').dropna()
+            col_info.update(
+                mean=round(float(num.mean()), 4),
+                std=round(float(num.std()), 4),
+                min=round(float(num.min()), 4),
+                max=round(float(num.max()), 4),
+                p25=round(float(num.quantile(0.25)), 4),
+                p50=round(float(num.quantile(0.50)), 4),
+                p75=round(float(num.quantile(0.75)), 4),
+                skew=round(float(num.skew()), 3),
+                # Serial correlation — high value suggests time-series ordering
+                serial_corr=round(float(num.autocorr(lag=1)) if len(num) > 2 else 0.0, 3),
+            )
+        elif typ in ("categorical", "high_cardinality"):
+            vc = s.value_counts()
+            col_info.update(
+                top_values=vc.head(5).to_dict(),
+                # Class balance ratio — useful for imbalanced detection
+                majority_pct=round(float(vc.iloc[0] / len(s) * 100), 1) if len(vc) > 0 else 100.0,
+            )
+        elif typ == "text":
+            col_info.update(
+                avg_len=round(avg_len, 1),
+                text_sample=str(s.iloc[0])[:200] if len(s) > 0 else "",
+            )
+
+        cols.append(col_info)
 
     text_cols     = [c["name"] for c in cols if c["type"] == "text"]
     datetime_cols = [c["name"] for c in cols if c["type"] == "datetime"]
     filepath_cols = [c["name"] for c in cols if c["type"] == "filepath"]
     numeric_cols  = [c["name"] for c in cols if c["type"] == "numeric"]
+    cat_cols      = [c["name"] for c in cols if c["type"] in ("categorical", "high_cardinality")]
 
-    # Dataset-level signals to help the LLM reason about task type
+    # Class balance on low-cardinality columns (potential targets)
+    class_balance = {}
+    for col in df.columns:
+        s = df[col].dropna()
+        if 1 < s.nunique() <= 20:
+            vc = s.value_counts(normalize=True).round(3)
+            class_balance[col] = vc.to_dict()
+
+    # Top pairwise correlations (numeric only, exclude ID-like columns)
+    top_correlations = []
+    num_df = df[numeric_cols].copy() if numeric_cols else pd.DataFrame()
+    # Drop likely ID columns (monotonically increasing int, near-unique)
+    id_like = [c for c in num_df.columns if num_df[c].nunique() / max(len(num_df), 1) > 0.95]
+    num_df = num_df.drop(columns=id_like, errors='ignore')
+    if len(num_df.columns) >= 2:
+        try:
+            corr = num_df.corr().abs()
+            pairs = (corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+                     .stack().sort_values(ascending=False))
+            for (c1, c2), v in pairs.head(8).items():
+                top_correlations.append({"cols": [c1, c2], "corr": round(float(v), 3)})
+        except Exception:
+            pass
+
+    # Dataset-level signals (concrete, actionable)
     signals = []
     if text_cols:
-        signals.append(f"has_text_columns: {text_cols} — likely NLP/text classification or sentiment")
+        samples = {c: df[c].dropna().iloc[0][:120] if len(df[c].dropna()) > 0 else "" for c in text_cols[:2]}
+        signals.append(f"TEXT_COLUMNS {text_cols}: real samples={samples} → NLP task likely")
     if datetime_cols and numeric_cols:
-        # Check if data looks sequential (sorted by date or has a clear time index)
-        signals.append(f"has_datetime+numeric — likely time-series forecasting or anomaly detection")
+        high_sc = [c["name"] for c in cols if c.get("serial_corr", 0) and abs(c["serial_corr"]) > 0.5]
+        signals.append(f"DATETIME+NUMERIC detected → time-series/forecasting likely; high serial-corr cols: {high_sc or 'check manually'}")
     if filepath_cols:
-        signals.append(f"has_filepath_columns: {filepath_cols} — likely image/file-based ML")
+        signals.append(f"FILEPATH_COLUMNS {filepath_cols} → image/file-based ML likely")
+    # Imbalance signal
+    for col, balance in class_balance.items():
+        vals = list(balance.values())
+        if vals and max(vals) > 0.85:
+            signals.append(f"IMBALANCED_TARGET candidate '{col}': {balance} — majority {max(vals)*100:.0f}% → use stratified CV, class weights, AUC/F1 not accuracy")
     if not signals:
-        signals.append("standard tabular dataset")
+        signals.append("TABULAR dataset — standard supervised learning")
 
     return dict(
         path=str(csv_path), rows=len(df), cols=len(df.columns),
         headers=list(df.columns), columns=cols,
-        numeric     =numeric_cols,
-        categorical =[c["name"] for c in cols if c["type"] in ("categorical", "high_cardinality")],
-        datetime    =datetime_cols,
-        text        =text_cols,
-        filepath    =filepath_cols,
-        signals     =signals,
+        numeric=numeric_cols, categorical=cat_cols,
+        datetime=datetime_cols, text=text_cols, filepath=filepath_cols,
+        signals=signals,
+        class_balance=class_balance,
+        top_correlations=top_correlations,
         target_candidates=[c["name"] for c in cols if c["type"] == "numeric" and c["unique"] > 10][:5],
     )
+
+
+# ── DOMAIN INTELLIGENCE ────────────────────────────────────────
+def analyze_domain(profile, hint=""):
+    """
+    Deep domain analysis — reasons like a senior data scientist.
+    Understands the industry, problem type, data quality issues, and
+    produces a concrete expert modeling strategy before any training starts.
+    """
+    # Build a rich, concise view Claude can reason over
+    col_lines = []
+    for c in profile["columns"]:
+        line = f"  {c['name']} [{c['type']}] unique={c['unique']} nulls={c['null_pct']}%"
+        if c["type"] == "numeric":
+            line += f" | mean={c.get('mean')} std={c.get('std')} range=[{c.get('min')},{c.get('max')}] skew={c.get('skew')} serial_corr={c.get('serial_corr')}"
+        elif c["type"] in ("categorical", "high_cardinality"):
+            line += f" | top={c.get('top_values')} majority={c.get('majority_pct')}%"
+        elif c["type"] == "text":
+            line += f" | avg_len={c.get('avg_len')} sample: \"{c.get('text_sample','')[:100]}\""
+        col_lines.append(line)
+    col_detail = "\n".join(col_lines)
+
+    balance_txt = "\n".join(
+        f"  {col}: {dist}" for col, dist in list(profile.get("class_balance", {}).items())[:8]
+    ) or "  (none detected)"
+
+    corr_txt = "\n".join(
+        f"  {p['cols'][0]} ↔ {p['cols'][1]}: {p['corr']}"
+        for p in profile.get("top_correlations", [])[:6]
+    ) or "  (none)"
+
+    signals_txt = "\n".join(f"  {s}" for s in profile.get("signals", []))
+
+    resp = ask(
+        "You are a world-class senior data scientist and ML engineer. "
+        "You read datasets the way a doctor reads an X-ray — instantly seeing what matters. "
+        "Your job is to produce an expert analysis that will drive all modeling decisions.",
+        f"""Analyze this dataset deeply. Think step by step like a senior ML engineer at a top tech company.
+
+═══════════════════════════════════════
+DATASET: {profile['rows']:,} rows × {profile['cols']} cols
+FILE: {pathlib.Path(profile['path']).name}
+═══════════════════════════════════════
+
+COLUMNS (name, type, stats):
+{col_detail}
+
+CLASS BALANCE (low-cardinality columns):
+{balance_txt}
+
+TOP CORRELATIONS:
+{corr_txt}
+
+DATASET SIGNALS:
+{signals_txt}
+
+USER HINT: {hint or "(none — infer everything from data)"}
+
+═══════════════════════════════════════
+PRODUCE A STRUCTURED EXPERT ANALYSIS:
+═══════════════════════════════════════
+
+INDUSTRY: <specific industry/domain e.g. "Healthcare — ICU readmission prediction", "E-commerce — customer churn", "Finance — credit default", "NLP — product sentiment">
+PROBLEM_TYPE: <precise ML task e.g. "Binary classification with severe class imbalance (8% positive)", "Multivariate time-series forecasting (daily granularity)", "NLP sentiment regression on product reviews">
+TARGET_COLUMN: <exact column name, with reasoning>
+TARGET_METRIC: <best metric AND why e.g. "ROC-AUC: class imbalance makes accuracy useless", "RMSE after log-transform: revenue is log-normal", "Macro-F1: multi-class with imbalance">
+DATA_QUALITY: <specific issues: missing patterns, outliers, leakage risks, skew, cardinality problems — be concrete>
+KEY_INSIGHTS: <3-5 bullet points — what a senior DS would notice immediately e.g. "• Serial corr=0.91 on 'sales' — strong AR signal", "• 'customer_id' leaks target — must exclude", "• 'review_text' avg 180 chars — BERT fine-tuning likely optimal">
+MODELING_STRATEGY: <concrete 3-tier strategy>
+  BASELINE: <specific model + specific reason, e.g. "LightGBM with scale_pos_weight=12 for imbalance">
+  BETTER: <specific upgrade, e.g. "Optuna-tuned XGBoost + SMOTE oversampling + 5-fold stratified CV">
+  ADVANCED: <specific advanced approach, e.g. "Stacking: LGBM + CatBoost + LR meta-learner, calibrated with Platt scaling">
+CRITICAL_WARNINGS: <what will go wrong if ignored, e.g. "Random splits on time-series = data leakage. Must use walk-forward validation.", "Log-transform revenue or RMSE will be dominated by outliers.">
+EXPECTED_PERFORMANCE: <realistic range e.g. "AUC 0.75-0.85 achievable; >0.90 would suggest leakage">""",
+        1800
+    )
+    return resp
+
+
+def _parse_domain_field(resp, key):
+    m = re.search(rf"^{key}:\s*(.+?)(?=\n[A-Z_]+:|$)", resp, re.MULTILINE | re.DOTALL)
+    return m.group(1).strip() if m else ""
 
 def _safe_float(s, default=0.0):
     try:
@@ -509,56 +648,34 @@ def normalize_reliability_mode(mode: str | None) -> str:
     return resolved if resolved in RELIABILITY_PROFILES else "balanced"
 
 # ── INFER OBJECTIVE ────────────────────────────────────────────
-def infer_objective(profile, hint=""):
-    col_detail = "\n".join(
-        f"  {c['name']} [{c['type']}] unique={c['unique']} nulls={c['nulls']} sample={c['sample']}"
-        + (f" mean={c['mean']:.3f} std={c['std']:.3f}" if c.get("mean") is not None else "")
-        for c in profile["columns"])
-    signals_txt = "\n".join(f"  - {s}" for s in profile.get("signals", []))
-    text_cols = profile.get("text", [])
-    filepath_cols = profile.get("filepath", [])
+def infer_objective(profile, hint="", domain_analysis=""):
     resp = ask(
-        "You are 19Labs. Analyze datasets precisely. Reason from data structure, domain, and statistics to determine the single best ML approach.",
-        f"""Analyze this dataset and determine the exact ML task and best approach.
+        "You are 19Labs. Given a deep expert domain analysis, produce precise ML objective parameters.",
+        f"""Based on the expert domain analysis below, extract the exact ML objective parameters.
 
-ROWS: {profile['rows']:,} | COLS: {profile['cols']}
-COLUMNS: {', '.join(profile['headers'])}
-NUMERIC: {', '.join(profile['numeric'])}
-CATEGORICAL: {', '.join(profile['categorical'])}
-DATETIME: {', '.join(profile['datetime'])}
-TEXT COLUMNS: {', '.join(text_cols) if text_cols else 'none'}
-FILEPATH COLUMNS: {', '.join(filepath_cols) if filepath_cols else 'none'}
-TARGET CANDIDATES: {', '.join(profile['target_candidates'])}
+EXPERT DOMAIN ANALYSIS:
+{domain_analysis or "(not available — reason from profile)"}
 
-DATASET SIGNALS:
-{signals_txt}
+DATASET SUMMARY:
+- Rows: {profile['rows']:,} | Cols: {profile['cols']}
+- Columns: {', '.join(profile['headers'])}
+- Signals: {'; '.join(profile.get('signals', []))}
+- Target candidates: {', '.join(profile['target_candidates'])}
+{"- USER HINT: " + hint if hint else ""}
 
-COLUMN DETAILS:
-{col_detail}
-
-{"USER HINT: " + hint if hint else "No hint — infer from data."}
-
-Choose the most appropriate task from any of these (not limited to this list):
-- Regression, BinaryClassification, MulticlassClassification
-- TimeSeriesForecasting, AnomalyDetection
-- TextClassification, SentimentAnalysis, TextRegression, NER, Summarization
-- ImageClassification, ObjectDetection (if filepath columns present)
-- Clustering, DimensionalityReduction (if no clear target)
-- RecommendationSystem, RankingLearning
-
-Reply ONLY in this format:
-DOMAIN: <specific domain e.g. "E-commerce churn", "Medical NLP", "Financial time series">
-TASK: <exact task name>
-TARGET: <exact column name, or "unsupervised" if no label>
-METRIC: <rmse|r2|mape|mae|f1|auc|accuracy|bleu|rouge|silhouette|map|ndcg|custom>
+Reply ONLY in this exact format (no extra text):
+DOMAIN: <specific domain>
+TASK: <exact task — e.g. BinaryClassification, TimeSeriesForecasting, SentimentAnalysis, Clustering>
+TARGET: <exact column name, or "unsupervised">
+METRIC: <primary metric — e.g. auc, f1, rmse, mape, accuracy, rouge, silhouette>
 DIRECTION: <lower_is_better|higher_is_better>
 CONFIDENCE: <0.0-1.0>
-REASONING: <2 sentences explaining why this task and approach>
-GOOD_ENOUGH: <what metric value = production-ready for this domain>
+REASONING: <1-2 sentences from the domain analysis>
+GOOD_ENOUGH: <concrete threshold e.g. "AUC > 0.85", "RMSE < 5000">
 HYPOTHESES:
-1. <Specific model/approach> — <why it fits this data>
-2. <Specific model/approach> — <why it fits this data>
-3. <Specific model/approach> — <why it fits this data>""", 900)
+1. <Specific model> — <specific reason from domain analysis>
+2. <Specific model> — <specific reason from domain analysis>
+3. <Specific model> — <specific reason from domain analysis>""", 700)
 
     def g(k):
         m = re.search(rf"^{k}:\s*(.+)", resp, re.MULTILINE)
@@ -762,7 +879,7 @@ Fix the error. Keep the model/approach if possible. Output ONLY fixed ```python 
     return fixed
 
 
-def write_program_md(profile, obj, history, insights):
+def write_program_md(profile, obj, history, insights, domain_analysis=""):
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: status={h.get('status', 'unknown')} "
         f"{h.get('metric_name', obj.get('metric', 'metric'))}={h.get('metric_val', 0):.6f} "
@@ -777,19 +894,13 @@ def write_program_md(profile, obj, history, insights):
 
 ENVIRONMENT:
 - You have access to the full Python ML ecosystem. Any package you import will be auto-installed.
-- Pre-installed: sklearn, xgboost, lightgbm, pandas, numpy, matplotlib, joblib
-- Available on demand: transformers, torch, tensorflow, statsmodels, prophet, catboost, optuna,
-  sentence-transformers, scipy, shap, hdbscan, umap-learn, opencv-python-headless, Pillow, and more.
-- Use whatever is genuinely best for the task. Do NOT limit yourself to pre-installed packages.
+- Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
+- Available on demand: transformers, torch, tensorflow, prophet, sentence-transformers,
+  hdbscan, umap-learn, opencv-python-headless, Pillow, and more.
+- Use whatever is genuinely best for the task. Do NOT artificially limit yourself.
 
-DATASET PROFILE:
-- Rows: {profile['rows']:,} | Cols: {profile['cols']}
-- Headers: {', '.join(profile['headers'])}
-- Numeric: {', '.join(profile['numeric'])}
-- Categorical: {', '.join(profile['categorical'])}
-- Datetime: {', '.join(profile['datetime'])}
-- Text columns: {', '.join(profile.get('text', [])) or 'none'}
-- Dataset signals: {'; '.join(profile.get('signals', []))}
+EXPERT DOMAIN ANALYSIS (written by a senior data scientist — treat as ground truth):
+{domain_analysis or "(not available)"}
 
 OBJECTIVE:
 - Task: {obj.get('task', 'Regression')}
@@ -836,22 +947,27 @@ Output ONLY markdown for `program.md`.""",
     )
     return program.strip()
 
-def write_train_py(program_md, profile, obj, exp_num, history):
+def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis=""):
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
         f"{h.get('metric_name', obj.get('metric', 'metric'))}={h.get('metric_val', 0):.6f}"
         for h in history
     ) if history else "- (none)"
     code = ask(
-        "You write complete production-grade Python training scripts from research specs.",
-        f"""Write `train.py` from the program spec below.
+        "You write complete production-grade Python training scripts. "
+        "You are a senior ML engineer — you know exactly what approach fits each dataset type and domain. "
+        "You never write generic code when expert-level code is possible.",
+        f"""Write `train.py` — experiment {exp_num} — for this specific domain and task.
 
 ENVIRONMENT:
-- You have access to the full Python ML ecosystem. Any package you import will be auto-installed.
-- Pre-installed: sklearn, xgboost, lightgbm, pandas, numpy, matplotlib, joblib
-- Use whatever is genuinely best: transformers, torch, tensorflow, statsmodels, prophet,
-  catboost, optuna, sentence-transformers, scipy, shap, hdbscan, umap-learn, etc.
-- Do NOT artificially limit yourself to simple models if a more powerful approach fits the task.
+- Full Python ML ecosystem. Any import is auto-installed before execution.
+- Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
+- On-demand (auto-install): transformers, torch, tensorflow, prophet, sentence-transformers, hdbscan, umap-learn, etc.
+- CRITICAL: Use what genuinely fits. For NLP → transformers/sentence-transformers. For time series → prophet/statsmodels.
+  For imbalanced → SMOTE+class weights. For tabular → gradient boosting + optuna. For images → torch/keras.
+
+EXPERT DOMAIN ANALYSIS (source of truth — follow this strategy):
+{domain_analysis[:2000] if domain_analysis else "(not available — use program spec)"}
 
 EXPERIMENT: {exp_num}
 TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
@@ -916,7 +1032,7 @@ Output ONLY a complete ```python block.""",
     clean, _ = apply_code_guardrails(extract_code(code))
     return clean
 
-def revise_after_iteration(program_md, train_py, score, error, history):
+def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=""):
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
         f"{h.get('metric_name', 'metric')}={h.get('metric_val', 0):.6f} note={h.get('note', '')[:120]}"
@@ -924,20 +1040,26 @@ def revise_after_iteration(program_md, train_py, score, error, history):
     ) if history else "- (none)"
 
     review = ask(
-        "You are an autonomous ML researcher. Decide KEEP/DISCARD and rewrite spec+script.",
-        f"""Given the current program.md and train.py, plus latest run result, decide whether to KEEP or DISCARD this iteration.
+        "You are an autonomous ML researcher and senior data scientist. "
+        "You make sharp KEEP/DISCARD decisions and rewrite experiments with genuine domain expertise.",
+        f"""Given the current program.md, train.py, run result, and expert domain analysis — decide KEEP/DISCARD and write the next experiment.
 
-KEEP CRITERIA (IMPORTANT):
-- KEEP if the primary metric improved compared to the previous best result in history.
-- KEEP the first successful experiment ALWAYS (it establishes the baseline).
-- DISCARD if the metric is WORSE or EQUAL to a previously KEPT experiment.
+EXPERT DOMAIN ANALYSIS (use this to guide your next approach):
+{domain_analysis[:1500] if domain_analysis else "(not available)"}
 
-CRITICAL — TRAIN.PY REWRITE RULES:
-- You MUST write a DIFFERENT train.py every time. NEVER return the same code.
-- Each iteration MUST try a different approach: different model, different features, different preprocessing, different hyperparameters.
-- If the previous model was Ridge/Linear, try GradientBoosting, RandomForest, XGBoost, SVR, or an ensemble.
-- If it was a tree method, try elastic net, neural net, stacking, or radically different feature engineering.
-- Copying the same train.py verbatim wastes an experiment and will be automatically detected and rejected.
+KEEP CRITERIA:
+- KEEP if the primary metric improved vs previous best in history.
+- KEEP the first successful experiment always (baseline).
+- DISCARD if metric is worse or equal to a previously KEPT experiment.
+
+CRITICAL — NEXT TRAIN.PY RULES:
+- MUST try a genuinely different approach every time. Never copy the previous script.
+- Follow the domain analysis strategy: if it says use SMOTE for imbalance, do it. If it says walk-forward for time series, do it.
+- Escalate sophistication: baseline → tuned → ensemble → domain-specific advanced approach.
+- For NLP: progress from TF-IDF → sentence-transformers → fine-tuned transformer.
+- For time series: progress from naive → statsmodels → prophet → LSTM.
+- For tabular: progress from single model → optuna-tuned → stacking ensemble → neural tabular.
+- NEVER downgrade the approach (no going from XGBoost back to linear regression).
 
 Respond in EXACT format:
 KEEP: <YES|NO>
@@ -1739,11 +1861,22 @@ def run_research(
     log.engine("Profiling dataset...")
     profile = profile_dataset(csv_path)
     log.engine(f"{profile['rows']:,} rows × {profile['cols']} cols | numeric={profile['numeric']} | cat={profile['categorical']}")
+    log.engine(f"Signals: {' | '.join(profile.get('signals', []))}")
     (ws / "profile.json").write_text(json.dumps(profile, indent=2, default=str))
+
+    # DOMAIN INTELLIGENCE — reason like a senior data scientist
+    log.engine("Analyzing domain and data quality...")
+    domain_analysis = analyze_domain(profile, user_hint)
+    (ws / "domain_analysis.md").write_text(domain_analysis)
+    # Log key lines from domain analysis
+    for line in domain_analysis.split("\n"):
+        line = line.strip()
+        if line and any(line.startswith(k) for k in ("INDUSTRY:", "PROBLEM_TYPE:", "MODELING_STRATEGY:", "CRITICAL_WARNINGS:")):
+            log.claude(line[:200])
 
     # INFER
     log.engine("Inferring task from data...")
-    obj = infer_objective(profile, user_hint)
+    obj = infer_objective(profile, user_hint, domain_analysis=domain_analysis)
     log.claude(f"Task: {obj['task']} | Target: {obj['target']} | Metric: {obj['metric']} ({obj['direction']})")
     log.claude(f"Domain: {obj['domain']} | Confidence: {obj['confidence']:.0%}")
     log.claude(f"Good enough: {obj['good_enough']}")
@@ -1780,11 +1913,11 @@ def run_research(
     consecutive_crashes = 0
 
     init_results_tsv(ws)
-    program_md = write_program_md(profile, obj, history, insights)
+    program_md = write_program_md(profile, obj, history, insights, domain_analysis=domain_analysis)
     (ws / "program.md").write_text(program_md)
     log.engine("program.md written (research spec — drives all experiments)")
 
-    train_py = write_train_py(program_md, profile, obj, 1, history)
+    train_py = write_train_py(program_md, profile, obj, 1, history, domain_analysis=domain_analysis)
     train_py, initial_notes = apply_code_guardrails(train_py)
     if initial_notes:
         log.engine(f"Applied train.py guardrails: {', '.join(sorted(set(initial_notes)))}")
@@ -1939,7 +2072,7 @@ def run_research(
             break
 
         # ── KEEP / DISCARD DECISION ──────────────────────────────
-        revision = revise_after_iteration(program_md, train_py, score, error, history)
+        revision = revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=domain_analysis)
         keep = bool(revision["keep"] and res["success"])
         program_md = revision["new_program_md"]
         train_py_candidate = revision["new_train_py"]
