@@ -132,6 +132,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 RUNS: dict[str, dict] = {}
 _shared_results: dict[str, dict] = {}
 APP_HTML = Path(__file__).parent / "19labs-app.html"
+LANDING_HTML = Path(__file__).parent / "landing.html"
 
 def _cleanup_old_workspaces():
     cutoff = time.time() - (4 * 3600)  # 4 hours
@@ -154,9 +155,15 @@ def _cleanup_loop():
 threading.Thread(target=_cleanup_loop, daemon=True).start()
 _cleanup_old_workspaces()
 
-# ── SERVE APP ──────────────────────────────────────────────────
+# ── SERVE LANDING + APP ───────────────────────────────────────
 @app.get("/")
-def serve_app():
+def serve_landing():
+    if LANDING_HTML.exists():
+        return HTMLResponse(LANDING_HTML.read_text())
+    return serve_app_page()
+
+@app.get("/app")
+def serve_app_page():
     if APP_HTML.exists():
         return HTMLResponse(APP_HTML.read_text())
     return HTMLResponse("<h1>19Labs</h1><p>Place 19labs-app.html next to server.py</p>")
