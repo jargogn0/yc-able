@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>19Labs — AI Data Science</title>
+<title>19Labs — Autonomous ML Research</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
@@ -169,20 +169,60 @@ input[type=file]{display:none}
 
 /* Experiment feed */
 .exp-feed{padding:16px;display:flex;flex-direction:column;gap:8px}
-.exp-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;display:flex;align-items:center;gap:14px;animation:si .25s ease}
+.exp-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;display:flex;align-items:center;gap:14px;animation:si .25s ease;cursor:pointer;transition:all var(--t)}
+.exp-card:hover{border-color:var(--border-2);background:var(--surface-2)}
 @keyframes si{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .exp-card.best{border-color:rgba(59,130,246,.25);background:var(--accent-soft)}
+.exp-card.best:hover{border-color:rgba(59,130,246,.4)}
 .exp-card.fail{border-color:rgba(239,68,68,.15);background:var(--red-soft)}
+.exp-card.fail:hover{border-color:rgba(239,68,68,.3)}
 .exp-n{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text-3);width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);background:var(--surface-2);border:1px solid var(--border);flex-shrink:0}
 .exp-card.best .exp-n{color:var(--accent);border-color:rgba(59,130,246,.3);background:var(--accent-soft)}
 .exp-card.fail .exp-n{color:var(--red);border-color:rgba(239,68,68,.2);background:var(--red-soft)}
 .exp-info{flex:1;min-width:0}
 .exp-model{font-size:14px;font-weight:600}
 .exp-detail{font-size:11px;color:var(--text-3);margin-top:2px;font-family:var(--mono)}
+.exp-extra{max-height:0;overflow:hidden;transition:max-height .3s ease;font-size:11px;color:var(--text-3);font-family:var(--mono);line-height:1.7}
+.exp-card.expanded .exp-extra{max-height:300px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
 .exp-tag{font-size:9px;font-weight:700;padding:3px 8px;border-radius:999px;flex-shrink:0;letter-spacing:.5px}
 .exp-tag.best{color:var(--accent);background:var(--accent-soft);border:1px solid rgba(59,130,246,.25)}
 .exp-tag.fail{color:var(--red);background:var(--red-soft);border:1px solid rgba(239,68,68,.15)}
 .exp-tag.ok{color:var(--text-3);background:var(--surface-2);border:1px solid var(--border)}
+
+/* Live metric chart */
+.metric-chart{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;animation:si .3s ease}
+.metric-chart-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.metric-chart-title{font-size:13px;font-weight:700;color:var(--text)}
+.metric-chart-subtitle{font-size:10px;color:var(--text-3);font-family:var(--mono)}
+.metric-chart svg{width:100%;display:block}
+.metric-chart-legend{display:flex;gap:16px;margin-top:8px;justify-content:center}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-3)}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* Model comparison bars */
+.comparison-bar{margin-bottom:6px}
+.comparison-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.comparison-label-name{color:var(--text-2);font-weight:600}
+.comparison-label-val{color:var(--text-3);font-family:var(--mono)}
+.comparison-track{height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden}
+.comparison-fill{height:100%;border-radius:3px;transition:width .6s ease;background:var(--accent)}
+.comparison-fill.best{background:var(--accent)}
+.comparison-fill.ok{background:var(--text-3)}
+.comparison-fill.fail{background:var(--red)}
+
+/* Predict panel */
+.predict-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin:16px;animation:si .3s ease}
+.predict-panel h3{font-size:14px;font-weight:700;margin-bottom:8px}
+.predict-panel p{font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5}
+.predict-textarea{width:100%;min-height:100px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:11px;resize:vertical;outline:none}
+.predict-textarea:focus{border-color:var(--accent)}
+.predict-actions{display:flex;gap:8px;margin-top:10px;align-items:center}
+.predict-result{margin-top:12px;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);font-family:var(--mono);font-size:11px;max-height:200px;overflow-y:auto;display:none}
+
+/* Data quality warnings */
+.dq-warnings{background:var(--amber-soft);border:1px solid rgba(245,158,11,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:12px}
+.dq-item{font-size:12px;color:var(--amber);margin-bottom:3px;line-height:1.5}
+.dq-item::before{content:'⚠ ';font-size:11px}
 
 /* Best banner */
 .bb{margin:16px;padding:20px;background:linear-gradient(135deg,rgba(59,130,246,.05),rgba(167,139,250,.03));border:1px solid rgba(59,130,246,.2);border-radius:var(--rl);animation:si .4s ease}
@@ -435,7 +475,7 @@ input[type=file]{display:none}
 <div class="topbar">
   <div class="logo"><b>19</b>Labs</div>
   <div class="topbar-sep"></div>
-  <div class="topbar-tag">AI Data Science</div>
+  <div class="topbar-tag">Autonomous ML Research</div>
   <div class="topbar-r">
     <button class="stop-btn" id="stop-btn" style="display:none" onclick="cancelRun()" data-tip="Stop current run">Stop</button>
     <div class="badge" id="badge">IDLE</div>
@@ -455,8 +495,8 @@ input[type=file]{display:none}
       <div class="dz" id="dz" onclick="document.getElementById('fi').click()">
         <div class="dz-icon" id="dz-icon">+</div>
         <div class="dz-title" id="dz-title">Add Dataset</div>
-        <div class="dz-sub" id="dz-sub">Drop CSV or click to browse</div>
-        <input type="file" id="fi" accept=".csv" onchange="onFile(event)">
+        <div class="dz-sub" id="dz-sub">CSV, Excel, JSON, TSV</div>
+        <input type="file" id="fi" accept=".csv,.xlsx,.xls,.json,.tsv,.txt" onchange="onFile(event)">
       </div>
       <div id="file-list"></div>
       <div id="run-history"></div>
@@ -495,6 +535,7 @@ input[type=file]{display:none}
       <div class="tab" data-t="code" onclick="stab('code')">Code</div>
       <div class="tab" data-t="exp" onclick="stab('exp')">Experiments</div>
       <div class="tab" data-t="art" onclick="stab('art')">Artifacts</div>
+      <div class="tab" data-t="predict" onclick="stab('predict')">Predict</div>
       <div class="tab" data-t="rpt" onclick="stab('rpt')">Report</div>
       <div class="tab" data-t="log" onclick="stab('log')">Logs</div>
     </div>
@@ -502,7 +543,7 @@ input[type=file]{display:none}
       <div class="ws-empty" id="ws-empty">
         <div class="we-n">19</div>
         <div class="we-t">Drop a dataset to begin</div>
-        <div class="we-s">Upload a CSV, tell the AI what you want, and it handles everything — profiling, model selection, training, and evaluation.</div>
+        <div class="we-s">Upload a dataset (CSV, Excel, JSON), describe your goal, and the AI handles everything — profiling, model selection, training, evaluation, and deployment.</div>
       </div>
       <div id="p-data" class="dp" style="display:none"></div>
       <div id="p-code" style="display:none;height:100%;flex-direction:column">
@@ -515,6 +556,7 @@ input[type=file]{display:none}
       </div>
       <div id="p-exp" class="exp-feed" style="display:none"></div>
       <div id="p-art" class="art-grid" style="display:none"></div>
+      <div id="p-predict" style="display:none"></div>
       <div id="p-rpt" class="rpt" style="display:none"></div>
       <div id="p-log" class="logs" style="display:none"></div>
     </div>
@@ -534,7 +576,7 @@ input[type=file]{display:none}
       <div class="cw" id="cw">
         <div class="cw-i">19</div>
         <div class="cw-t">What are you building?</div>
-        <div class="cw-s">Drop a dataset and describe your goal. I'll profile the data, propose a plan, and run experiments automatically.</div>
+        <div class="cw-s">Drop any dataset (CSV, Excel, JSON) and describe your goal. I'll profile the data, build a plan, train models, and deploy — all automatically.</div>
         <div class="cw-hints">
           <div class="cw-hint" onclick="hint('Predict customer churn')">Predict customer churn</div>
           <div class="cw-hint" onclick="hint('Forecast next month revenue')">Forecast revenue</div>
@@ -564,7 +606,7 @@ input[type=file]{display:none}
   <div class="sb-r">
     <div class="sb-item" id="sb-tokens" style="display:none">Tokens: <span id="sb-tok">0</span></div>
     <div class="sb-sep"></div>
-    <div class="sb-item">19Labs v0.9</div>
+    <div class="sb-item">19Labs v1.0</div>
   </div>
 </div>
 
@@ -673,7 +715,7 @@ function stab(name){
     t.classList.toggle('on',t.dataset.t===name);
     if(t.dataset.t===name){const b=t.querySelector('.tab-badge');if(b)b.remove()}
   });
-  ['data','code','exp','art','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':''):'none'});
+  ['data','code','exp','art','predict','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':''):'none'});
   const em=document.getElementById('ws-empty');
   if(em)em.style.display=(name==='data'&&!S.cols)?'':'none';
   if(name==='code'&&monacoEditor)monacoEditor.layout();
@@ -800,48 +842,7 @@ dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handleFile(f)});
 function onFile(e){const f=e.target.files[0];if(f)handleFile(f)}
 
-async function handleFile(f){
-  S.file=f;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
-  document.getElementById('dz-icon').textContent='📊';
-  document.getElementById('dz-title').textContent=f.name;
-  document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
-  dz.classList.add('loaded');
-  stab('data');
-  showSkeleton('p-data','stats');
-  document.getElementById('p-data').style.display='';
-  document.getElementById('ws-empty').style.display='none';
-  toast(`Loaded ${f.name}`,'ok',3000);
-
-  const text=await readF(f);
-  S.csv=text;
-  const parsed=parseCSV(text);
-  S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
-
-  updSide();updStatus();
-  document.getElementById('p-exp').innerHTML='';
-  showDataPreview();
-  stab('data');
-
-  // Build smart chat message with real data info
-  const numCols=S.cols.filter(c=>S.colTypes[c]==='numeric');
-  const catCols=S.cols.filter(c=>S.colTypes[c]==='categorical');
-  const lastNum=numCols.length?numCols[numCols.length-1]:'';
-
-  let msg=`Loaded <strong>${esc(f.name)}</strong> — ${S.totalRows.toLocaleString()} rows, ${S.cols.length} columns.`;
-  msg+=`<br><br>`;
-  msg+=`<strong>Numeric columns:</strong> ${numCols.length?numCols.map(c=>`<code>${esc(c)}</code>`).join(', '):'none'}`;
-  msg+=`<br><strong>Categorical columns:</strong> ${catCols.length?catCols.map(c=>`<code>${esc(c)}</code>`).join(', '):'none'}`;
-  if(lastNum){
-    msg+=`<br><br>Looks like <code>${esc(lastNum)}</code> could be a prediction target. Want me to predict that, or do you have something else in mind?`;
-    msg+=`<br><br>Say <strong>"go"</strong> to let me handle everything, or describe your specific goal.`;
-  } else {
-    msg+=`<br><br>What would you like to do with this data?`;
-  }
-  chat('ai',msg);
-
-  // Auto-trigger server-side discovery
-  autoDiscover();
-}
+// handleFile is defined below in the "FILE FORMAT SUPPORT" section
 
 // ═══════════════════════════════════════════
 // MODES: chat | plan | agent
@@ -1126,7 +1127,10 @@ async function launchRun(){
     const totalExp=st.total_experiments||S.exps.length;
     const kept=S.exps.filter(e=>e.success).length;
     const tu=st.token_usage||{};
-    const tokStr=tu.input?` · Tokens: ${((tu.input+tu.output)/1000).toFixed(1)}k (${tu.calls} calls)`:'';
+    if(tu.input)updateCostDisplay(tu);
+    const cost=estimateCost(C.provider,tu.input||0,tu.output||0);
+    const costStr=cost<0.01?'<$0.01':`$${cost.toFixed(2)}`;
+    const tokStr=tu.input?` · ${((tu.input+tu.output)/1000).toFixed(1)}k tokens (~${costStr})`:'';
     const bam=S.best?.all_metrics||{};
     const pk=S.best?.metric_name||'';
     const ttPrimary=fmtTrainTest(bam,pk);
@@ -1139,7 +1143,13 @@ async function launchRun(){
     setProg(100);setBadge('DONE','ok');document.getElementById('cdot').className='chat-dot ok';
     addRunHistory(S.runId,'done',`${S.best?.model||''}`.trim()||S.file?.name||'Done');
     toast(`Research complete — ${kept}/${totalExp} experiments kept`,'ok',6000);
-    sbUpdate({status:'Done',running:false,stopTimer:true,tokens:tu.input?`${((tu.input+tu.output)/1000).toFixed(1)}k`:''});
+    sbUpdate({status:'Done',running:false,stopTimer:true,tokens:tu.input?`${((tu.input+tu.output)/1000).toFixed(1)}k (~${costStr})`:''});
+    // Enable predict panel
+    showPredictPanel();
+    const predTab=document.querySelector('.tab[data-t="predict"]');
+    if(predTab&&!predTab.querySelector('.tab-badge'))predTab.innerHTML='Predict <span class="tab-badge">!</span>';
+    // Final chart render
+    renderMetricChart();renderComparison();
     playDone();
   }catch(e){
     chat('err',`Run failed: ${esc(e.message)}`);setBadge('ERROR','err');document.getElementById('cdot').className='chat-dot';
@@ -1227,23 +1237,31 @@ function addExpCard(exp){
   const c=document.getElementById('p-exp');
   const e=document.createElement('div');
   e.className=`exp-card ${exp.is_best?'best':(!exp.success?'fail':'')}`;
+  e.onclick=function(){toggleExpCard(this)};
   const tl=exp.is_best?'BEST':(!exp.success?'FAIL':'OK');
   const tc=exp.is_best?'best':(!exp.success?'fail':'ok');
   let detail='';
+  let extraDetail='';
   if(exp.success){
     const am=exp.all_metrics||{};
     const pk=exp.metric_name||'metric';
     const ttPrimary=fmtTrainTest(am,pk);
     detail=`<strong>${esc(pk).toUpperCase()}</strong>: ${ttPrimary||Number(exp.metric_val).toFixed(4)}`;
-    const extraKeys=['rmse','mape','mae','r2','nse'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null));
+    const extraKeys=['rmse','mape','mae','r2','nse','auc','f1','accuracy','precision','recall','logloss'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null));
     if(extraKeys.length){
       const secs=extraKeys.map(k=>{const tt=fmtTrainTest(am,k);return tt?`${k.toUpperCase()}: ${tt}`:null}).filter(Boolean).join(' · ');
       if(secs)detail+=`<br><span style="font-size:11px;color:var(--text-3)">${secs}</span>`;
     }
+    // Extra detail for expanded view
+    const allKeys=Object.keys(am).sort();
+    if(allKeys.length)extraDetail=`<strong>All metrics:</strong><br>`+allKeys.map(k=>`  ${k}: ${typeof am[k]==='number'?am[k].toFixed(6):am[k]}`).join('<br>');
     if(exp.what_worked)detail+=`<br><span style="font-size:11px;color:var(--text-3)">${esc(exp.what_worked.slice(0,60))}</span>`;
-  }else{detail=esc(classifyFail(exp))}
-  e.innerHTML=`<div class="exp-n">#${exp.num}</div><div class="exp-info"><div class="exp-model">${esc(exp.model||'Failed')}</div><div class="exp-detail">${detail}</div></div><div class="exp-tag ${tc}">${tl}</div>`;
+  }else{detail=esc(classifyFail(exp));extraDetail=exp.error?`<strong>Error:</strong> ${esc(String(exp.error).slice(0,200))}`:''}
+  e.innerHTML=`<div class="exp-n">#${exp.num}</div><div class="exp-info"><div class="exp-model">${esc(exp.model||'Failed')}</div><div class="exp-detail">${detail}</div><div class="exp-extra">${extraDetail}</div></div><div class="exp-tag ${tc}">${tl}</div>`;
   c.appendChild(e);c.scrollTop=c.scrollHeight;
+  // Update charts
+  renderMetricChart();
+  renderComparison();
 }
 function classifyFail(exp){
   const e=String(exp.error||exp.failure_reason||'').toLowerCase();
@@ -1402,8 +1420,9 @@ const CMDS=[
   {label:'Code Tab',key:'⌘2',action:()=>stab('code')},
   {label:'Experiments Tab',key:'⌘3',action:()=>stab('exp')},
   {label:'Artifacts Tab',key:'⌘4',action:()=>stab('art')},
-  {label:'Report Tab',key:'⌘5',action:()=>stab('rpt')},
-  {label:'Logs Tab',key:'⌘6',action:()=>stab('log')},
+  {label:'Predict Tab',key:'⌘5',action:()=>stab('predict')},
+  {label:'Report Tab',key:'⌘6',action:()=>stab('rpt')},
+  {label:'Logs Tab',key:'⌘7',action:()=>stab('log')},
   {label:'Open Settings',key:'⌘,',action:()=>openSettings()},
   {label:'Run Autopilot',action:()=>{if(S.file){S.confirmed=true;launchRun()}}},
   {label:'Run Continuous (Never Stop)',action:()=>{if(S.file){S.continuous=true;S.confirmed=true;launchRun()}}},
@@ -1450,9 +1469,9 @@ document.addEventListener('keydown',e=>{
   // Global shortcuts (only when palette is closed)
   if(isCmd&&e.key==='l'){e.preventDefault();document.getElementById('cin').focus();return}
   if(isCmd&&e.key===','){e.preventDefault();openSettings();return}
-  if(isCmd&&e.key>='1'&&e.key<='6'){
+  if(isCmd&&e.key>='1'&&e.key<='7'){
     e.preventDefault();
-    const tabs=['data','code','exp','art','rpt','log'];
+    const tabs=['data','code','exp','art','predict','rpt','log'];
     stab(tabs[parseInt(e.key)-1]);return;
   }
 });
@@ -1586,8 +1605,9 @@ function showSkeleton(containerId,type){
 // EMPTY STATES
 // ═══════════════════════════════════════════
 const emptyStates={
-  'p-exp':{icon:'🧪',title:'No experiments yet',sub:'Start a run and experiments will appear here in real time.'},
+  'p-exp':{icon:'🧪',title:'No experiments yet',sub:'Start a run and experiments will appear here in real time with a live metric chart.'},
   'p-art':{icon:'📦',title:'No artifacts yet',sub:'Artifacts like notebooks, charts, and reports are generated after experiments.'},
+  'p-predict':{icon:'🔮',title:'No model ready',sub:'Complete a training run, then test predictions on new data here.'},
   'p-rpt':{icon:'📝',title:'No report yet',sub:'A comprehensive report is generated at the end of each run.'},
   'p-log':{icon:'📋',title:'No logs yet',sub:'Streaming logs will appear here once a run starts.'},
 };
@@ -1656,6 +1676,313 @@ function playDone(){
 }
 
 // ═══════════════════════════════════════════
+// LIVE METRIC CHART (SVG — real-time)
+// ═══════════════════════════════════════════
+function renderMetricChart(){
+  const successful=S.exps.filter(e=>e.success&&e.metric_val!=null);
+  if(successful.length<1)return;
+  const existing=document.getElementById('metric-chart-el');
+  if(!existing){
+    const c=document.getElementById('p-exp');
+    const div=document.createElement('div');div.className='metric-chart';div.id='metric-chart-el';
+    c.insertBefore(div,c.querySelector('.bb')?c.querySelector('.bb').nextSibling:c.firstChild);
+  }
+  const el=document.getElementById('metric-chart-el');
+  const pk=successful[0]?.metric_name||'metric';
+  const dir=S.discovery?.objective?.direction||'lower_is_better';
+  const lower=dir==='lower_is_better';
+
+  // Compute running best
+  const vals=successful.map(e=>e.metric_val);
+  let runBest=[];let cur=lower?Infinity:-Infinity;
+  for(const v of vals){cur=lower?Math.min(cur,v):Math.max(cur,v);runBest.push(cur)}
+
+  const W=520,H=160,P={l:50,r:20,t:20,b:28};
+  const cW=W-P.l-P.r,cH=H-P.t-P.b;
+  const n=successful.length;
+  const allV=[...vals,...runBest];
+  let minV=Math.min(...allV),maxV=Math.max(...allV);
+  if(minV===maxV){minV-=0.01;maxV+=0.01}
+  const range=maxV-minV;
+  minV-=range*0.08;maxV+=range*0.08;
+
+  const x=i=>P.l+(i/(Math.max(n-1,1)))*cW;
+  const y=v=>P.t+cH-(((v-minV)/(maxV-minV))*cH);
+
+  // Build SVG
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  // Grid lines
+  const gridN=4;
+  for(let i=0;i<=gridN;i++){
+    const gv=minV+((maxV-minV)*i/gridN);
+    const gy=y(gv);
+    svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="#27272a" stroke-width="0.5"/>`;
+    svg+=`<text x="${P.l-6}" y="${gy+3}" font-size="8" fill="#71717a" text-anchor="end" font-family="JetBrains Mono,monospace">${gv.toFixed(gv<1?4:1)}</text>`;
+  }
+  // X axis labels
+  successful.forEach((e,i)=>{
+    if(n<=12||i%(Math.ceil(n/10))===0||i===n-1)
+      svg+=`<text x="${x(i)}" y="${H-4}" font-size="8" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace">#${e.num}</text>`;
+  });
+
+  // Running best line (blue, thick)
+  let bestPath=`M ${x(0)} ${y(runBest[0])}`;
+  for(let i=1;i<n;i++) bestPath+=` L ${x(i)} ${y(runBest[i])}`;
+  svg+=`<path d="${bestPath}" stroke="#3b82f6" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.7"/>`;
+
+  // Individual experiment dots + line
+  let dotPath=`M ${x(0)} ${y(vals[0])}`;
+  for(let i=1;i<n;i++) dotPath+=` L ${x(i)} ${y(vals[i])}`;
+  svg+=`<path d="${dotPath}" stroke="#a1a1aa" stroke-width="1" fill="none" stroke-dasharray="3,3" opacity="0.5"/>`;
+
+  // Dots
+  successful.forEach((e,i)=>{
+    const cx=x(i),cy=y(vals[i]);
+    const isBest=e.is_best;
+    const col=isBest?'#3b82f6':'#71717a';
+    const r=isBest?4:2.5;
+    svg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${col}" stroke="${isBest?'#2563eb':'none'}" stroke-width="${isBest?1.5:0}">`;
+    svg+=`<title>#${e.num} ${e.model}: ${pk}=${vals[i].toFixed(4)}</title></circle>`;
+    if(isBest)svg+=`<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="#3b82f6" stroke-width="0.5" opacity="0.4"/>`;
+  });
+
+  svg+=`</svg>`;
+  el.innerHTML=`<div class="metric-chart-h"><div class="metric-chart-title">${esc(pk.toUpperCase())} Progress</div><div class="metric-chart-subtitle">${n} experiments · ${lower?'lower':'higher'} is better</div></div>${svg}<div class="metric-chart-legend"><div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Running best</div><div class="legend-item"><div class="legend-dot" style="background:#71717a"></div>Each experiment</div></div>`;
+}
+
+// ═══════════════════════════════════════════
+// MODEL COMPARISON VIEW
+// ═══════════════════════════════════════════
+function renderComparison(){
+  const successful=S.exps.filter(e=>e.success&&e.metric_val!=null);
+  if(successful.length<2)return;
+  const existing=document.getElementById('comparison-el');
+  if(!existing){
+    const c=document.getElementById('p-exp');
+    const chart=document.getElementById('metric-chart-el');
+    const div=document.createElement('div');div.className='metric-chart';div.id='comparison-el';
+    if(chart)chart.after(div);else c.insertBefore(div,c.firstChild);
+  }
+  const el=document.getElementById('comparison-el');
+  const pk=successful[0]?.metric_name||'metric';
+  const dir=S.discovery?.objective?.direction||'lower_is_better';
+  const lower=dir==='lower_is_better';
+
+  // Sort by metric — best first
+  const sorted=[...successful].sort((a,b)=>lower?(a.metric_val-b.metric_val):(b.metric_val-a.metric_val));
+  const top=sorted.slice(0,8);
+  const bestVal=top[0].metric_val;
+  const worstVal=top[top.length-1].metric_val;
+  const range=Math.abs(bestVal-worstVal)||1;
+
+  let h=`<div class="metric-chart-h"><div class="metric-chart-title">Model Comparison</div><div class="metric-chart-subtitle">Top ${top.length} models · sorted by ${pk}</div></div>`;
+  top.forEach((e,i)=>{
+    const pct=lower?100-((e.metric_val-bestVal)/range*80):((e.metric_val-worstVal)/range*80)+20;
+    const cls=i===0?'best':(e.success?'ok':'fail');
+    h+=`<div class="comparison-bar"><div class="comparison-label"><span class="comparison-label-name">#${e.num} ${esc(e.model)}</span><span class="comparison-label-val">${Number(e.metric_val).toFixed(4)}</span></div><div class="comparison-track"><div class="comparison-fill ${cls}" style="width:${Math.max(8,pct)}%"></div></div></div>`;
+  });
+  el.innerHTML=h;
+}
+
+// ═══════════════════════════════════════════
+// DATA QUALITY WARNINGS
+// ═══════════════════════════════════════════
+function showDataQualityWarnings(){
+  if(!S.cols||!S.rows)return;
+  const warnings=[];
+  // Check for high null columns
+  S.cols.forEach(c=>{
+    const pct=S.rows.length?Math.round((S.colNulls[c]||0)/S.rows.length*100):0;
+    if(pct>50)warnings.push(`Column <code>${esc(c)}</code> has ${pct}% missing values`);
+  });
+  // Check for very few rows
+  if(S.totalRows<50)warnings.push(`Only ${S.totalRows} rows — models may overfit. Consider collecting more data.`);
+  // Check for single column
+  if(S.cols.length===1)warnings.push('Only 1 column detected — possible delimiter issue. Check if your file uses semicolons or tabs.');
+  // Check for too many categoricals
+  const cats=S.cols.filter(c=>S.colTypes[c]==='categorical');
+  if(cats.length>S.cols.length*0.8&&S.cols.length>3)warnings.push(`Most columns (${cats.length}/${S.cols.length}) are categorical — may need encoding.`);
+  // Check for ID-like columns
+  S.cols.forEach(c=>{
+    if(/^(id|index|row_?id|unnamed)$/i.test(c))warnings.push(`<code>${esc(c)}</code> looks like an ID column — should be excluded from training.`);
+  });
+
+  if(!warnings.length)return;
+  const el=document.getElementById('p-data');
+  const existing=el.querySelector('.dq-warnings');
+  if(existing)existing.remove();
+  const div=document.createElement('div');div.className='dq-warnings';
+  div.innerHTML=warnings.map(w=>`<div class="dq-item">${w}</div>`).join('');
+  el.insertBefore(div,el.firstChild);
+}
+
+// ═══════════════════════════════════════════
+// PREDICTION UI
+// ═══════════════════════════════════════════
+function showPredictPanel(){
+  const el=document.getElementById('p-predict');
+  if(!S.best||!S.runId){
+    el.innerHTML=`<div class="empty-panel"><div class="empty-icon">🔮</div><div class="empty-title">No model ready</div><div class="empty-sub">Complete a training run first, then you can test predictions on new data here.</div></div>`;
+    return;
+  }
+  const target=S.discovery?.objective?.target||'target';
+  el.innerHTML=`<div class="predict-panel"><h3>Test Predictions</h3><p>Paste CSV data (with headers) or JSON array of objects. The <strong>${esc(S.best.model)}</strong> model will predict <code>${esc(target)}</code> for each row.</p><textarea class="predict-textarea" id="predict-input" placeholder="col1,col2,col3\n1.0,category_a,5\n2.5,category_b,8\n\nOR paste JSON:\n[{&quot;col1&quot;: 1.0, &quot;col2&quot;: &quot;category_a&quot;}]"></textarea><div class="predict-actions"><button class="abtn p" onclick="runPrediction()">Predict</button><button class="abtn" onclick="loadSampleForPredict()">Load sample from dataset</button><span id="predict-status" style="font-size:11px;color:var(--text-3)"></span></div><div class="predict-result" id="predict-result"></div></div>`;
+}
+
+function loadSampleForPredict(){
+  if(!S.rows||!S.cols)return;
+  const sample=S.rows.slice(0,5);
+  const csv=S.cols.join(',')+'\n'+sample.map(r=>r.join(',')).join('\n');
+  document.getElementById('predict-input').value=csv;
+  toast('Loaded 5 sample rows','ok',2000);
+}
+
+async function runPrediction(){
+  const input=document.getElementById('predict-input')?.value?.trim();
+  if(!input||!S.runId){toast('Enter data first','warn');return}
+  const status=document.getElementById('predict-status');
+  const result=document.getElementById('predict-result');
+  status.textContent='Predicting...';result.style.display='none';
+
+  let body={};
+  // Detect if JSON
+  if(input.startsWith('[')||input.startsWith('{')){
+    try{
+      let data=JSON.parse(input);
+      if(!Array.isArray(data))data=[data];
+      body={data};
+    }catch(e){status.textContent='Invalid JSON';return}
+  }else{
+    body={csv_text:input};
+  }
+
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${S.runId}/predict`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.detail||j.error||'Prediction failed');
+    status.textContent=`${j.count} predictions · ${esc(j.model)}`;
+    // Format result as table
+    let h='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-3)">Row</th><th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-3)">Prediction</th></tr></thead><tbody>';
+    j.predictions.forEach((p,i)=>{
+      h+=`<tr><td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-3)">${i+1}</td><td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text);font-weight:600">${typeof p==='number'?p.toFixed(4):esc(String(p))}</td></tr>`;
+    });
+    h+='</tbody></table>';
+    if(j.note)h+=`<div style="margin-top:8px;font-size:10px;color:var(--amber)">Note: ${esc(j.note)}</div>`;
+    result.innerHTML=h;result.style.display='';
+    toast(`${j.count} predictions ready`,'ok',3000);
+  }catch(e){
+    status.textContent='Failed';result.innerHTML=`<div style="color:var(--red)">${esc(e.message)}</div>`;result.style.display='';
+    toast(`Prediction failed: ${e.message.slice(0,60)}`,'err');
+  }
+}
+
+// ═══════════════════════════════════════════
+// COST TRACKING
+// ═══════════════════════════════════════════
+const COST_PER_1K = {
+  'claude': {input: 0.003, output: 0.015},    // Sonnet pricing
+  'openai': {input: 0.005, output: 0.015},     // GPT-4o pricing
+};
+function estimateCost(provider, tokenInput, tokenOutput){
+  const rates = COST_PER_1K[provider] || COST_PER_1K['claude'];
+  return (tokenInput / 1000 * rates.input) + (tokenOutput / 1000 * rates.output);
+}
+let _trackCostTokens = {input: 0, output: 0};
+function updateCostDisplay(tu){
+  if(!tu || (!tu.input && !tu.output)) return;
+  _trackCostTokens = {input: tu.input || 0, output: tu.output || 0};
+  const cost = estimateCost(C.provider, _trackCostTokens.input, _trackCostTokens.output);
+  const costStr = cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`;
+  const tokEl = document.getElementById('sb-tok');
+  if(tokEl) tokEl.textContent = `${((_trackCostTokens.input + _trackCostTokens.output) / 1000).toFixed(1)}k (~${costStr})`;
+  document.getElementById('sb-tokens').style.display = '';
+}
+
+// ═══════════════════════════════════════════
+// ENHANCED EXPERIMENT CARDS
+// ═══════════════════════════════════════════
+function toggleExpCard(el){
+  el.classList.toggle('expanded');
+}
+
+// ═══════════════════════════════════════════
+// FILE FORMAT SUPPORT (Excel, JSON)
+// ═══════════════════════════════════════════
+async function handleFile(f){
+  S.file=f;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
+  document.getElementById('dz-icon').textContent='📊';
+  document.getElementById('dz-title').textContent=f.name;
+  document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
+  dz.classList.add('loaded');
+  stab('data');
+  showSkeleton('p-data','stats');
+  document.getElementById('p-data').style.display='';
+  document.getElementById('ws-empty').style.display='none';
+  toast(`Loaded ${f.name}`,'ok',3000);
+
+  let text;
+  const ext=f.name.split('.').pop().toLowerCase();
+
+  if(ext==='json'){
+    // JSON → convert to CSV
+    const raw=await readF(f);
+    try{
+      let data=JSON.parse(raw);
+      if(!Array.isArray(data)){
+        if(data.data&&Array.isArray(data.data))data=data.data;
+        else data=[data];
+      }
+      const headers=Object.keys(data[0]||{});
+      const rows=data.map(r=>headers.map(h=>{const v=r[h];return v==null?'':String(v).includes(',')?`"${v}"`:String(v)}));
+      text=headers.join(',')+'\n'+rows.map(r=>r.join(',')).join('\n');
+      toast(`Converted JSON → CSV (${data.length} rows)`,'ok',3000);
+    }catch(e){toast('Invalid JSON file','err');return}
+  } else if(ext==='xlsx'||ext==='xls'){
+    // Excel → need SheetJS
+    toast('Loading Excel parser...','info',2000);
+    if(!window.XLSX){
+      await new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+    }
+    try{
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      text=XLSX.utils.sheet_to_csv(ws);
+      toast(`Converted Excel → CSV (sheet: ${wb.SheetNames[0]})`,'ok',3000);
+    }catch(e){toast('Failed to parse Excel file','err');return}
+  } else {
+    text=await readF(f);
+  }
+
+  S.csv=text;
+  const parsed=parseCSV(text);
+  S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+
+  updSide();updStatus();
+  document.getElementById('p-exp').innerHTML='';
+  showDataPreview();
+  showDataQualityWarnings();
+  stab('data');
+
+  const numCols=S.cols.filter(c=>S.colTypes[c]==='numeric');
+  const catCols=S.cols.filter(c=>S.colTypes[c]==='categorical');
+  const lastNum=numCols.length?numCols[numCols.length-1]:'';
+
+  let msg=`Loaded <strong>${esc(f.name)}</strong> — ${S.totalRows.toLocaleString()} rows, ${S.cols.length} columns.`;
+  msg+=`<br><br>`;
+  msg+=`<strong>Numeric columns:</strong> ${numCols.length?numCols.map(c=>`<code>${esc(c)}</code>`).join(', '):'none'}`;
+  msg+=`<br><strong>Categorical columns:</strong> ${catCols.length?catCols.map(c=>`<code>${esc(c)}</code>`).join(', '):'none'}`;
+  if(lastNum){
+    msg+=`<br><br>Looks like <code>${esc(lastNum)}</code> could be a prediction target. Want me to predict that, or do you have something else in mind?`;
+    msg+=`<br><br>Say <strong>"go"</strong> to let me handle everything, or describe your specific goal.`;
+  } else {
+    msg+=`<br><br>What would you like to do with this data?`;
+  }
+  chat('ai',msg);
+  autoDiscover();
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 document.getElementById('cin').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
@@ -1664,7 +1991,7 @@ setBadge(C.key?'READY':'IDLE','');
 // Apply saved mode on load (without showing the welcome toast)
 {const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
-['p-exp','p-art','p-rpt','p-log'].forEach(id=>showEmpty(id));
+['p-exp','p-art','p-predict','p-rpt','p-log'].forEach(id=>showEmpty(id));
 </script>
 </body>
 </html>

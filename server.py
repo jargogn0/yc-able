@@ -7,7 +7,7 @@
 - GET  /api/run/{id}/deploy → download deploy.zip
 - GET  /                 → serves 19labs-app.html
 """
-import asyncio, glob, json, os, signal, shutil, tempfile, threading, time, uuid, zipfile
+import asyncio, glob, json, os, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse
@@ -17,6 +17,83 @@ import uvicorn
 from dotenv import load_dotenv
 
 load_dotenv()
+
+DB_PATH = Path(os.environ.get("NINETEENLABS_DB", Path(__file__).parent / "19labs.db"))
+
+def _init_db():
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.execute("""CREATE TABLE IF NOT EXISTS runs (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'running',
+        filename TEXT,
+        provider TEXT DEFAULT 'claude',
+        started REAL,
+        finished REAL,
+        hint TEXT DEFAULT '',
+        budget INTEGER DEFAULT 6,
+        best_model TEXT,
+        best_metric_name TEXT,
+        best_metric_val REAL,
+        total_experiments INTEGER DEFAULT 0,
+        token_input INTEGER DEFAULT 0,
+        token_output INTEGER DEFAULT 0,
+        token_calls INTEGER DEFAULT 0,
+        yc_score INTEGER,
+        error TEXT,
+        result_json TEXT
+    )""")
+    conn.commit()
+    conn.close()
+
+_init_db()
+
+def _save_run_to_db(run_id: str, run: dict):
+    """Persist run summary to SQLite."""
+    try:
+        result = run.get("result") or {}
+        best = result.get("best") or {}
+        tu = result.get("token_usage") or {}
+        diag = result.get("diagnostics") or {}
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("""INSERT OR REPLACE INTO runs
+            (id, status, filename, provider, started, finished, hint, budget,
+             best_model, best_metric_name, best_metric_val, total_experiments,
+             token_input, token_output, token_calls, yc_score, error, result_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (run_id, run.get("status", "done"),
+             Path(run.get("csv", "")).name if run.get("csv") else "",
+             run.get("provider", "claude"),
+             run.get("started"),
+             time.time(),
+             run.get("hint", ""),
+             run.get("budget", 6),
+             best.get("model"),
+             best.get("metric_name"),
+             best.get("metric_val"),
+             result.get("total_experiments", len(result.get("history", []))),
+             tu.get("input", 0),
+             tu.get("output", 0),
+             tu.get("calls", 0),
+             diag.get("yc_readiness_score"),
+             run.get("error"),
+             None))  # Don't store full result_json for now (too large)
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Non-critical -- don't block the run
+
+def _load_run_history_from_db():
+    """Load recent runs from SQLite for the /api/runs endpoint."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM runs ORDER BY started DESC LIMIT 100"
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
 
 ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
 if ALLOWED_ORIGINS == ["*"]:
@@ -110,6 +187,10 @@ class ChatRequest(BaseModel):
     api_key: str = ""
     provider: str = "claude"
     context: dict = {}
+
+class PredictRequest(BaseModel):
+    data: list[dict] = []  # list of rows as dicts
+    csv_text: str = ""     # alternative: raw CSV text
 
 def _fallback_discovery(profile: dict, hint: str = ""):
     headers = profile.get("headers", [])
@@ -236,8 +317,10 @@ async def start_run(req: RunRequest):
             RUNS[run_id]["result"] = result
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
+                _save_run_to_db(run_id, RUNS[run_id])
             elif RUNS[run_id]["status"] != "error":
                 RUNS[run_id]["status"] = "done"
+                _save_run_to_db(run_id, RUNS[run_id])
         except Exception as e:
             msg = str(e)
             if msg.strip() == "Connection error.":
@@ -248,6 +331,7 @@ async def start_run(req: RunRequest):
             RUNS[run_id]["status"] = "error"
             RUNS[run_id]["error"] = msg
             cb("error", msg)
+            _save_run_to_db(run_id, RUNS[run_id])
 
     threading.Thread(target=background, daemon=True).start()
     return {"run_id": run_id}
@@ -343,15 +427,52 @@ async def cancel_run(run_id: str):
 @app.get("/api/runs")
 def list_runs():
     out = []
+    # In-memory runs (current session)
     for rid, run in sorted(RUNS.items(), key=lambda x: x[1].get("started", 0), reverse=True):
         out.append({
             "id": rid,
             "status": run["status"],
             "started": run.get("started"),
-            "filename": run.get("csv", "").split("/")[-1] if run.get("csv") else "",
+            "filename": Path(run.get("csv", "")).name if run.get("csv") else "",
             "provider": run.get("provider", "claude"),
+            "best_model": (run.get("result") or {}).get("best", {}).get("model"),
+            "best_metric": (run.get("result") or {}).get("best", {}).get("metric_val"),
         })
-    return {"runs": out[:50]}
+    # Historical runs from DB (not in memory)
+    in_memory_ids = set(RUNS.keys())
+    for row in _load_run_history_from_db():
+        if row["id"] not in in_memory_ids:
+            out.append({
+                "id": row["id"],
+                "status": row["status"],
+                "started": row["started"],
+                "filename": row.get("filename", ""),
+                "provider": row.get("provider", "claude"),
+                "best_model": row.get("best_model"),
+                "best_metric": row.get("best_metric_val"),
+                "historical": True,  # flag that workspace is gone
+            })
+    out.sort(key=lambda x: x.get("started") or 0, reverse=True)
+    return {"runs": out[:100]}
+
+@app.get("/api/stats")
+def get_stats():
+    """Dashboard stats -- total runs, models trained, best scores."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        total = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        successful = conn.execute("SELECT COUNT(*) FROM runs WHERE status='done' AND best_model IS NOT NULL").fetchone()[0]
+        total_experiments = conn.execute("SELECT COALESCE(SUM(total_experiments), 0) FROM runs").fetchone()[0]
+        total_tokens = conn.execute("SELECT COALESCE(SUM(token_input + token_output), 0) FROM runs").fetchone()[0]
+        conn.close()
+        return {
+            "total_runs": total + len(RUNS),
+            "successful_runs": successful,
+            "total_experiments": int(total_experiments),
+            "total_tokens": int(total_tokens),
+        }
+    except Exception:
+        return {"total_runs": len(RUNS), "successful_runs": 0, "total_experiments": 0, "total_tokens": 0}
 
 # ── SSE STREAM ─────────────────────────────────────────────────
 @app.get("/api/run/{run_id}/stream")
@@ -719,6 +840,120 @@ async def create_api_server(run_id: str, request: Request):
             if f.is_file():
                 zf.write(f, f.relative_to(api_dir))
     return FileResponse(str(zip_path), filename=f"19labs_api_{run_id[:8]}.zip", media_type="application/zip")
+
+# ── BATCH PREDICTION ───────────────────────────────────────────
+@app.post("/api/run/{run_id}/predict")
+async def predict(run_id: str, req: PredictRequest):
+    if run_id not in RUNS:
+        raise HTTPException(404, "Run not found")
+    run = RUNS[run_id]
+    result = run.get("result")
+    if not result:
+        raise HTTPException(400, "Run not finished yet")
+    ws = Path(run.get("ws", ""))
+    deploy_path = result.get("deploy_path")
+    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else ws
+
+    # Find model file
+    model_path = None
+    for pattern in ["model.pkl", "*.pkl", "*.joblib"]:
+        for f in list(dp.glob(pattern)) + list(ws.glob(pattern)):
+            if f.is_file():
+                model_path = f
+                break
+        if model_path:
+            break
+
+    if not model_path:
+        raise HTTPException(404, "No trained model found. Run may not have completed successfully.")
+
+    import joblib
+    import pandas as pd
+    import numpy as np
+
+    try:
+        model = joblib.load(model_path)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load model: {e}")
+
+    # Build dataframe from input
+    if req.csv_text:
+        import io
+        df = pd.read_csv(io.StringIO(req.csv_text))
+    elif req.data:
+        df = pd.DataFrame(req.data)
+    else:
+        raise HTTPException(400, "Provide either 'data' (list of dicts) or 'csv_text'")
+
+    obj = result.get("objective") or {}
+    target = obj.get("target", "")
+
+    # Drop target column if present (user might include it)
+    if target and target in df.columns:
+        df = df.drop(columns=[target])
+
+    try:
+        # Try direct prediction first
+        predictions = model.predict(df)
+        # Convert numpy to python types
+        if hasattr(predictions, 'tolist'):
+            predictions = predictions.tolist()
+
+        # If classification, also get probabilities
+        proba = None
+        if hasattr(model, 'predict_proba'):
+            try:
+                proba_raw = model.predict_proba(df)
+                if hasattr(proba_raw, 'tolist'):
+                    proba = proba_raw.tolist()
+            except Exception:
+                pass
+
+        response = {
+            "ok": True,
+            "predictions": predictions,
+            "count": len(predictions),
+            "model": result.get("best", {}).get("model", "Unknown"),
+            "target": target,
+        }
+        if proba is not None:
+            response["probabilities"] = proba
+        return response
+
+    except Exception as e:
+        # If direct prediction fails, try with basic preprocessing
+        error_msg = str(e)
+        # Common issue: categorical columns need encoding
+        try:
+            # Try label encoding categoricals
+            from sklearn.preprocessing import LabelEncoder
+            df_encoded = df.copy()
+            for col in df_encoded.select_dtypes(include=['object', 'category']).columns:
+                le = LabelEncoder()
+                df_encoded[col] = le.fit_transform(df_encoded[col].astype(str))
+            df_encoded = df_encoded.fillna(0)
+            predictions = model.predict(df_encoded)
+            if hasattr(predictions, 'tolist'):
+                predictions = predictions.tolist()
+            return {
+                "ok": True,
+                "predictions": predictions,
+                "count": len(predictions),
+                "model": result.get("best", {}).get("model", "Unknown"),
+                "target": target,
+                "note": "Applied automatic preprocessing (label encoding + null fill)"
+            }
+        except Exception as e2:
+            raise HTTPException(400, f"Prediction failed: {error_msg}. Auto-fix also failed: {e2}")
+
+
+@app.post("/api/run/{run_id}/predict-csv")
+async def predict_csv(run_id: str, request: Request):
+    body = await request.body()
+    csv_text = body.decode("utf-8")
+    req = PredictRequest(csv_text=csv_text)
+    return await predict(run_id, req)
+
 
 # ── HEALTH ─────────────────────────────────────────────────────
 @app.get("/favicon.ico")

@@ -16,4 +16,5 @@ scipy>=1.10
 statsmodels>=0.14
 optuna>=3.0
 shap>=0.45
+openpyxl>=3.1
 fastmcp>=2.0
