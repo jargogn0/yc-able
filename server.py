@@ -168,6 +168,74 @@ def serve_app_page():
         return HTMLResponse(APP_HTML.read_text())
     return HTMLResponse("<h1>19Labs</h1><p>Place 19labs-app.html next to server.py</p>")
 
+# ── DIRECT DOWNLOADS ──────────────────────────────────────────
+_APP_URL = "https://yc-able-production.up.railway.app/app"
+
+_MAC_SCRIPT = f'''#!/bin/bash
+# 19Labs launcher for macOS
+APP_URL="{_APP_URL}"
+echo "Opening 19Labs..."
+open "$APP_URL"
+'''
+
+_WIN_SCRIPT = f'''@echo off
+:: 19Labs launcher for Windows
+set APP_URL={_APP_URL}
+echo Opening 19Labs...
+start "" "%APP_URL%"
+exit
+'''
+
+_LINUX_SCRIPT = f'''#!/bin/bash
+# 19Labs launcher for Linux
+APP_URL="{_APP_URL}"
+echo "Opening 19Labs..."
+if command -v xdg-open &>/dev/null; then
+  xdg-open "$APP_URL"
+elif command -v gnome-open &>/dev/null; then
+  gnome-open "$APP_URL"
+else
+  echo "Open this URL in your browser: $APP_URL"
+fi
+'''
+
+@app.get("/download")
+async def download_auto(request: Request):
+    """Auto-detect platform and serve the right launcher."""
+    ua = request.headers.get("user-agent", "").lower()
+    if "windows" in ua or "win64" in ua or "win32" in ua:
+        return _download_windows()
+    if "mac" in ua or "darwin" in ua:
+        return _download_mac()
+    return _download_linux()
+
+@app.get("/download/mac")
+def _download_mac():
+    from fastapi.responses import Response as FR
+    return FR(
+        content=_MAC_SCRIPT.encode(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="19Labs.command"'},
+    )
+
+@app.get("/download/win")
+def _download_windows():
+    from fastapi.responses import Response as FR
+    return FR(
+        content=_WIN_SCRIPT.encode(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="19Labs.bat"'},
+    )
+
+@app.get("/download/linux")
+def _download_linux():
+    from fastapi.responses import Response as FR
+    return FR(
+        content=_LINUX_SCRIPT.encode(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="19labs.sh"'},
+    )
+
 # ── START RUN (JSON body) ──────────────────────────────────────
 class RunRequest(BaseModel):
     filename: str
