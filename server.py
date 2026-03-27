@@ -567,6 +567,90 @@ async def google_auth_start(request: Request):
            f"&response_type=code&scope={scope}&state={state}&prompt=select_account")
     return RedirectResponse(url, status_code=302)
 
+@app.get("/auth/github")
+async def github_auth_start(request: Request):
+    """Redirect to GitHub OAuth. Requires GITHUB_CLIENT_ID env var."""
+    client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+    if not client_id:
+        raise HTTPException(501, "GitHub sign-in is not configured on this server.")
+    state = _secrets.token_hex(16)
+    _OAUTH_STATES[state] = time.time()
+    old = [k for k, t in _OAUTH_STATES.items() if time.time() - t > 600]
+    for k in old:
+        del _OAUTH_STATES[k]
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = urllib.parse.quote(f"{base}/auth/github/callback", safe="")
+    url = (f"https://github.com/login/oauth/authorize"
+           f"?client_id={client_id}&redirect_uri={redirect_uri}"
+           f"&scope=user:email&state={state}")
+    return RedirectResponse(url, status_code=302)
+
+@app.get("/auth/github/callback")
+async def github_auth_callback(code: str = "", state: str = "", error: str = "", request: Request = None):
+    """Handle GitHub OAuth callback."""
+    if error or not code:
+        return HTMLResponse("<script>window.location='/app?auth_error=cancelled'</script>")
+    if state not in _OAUTH_STATES:
+        return HTMLResponse("<script>window.location='/app?auth_error=invalid_state'</script>")
+    del _OAUTH_STATES[state]
+
+    client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "").strip()
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/auth/github/callback"
+
+    try:
+        # Exchange code → access token
+        token_data = urllib.parse.urlencode({
+            "code": code, "client_id": client_id, "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+        }).encode()
+        req = urllib.request.Request("https://github.com/login/oauth/access_token", data=token_data,
+                                     headers={"Content-Type": "application/x-www-form-urlencoded",
+                                              "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            token_resp = json.loads(r.read())
+
+        access_token = token_resp.get("access_token", "")
+        if not access_token:
+            raise ValueError(f"No access token returned: {token_resp}")
+
+        # Fetch user info
+        ui_req = urllib.request.Request("https://api.github.com/user",
+                                        headers={"Authorization": f"Bearer {access_token}",
+                                                 "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(ui_req, timeout=10) as r:
+            info = json.loads(r.read())
+
+        # GitHub may not expose email — fetch emails list
+        email = info.get("email") or ""
+        if not email:
+            em_req = urllib.request.Request("https://api.github.com/user/emails",
+                                            headers={"Authorization": f"Bearer {access_token}",
+                                                     "Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(em_req, timeout=10) as r:
+                emails = json.loads(r.read())
+            primary = next((e["email"] for e in emails if e.get("primary") and e.get("verified")), None)
+            email = primary or (emails[0]["email"] if emails else f"gh_{info['id']}@github.local")
+
+        name = info.get("name") or info.get("login") or email.split("@")[0]
+        user_id = f"github:{info['id']}"
+
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("INSERT OR REPLACE INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+                     (user_id, email, name, "", time.time()))
+        conn.commit()
+        conn.close()
+
+        token = _make_jwt(user_id, email, name)
+        safe_token = token.replace("'", "")
+        return HTMLResponse(
+            f"<script>localStorage.setItem('19labs_auth_token','{safe_token}');"
+            f"window.location.href='/app';</script>"
+        )
+    except Exception as e:
+        return HTMLResponse(f"<script>window.location='/app?auth_error={urllib.parse.quote(str(e))}'</script>")
+
 @app.get("/auth/google/callback")
 async def google_auth_callback(code: str = "", state: str = "", error: str = "", request: Request = None):
     """Handle Google OAuth callback."""
