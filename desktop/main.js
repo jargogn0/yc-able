@@ -1,7 +1,12 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
-const APP_URL = process.env.LABS_URL || 'https://yc-able-production.up.railway.app/app';
+// Must be called before app is ready
+app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+app.disableHardwareAcceleration();
+
+const APP_URL = process.env.LABS_URL || 'https://yc-able.com/app';
 
 let mainWindow;
 
@@ -14,35 +19,44 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#09090b',
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
+      backgroundThrottling: false,
     },
-    show: false,
   });
 
-  const splash = new BrowserWindow({
-    width: 380,
-    height: 280,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    resizable: false,
-  });
-  splash.loadFile(path.join(__dirname, 'splash.html'));
-  splash.center();
+  let shown = false;
+  function showWindow() {
+    if (shown) return;
+    shown = true;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+    }
+  }
 
   mainWindow.loadURL(APP_URL);
 
-  mainWindow.webContents.on('did-finish-load', () => {
-    splash.destroy();
-    mainWindow.show();
-    mainWindow.focus();
+  mainWindow.webContents.on('console-message', (e, level, msg, line, src) => {
+    console.log(`[renderer:${level}] ${msg} (${src}:${line})`);
   });
 
-  mainWindow.webContents.on('did-fail-load', () => {
-    setTimeout(() => mainWindow.loadURL(APP_URL), 3000);
+  // did-finish-load = HTML parsed; wait 2s for JS to render app
+  mainWindow.webContents.on('did-finish-load', () => {
+    setTimeout(showWindow, 2000);
+  });
+
+  // Safety: show after 12s regardless
+  setTimeout(showWindow, 12000);
+
+  mainWindow.webContents.on('did-fail-load', (e, code, desc) => {
+    if (code === -3) return;
+    console.error(`[main] load failed: ${code} ${desc}`);
+    showWindow(); // show even on failure so user sees error
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -56,9 +70,27 @@ function createWindow() {
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(isMac ? [{ label: '19Labs', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }] }] : []),
+    ...(isMac ? [{ label: '19Labs', submenu: [
+      { role: 'about' },
+      { type: 'separator' },
+      { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(APP_URL);
+      }},
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' }
+    ]}] : []),
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
-    { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+    { label: 'View', submenu: [
+      { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => mainWindow && mainWindow.loadURL(APP_URL) },
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+      { type: 'separator' }, { role: 'togglefullscreen' }
+    ]},
     { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, ...(isMac ? [{ type: 'separator' }, { role: 'front' }] : [{ role: 'close' }])] },
   ]));
 }
