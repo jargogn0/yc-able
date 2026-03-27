@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "build:mac": "electron-builder --mac",
+    "build:mac": "electron-builder --mac --x64",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux"
   },
@@ -17,12 +17,19 @@
     "productName": "19Labs",
     "files": ["main.js", "preload.js", "splash.html"],
     "mac": {
-      "target": [{"target": "dmg", "arch": ["x64", "arm64"]}],
+      "target": "dmg",
       "category": "public.app-category.developer-tools"
     },
-    "win": {"target": "nsis"},
-    "linux": {"target": ["AppImage"], "category": "Development"},
-    "nsis": {"oneClick": true},
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "nsis": {
+      "oneClick": true
+    },
     "dmg": {
       "contents": [
         {"x": 130, "y": 220},
@@ -31,7 +38,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron": "29.4.6",
+    "electron-builder": "24.13.3"
   }
 }

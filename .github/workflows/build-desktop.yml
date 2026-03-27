@@ -11,42 +11,42 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-13
             platform: mac
-            artifact: "dist/*.dmg"
+            artifact: "desktop/dist/*.dmg"
           - os: windows-latest
             platform: win
-            artifact: "dist/*.exe"
+            artifact: "desktop/dist/*.exe"
           - os: ubuntu-latest
             platform: linux
-            artifact: "dist/*.AppImage"
+            artifact: "desktop/dist/*.AppImage"
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: desktop
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
       - name: Install dependencies
+        working-directory: desktop
         run: npm install
 
       - name: Build ${{ matrix.platform }}
+        working-directory: desktop
         run: npm run build:${{ matrix.platform }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          USE_HARD_LINKS: false
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: 19labs-${{ matrix.platform }}
-          path: desktop/${{ matrix.artifact }}
-          if-no-files-found: warn
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
 
   release:
     needs: build
@@ -58,6 +58,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -66,15 +70,15 @@ jobs:
           name: "19Labs v1.0.0"
           draft: false
           prerelease: false
+          make_latest: true
           body: |
-            ## 19Labs Desktop App — The Cursor for Data Science
+            ## 19Labs — The Cursor for Data Science
 
-            ### Download
-            | Platform | File |
-            |----------|------|
-            | macOS (Intel + Apple Silicon) | `19Labs-1.0.0.dmg` |
+            | Platform | Download |
+            |----------|----------|
+            | macOS (Intel) | `19Labs-1.0.0.dmg` |
             | Windows | `19Labs Setup 1.0.0.exe` |
             | Linux | `19Labs-1.0.0.AppImage` |
 
-            **Or use in the browser:** https://yc-able-production.up.railway.app/app
-          files: artifacts/**/*
+            **Browser version:** https://yc-able-production.up.railway.app/app
+          files: artifacts/*
