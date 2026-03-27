@@ -931,6 +931,13 @@ function gk(p){return localStorage.getItem(`19labs_api_key_${p}`)||localStorage.
 function gm(p){return localStorage.getItem(`19labs_model_${p}`)||''}
 const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',model:'',demo:false};
 C.key=gk(C.provider);C.model=gm(C.provider);
+let _serverConfig={has_bedrock:false,trial_limit:3,bedrock_model:'anthropic.claude-sonnet-4-6'};
+async function _loadServerConfig(){
+  try{
+    const r=await fetch(`${BASE}/api/config`);
+    if(r.ok)_serverConfig=await r.json();
+  }catch(_){}
+}
 const _apiMeta=document.querySelector('meta[name="api-base"]');
 const BASE=_apiMeta&&_apiMeta.content?_apiMeta.content.replace(/\/$/,''):(window.location.protocol==='file:'||!window.location.host)?(localStorage.getItem('19labs_server')||'http://localhost:8019'):window.location.origin;
 let ACCESS_TOKEN=localStorage.getItem('19labs_access_token')||'';
@@ -981,6 +988,12 @@ function _updateTrialBtn(){
 function startTrial(){
   _isTrialMode=true;
   localStorage.setItem('19labs_trial_started','1');
+  // If server has Bedrock, set it as default so trial runs work without an API key
+  if(_serverConfig.has_bedrock){
+    C.provider='bedrock';
+    localStorage.setItem('19labs_provider','bedrock');
+    spUI('bedrock');
+  }
   hideAuthModal();
   _updateTrialBtn();
 }
@@ -1084,7 +1097,18 @@ async function doAuth(){
     const body=tab==='signin'?{email,password}:{email,password,name};
     const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await r.json();
-    if(!r.ok){err.textContent=data.detail||'Something went wrong.';btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';return;}
+    if(!r.ok){
+      let msg=data.detail||'Something went wrong.';
+      // If signup says account exists, suggest signing in
+      if(r.status===409){
+        err.innerHTML=msg+' <a style="color:#818cf8;cursor:pointer;text-decoration:underline" onclick="switchAuthTab(\'signin\')">Sign in →</a>';
+      } else if(r.status===401&&tab==='signin'){
+        err.innerHTML=msg+(msg.includes('No account')?` <a style="color:#818cf8;cursor:pointer;text-decoration:underline" onclick="switchAuthTab(\'signup\')">Create account →</a>`:'');
+      } else {
+        err.textContent=msg;
+      }
+      btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';return;
+    }
     _authToken=data.token;_authUser=data.user;
     localStorage.setItem('19labs_auth_token',_authToken);
     _isTrialMode=false;
@@ -1753,8 +1777,9 @@ async function launchRun(){
     if(_trialRemaining()===0) chat('sys','Last free experiment. Sign up to run unlimited experiments.');
   }
   if(!C.key)C.key=gk(C.provider);
-  if(!C.key){
-    try{const pr=await apiFetch(`${BASE}/api/provider-status`);if(pr.ok){const pj=await pr.json();if(!pj.server_key_available&&!pj.cached_key_available){chat('ai','Need an API key for real experiments.');showKeyPrompt();return}}}catch(_){}
+  // If no key but server has Bedrock for trial — server handles it, proceed
+  if(!C.key&&!_serverConfig.has_bedrock){
+    try{const pr=await apiFetch(`${BASE}/api/provider-status`);if(pr.ok){const pj=await pr.json();if(!pj.server_key_available&&!pj.cached_key_available){chat('ai','Need an API key to run experiments. Add one in Settings or sign in.');showKeyPrompt();return}}}catch(_){}
   }
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
@@ -1774,7 +1799,18 @@ async function launchRun(){
       ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
       :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
-    if(!sr.ok)throw new Error(`Server error (${sr.status}): ${await sr.text()}`);
+    if(!sr.ok){
+      const errTxt=await sr.text();
+      let errMsg=`Server error (${sr.status}): ${errTxt}`;
+      if(sr.status===429){
+        try{errMsg=(JSON.parse(errTxt).detail)||errMsg;}catch(_){}
+        chat('ai',errMsg+`<br><br><a style="color:#818cf8;cursor:pointer;font-weight:600" onclick="showAuthModal()">Create a free account to continue →</a>`);
+        setBadge('LIMIT','err');typing(false);S.running=false;
+        document.getElementById('stop-btn').style.display='none';
+        return;
+      }
+      throw new Error(errMsg);
+    }
     const{run_id}=await sr.json();S.runId=run_id;updStatus();
     addRunHistory(run_id,'running',S.file?.name||'Run');
     toast(`Run ${run_id} started`,'ok');
@@ -3237,7 +3273,7 @@ setBadge(C.key?'READY':'IDLE','');
 {const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
 ['p-exp','p-art','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
-initAuth();
+_loadServerConfig().then(()=>initAuth());
 </script>
 </body>
 </html>

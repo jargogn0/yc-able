@@ -27,6 +27,12 @@ def _init_db():
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS trial_usage (
+        ip TEXT NOT NULL,
+        day TEXT NOT NULL,
+        count INTEGER DEFAULT 0,
+        PRIMARY KEY (ip, day)
+    )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS runs (
         id TEXT PRIMARY KEY,
         status TEXT NOT NULL DEFAULT 'running',
@@ -241,6 +247,36 @@ if ALLOWED_ORIGINS == ["*"]:
 
 ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "").strip()
 CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Trial limits — how many runs a non-logged-in user can do using the server's Bedrock key
+TRIAL_RUN_LIMIT = int(os.environ.get("TRIAL_RUN_LIMIT", "3"))
+
+def _server_has_bedrock() -> bool:
+    return bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
+
+def _trial_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    return (forwarded.split(",")[0] or request.client.host or "unknown").strip()
+
+def _trial_check_and_increment(ip: str) -> tuple[bool, int]:
+    """Returns (allowed, runs_used_today). Increments counter if allowed."""
+    day = time.strftime("%Y-%m-%d")
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        row = conn.execute("SELECT count FROM trial_usage WHERE ip=? AND day=?", (ip, day)).fetchone()
+        used = row[0] if row else 0
+        if used >= TRIAL_RUN_LIMIT:
+            conn.close()
+            return False, used
+        conn.execute(
+            "INSERT INTO trial_usage (ip, day, count) VALUES (?,?,1) ON CONFLICT(ip,day) DO UPDATE SET count=count+1",
+            (ip, day)
+        )
+        conn.commit()
+        conn.close()
+        return True, used + 1
+    except Exception:
+        return True, 0  # fail open — don't block on DB error
 
 app = FastAPI()
 app.add_middleware(
@@ -545,41 +581,54 @@ async def google_auth_callback(code: str = "", state: str = "", error: str = "",
     except Exception as e:
         return HTMLResponse(f"<script>window.location='/app?auth_error={urllib.parse.quote(str(e))}'</script>")
 
+def _email_user_id(email: str) -> str:
+    """Deterministic user ID from email — survives DB wipes."""
+    return "u:" + hashlib.sha256(email.lower().strip().encode()).hexdigest()[:24]
+
 @app.post("/auth/signup")
 async def auth_signup(request: Request):
-    """Legacy email/password signup — kept for backward compatibility."""
     data = await request.json()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
-    name = data.get("name", "").strip()
+    name = (data.get("name", "") or email.split("@")[0]).strip()
     if not email or "@" not in email:
-        raise HTTPException(400, "Invalid email")
+        raise HTTPException(400, "Invalid email address")
     if len(password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
-    user_id = str(uuid.uuid4())
+    # Deterministic user_id — same email always maps to the same ID even after DB wipe
+    user_id = _email_user_id(email)
     conn = sqlite3.connect(str(DB_PATH))
-    try:
-        conn.execute("INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
-                     (user_id, email, name, _hash_pw(password), time.time()))
-        conn.commit()
-    except sqlite3.IntegrityError:
+    row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
+    if row:
+        # Account exists — treat signup as login attempt
+        if _verify_pw(password, row[3]):
+            conn.close()
+            token = _make_jwt(row[0], row[1], row[2])
+            return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
         conn.close()
-        raise HTTPException(409, "Email already registered")
+        raise HTTPException(409, "An account with this email already exists. Please sign in instead.")
+    conn.execute("INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+                 (user_id, email, name, _hash_pw(password), time.time()))
+    conn.commit()
     conn.close()
     token = _make_jwt(user_id, email, name)
     return {"token": token, "user": {"id": user_id, "email": email, "name": name}}
 
 @app.post("/auth/login")
 async def auth_login(request: Request):
-    """Legacy email/password login — kept for backward compatibility."""
     data = await request.json()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
+    if not email or not password:
+        raise HTTPException(400, "Email and password required")
+    user_id = _email_user_id(email)
     conn = sqlite3.connect(str(DB_PATH))
-    row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE email=?", (email,)).fetchone()
+    row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
     conn.close()
-    if not row or not _verify_pw(password, row[3]):
-        raise HTTPException(401, "Invalid email or password")
+    if not row:
+        raise HTTPException(401, "No account found with this email. Please create an account first.")
+    if not _verify_pw(password, row[3]):
+        raise HTTPException(401, "Incorrect password")
     token = _make_jwt(row[0], row[1], row[2])
     return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
 
@@ -792,6 +841,15 @@ def _profile_media_dir(data_dir: Path) -> dict:
     }
 
 
+@app.get("/api/config")
+async def get_config():
+    """Public config — tells the frontend what's available server-side."""
+    return {
+        "has_bedrock": _server_has_bedrock(),
+        "trial_limit": TRIAL_RUN_LIMIT,
+        "bedrock_model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
+    }
+
 @app.post("/api/upload-dataset")
 async def upload_media_dataset(file: UploadFile = File(...)):
     """Accept ZIP/image/audio dataset. Returns dataset_id for use in /api/run."""
@@ -825,13 +883,26 @@ async def upload_media_dataset(file: UploadFile = File(...)):
 
 @app.post("/api/run")
 async def start_run(req: RunRequest, request: Request):
+    user = _get_user(_token_from_request(request))
+
     # Auto-fill API key from user account if not provided
-    if not req.api_key:
-        user = _get_user(_token_from_request(request))
-        if user:
-            saved = _get_user_api_key(user["id"], req.provider)
-            if saved:
-                req.api_key = saved
+    if not req.api_key and user:
+        saved = _get_user_api_key(user["id"], req.provider)
+        if saved:
+            req.api_key = saved
+
+    # Trial user (no auth, no key) — use server's Bedrock if available
+    if not req.api_key and not user and _server_has_bedrock():
+        ip = _trial_ip(request)
+        allowed, used = _trial_check_and_increment(ip)
+        if not allowed:
+            raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} free runs per day). Create a free account to continue.")
+        # Force Bedrock provider and use server credentials
+        req.provider = "bedrock"
+        _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+        _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        req.api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg})
 
     run_id = str(uuid.uuid4())[:12]
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
