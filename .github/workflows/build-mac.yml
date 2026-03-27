@@ -2,10 +2,9 @@ name: Build macOS App
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
-    paths:
-      - 'desktop/**'
   workflow_dispatch:
     inputs:
       version:
@@ -13,9 +12,13 @@ on:
         required: false
         default: '1.0.0'
 
+permissions:
+  contents: write
+
 jobs:
   build-mac:
     runs-on: macos-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,14 +32,9 @@ jobs:
         working-directory: desktop
         run: npm install --legacy-peer-deps
 
-      - name: Determine version
-        id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=v${{ inputs.version || '1.0.0' }}" >> $GITHUB_OUTPUT
-          fi
+      - name: Verify electron-builder installed
+        working-directory: desktop
+        run: ./node_modules/.bin/electron-builder --version
 
       - name: Build macOS DMG (Intel + Apple Silicon)
         working-directory: desktop
@@ -44,38 +42,50 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm run build:mac
-          echo "=== Build artifacts ==="
+          ./node_modules/.bin/electron-builder --mac
+          echo "=== Built artifacts ==="
           ls -lh dist/
 
-      - name: Upload DMG as artifact (always)
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v${{ inputs.version || '1.0.0' }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload artifacts (always available)
         uses: actions/upload-artifact@v4
         with:
-          name: 19Labs-mac-dmg
+          name: 19Labs-macOS
           path: |
             desktop/dist/*.dmg
             desktop/dist/*.zip
           retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: "19Labs ${{ steps.version.outputs.version }}"
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "19Labs ${{ steps.tag.outputs.tag }}"
           make_latest: true
           body: |
             ## 19Labs Desktop for macOS
 
-            | Mac Type | File |
-            |----------|------|
+            | Mac Type | File to download |
+            |----------|-----------------|
             | Apple Silicon (M1/M2/M3) | `19Labs-*-arm64.dmg` |
-            | Intel Mac | `19Labs-*.dmg` (no `-arm64` suffix) |
+            | Intel Mac | `19Labs-*.dmg` (no `-arm64` in name) |
 
-            **Install:** Download DMG → drag to Applications → first launch: right-click → Open
+            **Install:**
+            1. Download the DMG for your Mac
+            2. Open it → drag **19Labs** to Applications
+            3. First launch: right-click → **Open** → **Open** (Gatekeeper bypass)
+
+            **Web version:** https://yc-able.com/app
           draft: false
           prerelease: false
           files: |
             desktop/dist/*.dmg
             desktop/dist/*.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
