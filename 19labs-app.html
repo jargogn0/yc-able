@@ -110,31 +110,39 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 
 /* ── SIDEBAR ── */
 .side{display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--surface);overflow:hidden}
-.side-h{padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
-.side-h h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3)}
-.side-scroll{flex:1;overflow-y:auto;padding:8px}
-.side-sec{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);padding:10px 12px 4px}
-.side-item{display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:var(--r);cursor:default;transition:background var(--t);margin-bottom:1px;text-decoration:none;color:inherit}
-.side-item:hover{background:var(--surface-2)}
-.side-item.act{background:var(--accent-soft);color:var(--accent)}
-.si-icon{font-size:14px;width:20px;text-align:center;flex-shrink:0}
-.si-name{font-size:13px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.si-meta{font-size:10px;color:var(--text-3);font-family:var(--mono);flex-shrink:0}
+.side-h{padding:10px 14px 8px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:space-between}
+.side-h h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-3)}
+.side-scroll{flex:1;overflow-y:auto;padding:6px 0}
+.side-sec{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px;color:#3f3f46;padding:14px 14px 5px;display:flex;align-items:center;gap:6px}
+.side-sec::after{content:'';flex:1;height:1px;background:#1c1c1f;margin-left:4px}
+.side-item{display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:default;transition:background 120ms;text-decoration:none;color:inherit;user-select:none}
+.side-item:hover{background:rgba(255,255,255,.03)}
+.side-item.act{background:rgba(99,102,241,.08)}
+.side-item.act .si-name{color:var(--accent)}
+.si-icon{width:16px;height:16px;flex-shrink:0;opacity:.55;display:flex;align-items:center;justify-content:center}
+.si-icon svg{width:14px;height:14px}
+.side-item.act .si-icon{opacity:1}
+.si-name{font-size:12px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-2);letter-spacing:.1px}
+.si-meta{font-size:10px;color:#3f3f46;font-family:var(--mono);flex-shrink:0;font-weight:500}
 
 /* Drop zone */
-.dz{margin:8px;padding:28px 16px;border:1px dashed var(--border-2);border-radius:var(--rl);text-align:center;cursor:pointer;transition:all var(--t);background:var(--surface-2)}
-.dz:hover,.dz.drag{border-color:var(--accent);background:var(--accent-soft)}
-.dz.loaded{border-color:var(--accent);border-style:solid;background:var(--accent-soft)}
-.dz-icon{font-size:22px;margin-bottom:6px;opacity:.6}
-.dz-title{font-size:13px;font-weight:600;margin-bottom:3px}
-.dz-sub{font-size:11px;color:var(--text-3)}
+.dz{margin:10px 10px 6px;padding:20px 14px;border:1px dashed #2a2a2e;border-radius:8px;text-align:center;cursor:pointer;transition:all 150ms;background:transparent}
+.dz:hover,.dz.drag{border-color:var(--accent);background:rgba(99,102,241,.06)}
+.dz.loaded{border-color:rgba(99,102,241,.4);border-style:solid;background:rgba(99,102,241,.06)}
+.dz-icon{margin-bottom:8px;display:flex;justify-content:center;opacity:.4}
+.dz-icon svg{width:22px;height:22px}
+.dz.loaded .dz-icon{opacity:.9}
+.dz-title{font-size:12px;font-weight:600;margin-bottom:3px;color:var(--text-2);letter-spacing:.1px}
+.dz.loaded .dz-title{color:var(--accent)}
+.dz-sub{font-size:10px;color:#3f3f46;line-height:1.5}
 input[type=file]{display:none}
 
 /* Status */
-.side-status{border-top:1px solid var(--border);padding:10px 16px;flex-shrink:0}
-.ss-row{display:flex;justify-content:space-between;padding:3px 0}
-.ss-l{font-size:11px;color:var(--text-3)}.ss-v{font-size:11px;font-weight:600;font-family:var(--mono);color:var(--text-2)}
-.ss-v.g{color:var(--accent)}.ss-v.a{color:var(--accent)}.ss-v.r{color:var(--red)}
+.side-status{border-top:1px solid var(--border);padding:12px 14px 10px;flex-shrink:0;background:#0c0c0e}
+.ss-row{display:flex;justify-content:space-between;align-items:center;padding:2.5px 0}
+.ss-l{font-size:10px;color:#3f3f46;font-weight:600;text-transform:uppercase;letter-spacing:.8px}
+.ss-v{font-size:11px;font-weight:600;font-family:var(--mono);color:var(--text-2)}
+.ss-v.g{color:#34d399}.ss-v.a{color:var(--accent)}.ss-v.r{color:var(--red)}
 
 /* ── WORKSPACE ── */
 .ws{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;background:var(--bg)}
@@ -409,12 +417,12 @@ input[type=file]{display:none}
 .stop-btn:hover{background:var(--red);color:#fff;border-color:var(--red)}
 
 /* Run history */
-.rh-item{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:var(--r);cursor:pointer;transition:background var(--t);margin-bottom:1px;font-size:12px}
-.rh-item:hover{background:var(--surface-2)}
-.rh-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.rh-dot.done{background:var(--accent)}.rh-dot.err{background:var(--red)}.rh-dot.run{background:var(--accent);animation:pulse 1.5s infinite}
-.rh-id{font-family:var(--mono);color:var(--text-3);font-size:10px}
-.rh-label{flex:1;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rh-item{display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;transition:background 120ms;font-size:12px}
+.rh-item:hover{background:rgba(255,255,255,.03)}
+.rh-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:1px}
+.rh-dot.done{background:#34d399}.rh-dot.err{background:#f87171}.rh-dot.run{background:var(--accent);animation:pulse 1.5s infinite}
+.rh-id{font-family:var(--mono);color:#3f3f46;font-size:10px;font-weight:500}
+.rh-label{flex:1;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
 
 /* ── TOAST NOTIFICATIONS ── */
 .toast-stack{position:fixed;bottom:16px;right:16px;z-index:3000;display:flex;flex-direction:column-reverse;gap:6px;pointer-events:none;max-width:380px}
@@ -469,12 +477,12 @@ input[type=file]{display:none}
 .cp-btn.copied{color:var(--accent);border-color:rgba(59,130,246,.3)}
 
 /* ── URL CONNECTOR ── */
-.url-row{display:flex;gap:6px;margin:8px;align-items:center}
-.url-in{flex:1;padding:7px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:11px;outline:none}
-.url-in:focus{border-color:var(--accent)}
-.url-in::placeholder{color:var(--text-3)}
-.url-btn{padding:7px 12px;font-size:11px;font-weight:600;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:all var(--t);white-space:nowrap}
-.url-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.url-row{display:flex;gap:5px;margin:4px 10px 2px;align-items:center}
+.url-in{flex:1;padding:6px 9px;background:transparent;border:1px solid #1e1e22;border-radius:6px;color:var(--text-2);font-size:11px;outline:none;transition:border-color 150ms}
+.url-in:focus{border-color:#3f3f46}
+.url-in::placeholder{color:#2d2d32}
+.url-btn{padding:6px 11px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid #1e1e22;background:transparent;color:#52525b;cursor:pointer;transition:all 150ms;white-space:nowrap;letter-spacing:.2px}
+.url-btn:hover{border-color:#3f3f46;color:var(--text-2)}
 
 /* ── DATA TRANSFORMS ── */
 .dt-bar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
@@ -775,12 +783,14 @@ input[type=file]{display:none}
 
   <!-- SIDEBAR -->
   <div class="side">
-    <div class="side-h"><h3>Explorer</h3></div>
+    <div class="side-h"><h3>Workspace</h3></div>
     <div class="side-scroll" id="side-scroll">
       <div class="dz" id="dz" onclick="document.getElementById('fi').click()">
-        <div class="dz-icon" id="dz-icon">+</div>
-        <div class="dz-title" id="dz-title">Add Dataset</div>
-        <div class="dz-sub" id="dz-sub">CSV, Excel, JSON, TSV · ZIP of images/audio</div>
+        <div class="dz-icon" id="dz-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+        </div>
+        <div class="dz-title" id="dz-title">Import Dataset</div>
+        <div class="dz-sub" id="dz-sub">CSV · Excel · JSON · TSV · Images · Audio</div>
         <input type="file" id="fi" accept=".csv,.xlsx,.xls,.json,.tsv,.txt,.zip,.jpg,.jpeg,.png,.gif,.bmp,.webp,.mp3,.wav,.ogg,.flac,.m4a" multiple onchange="onFile(event)">
       </div>
       <div class="url-row">
@@ -1401,10 +1411,24 @@ function stab(name){
 // ═══════════════════════════════════════════
 // SIDEBAR
 // ═══════════════════════════════════════════
+const _ico={
+  table:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>`,
+  chart:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><polyline points="1,13 5,8 8,10 12,4 15,6"/></svg>`,
+  bar:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="4" width="3" height="11"/><rect x="11" y="1" width="3" height="14"/></svg>`,
+  scatter:`<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="12" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="10" r="1.5"/><circle cx="14" cy="3" r="1.5"/></svg>`,
+  medal:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="10" r="5"/><polyline points="5,5.5 8,1 11,5.5"/></svg>`,
+  doc:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h7l3 3v9H3V2z"/><polyline points="10,2 10,5 13,5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="9" y2="11"/></svg>`,
+  code:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><polyline points="5,4 1,8 5,12"/><polyline points="11,4 15,8 11,12"/><line x1="9" y1="2" x2="7" y2="14"/></svg>`,
+  notebook:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="1" width="12" height="14" rx="1"/><line x1="5" y1="1" x2="5" y2="15"/><line x1="7" y1="5" x2="13" y2="5"/><line x1="7" y1="8" x2="13" y2="8"/></svg>`,
+  data:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="8" cy="4" rx="6" ry="2.5"/><path d="M2 4v4c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V4"/><path d="M2 8v4c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V8"/></svg>`,
+  progress:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><polyline points="8,5 8,8 11,8"/></svg>`,
+  report:`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h7l3 3v9H3V2z"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="11" y2="10"/><polyline points="10,2 10,5 13,5"/></svg>`,
+};
 function updSide(){
   const fl=document.getElementById('file-list');
   if(!S.file){fl.innerHTML='';return}
-  fl.innerHTML=`<div class="side-sec">Dataset</div><div class="side-item act"><div class="si-icon">📊</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${(S.file.size/1024).toFixed(1)}K</div></div>`;
+  const kb=(S.file.size/1024).toFixed(1);
+  fl.innerHTML=`<div class="side-sec">Dataset</div><div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
 }
 function updStatus(){
   const s=document.getElementById('run-stat');
@@ -1421,9 +1445,9 @@ function updArtSide(){
   const al=document.getElementById('art-list');
   if(!S.artifacts||!S.runId){al.innerHTML='';return}
   const N={experiment_timeline_png:'timeline.png',train_test_png:'train_test.png',model_comparison_png:'comparison.png',metrics_overview_png:'metrics.png',progress_png:'progress.png',program_md:'program.md',prepare_py:'prepare.py',analysis_ipynb:'analysis.ipynb',results_tsv:'results.tsv',train_py:'train.py',final_report_md:'report.md'};
-  const I={experiment_timeline_png:'📈',train_test_png:'📊',model_comparison_png:'🏆',metrics_overview_png:'📉',progress_png:'📈',program_md:'📋',prepare_py:'🐍',analysis_ipynb:'📓',results_tsv:'📊',train_py:'🐍',final_report_md:'📄'};
+  const I={experiment_timeline_png:_ico.chart,train_test_png:_ico.bar,model_comparison_png:_ico.medal,metrics_overview_png:_ico.scatter,progress_png:_ico.progress,program_md:_ico.doc,prepare_py:_ico.code,analysis_ipynb:_ico.notebook,results_tsv:_ico.data,train_py:_ico.code,final_report_md:_ico.report};
   let h='<div class="side-sec">Artifacts</div>';
-  for(const[k,n]of Object.entries(N)){if(S.artifacts[k])h+=`<a class="side-item" href="${BASE}/api/run/${S.runId}/artifact/${k}" target="_blank" style="text-decoration:none;color:inherit"><div class="si-icon">${I[k]||'📄'}</div><div class="si-name">${n}</div></a>`}
+  for(const[k,n]of Object.entries(N)){if(S.artifacts[k])h+=`<a class="side-item" href="${BASE}/api/run/${S.runId}/artifact/${k}" target="_blank" style="text-decoration:none;color:inherit"><div class="si-icon">${I[k]||_ico.doc}</div><div class="si-name">${n}</div></a>`}
   al.innerHTML=h;
 }
 
@@ -3157,7 +3181,7 @@ async function handleFile(f,preloadedText){
     return;
   }
   S.file=f;S.dataset_id=null;S.media_info=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
-  document.getElementById('dz-icon').textContent='📊';
+  document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
   document.getElementById('dz-title').textContent=f.name;
   document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
   dz.classList.add('loaded');
