@@ -852,7 +852,7 @@ async def get_config():
 
 @app.post("/api/upload-dataset")
 async def upload_media_dataset(file: UploadFile = File(...)):
-    """Accept ZIP/image/audio dataset. Returns dataset_id for use in /api/run."""
+    """Accept ZIP/image/audio/CSV dataset. Returns dataset_id for use in /api/run."""
     dataset_id = str(uuid.uuid4())[:10]
     tmp_dir = Path(tempfile.mkdtemp(prefix=f"19labs_media_{dataset_id}_"))
     filename = file.filename or "dataset.zip"
@@ -865,12 +865,52 @@ async def upload_media_dataset(file: UploadFile = File(...)):
         data_dir = tmp_dir / "data"
         data_dir.mkdir()
         with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(data_dir)
+            # Security: skip absolute paths and path traversal entries
+            for member in zf.infolist():
+                member_path = Path(member.filename)
+                if member_path.is_absolute() or ".." in member_path.parts:
+                    continue
+                zf.extract(member, data_dir)
         zip_path.unlink()
         # Unwrap single top-level folder if that's all there is
         items = [x for x in data_dir.iterdir()]
         if len(items) == 1 and items[0].is_dir():
             data_dir = items[0]
+
+        # ── Check for tabular files inside the ZIP ──────────────────
+        _TABULAR_EXTS = {".csv", ".tsv", ".xlsx", ".xls", ".json", ".parquet"}
+        tabular_files = sorted(
+            [f for f in data_dir.rglob("*") if f.is_file() and f.suffix.lower() in _TABULAR_EXTS
+             and not f.name.startswith(".")],
+            key=lambda f: f.stat().st_size, reverse=True  # largest first
+        )
+        if tabular_files:
+            # Return CSV content directly so frontend treats it like a normal CSV upload
+            primary = tabular_files[0]
+            try:
+                if primary.suffix.lower() in (".xlsx", ".xls"):
+                    import pandas as _pd
+                    csv_text = _pd.read_excel(primary).to_csv(index=False)
+                elif primary.suffix.lower() == ".parquet":
+                    import pandas as _pd
+                    csv_text = _pd.read_parquet(primary).to_csv(index=False)
+                elif primary.suffix.lower() == ".json":
+                    import pandas as _pd
+                    csv_text = _pd.read_json(primary).to_csv(index=False)
+                else:
+                    csv_text = primary.read_text(errors="replace")
+                all_names = [f.name for f in tabular_files]
+                return {
+                    "dataset_id": dataset_id,
+                    "type": "csv",
+                    "filename": primary.name,
+                    "csv": csv_text,
+                    "all_files": all_names,
+                    "num_files": len(tabular_files),
+                }
+            except Exception as e:
+                # Fall through to media profiling if CSV read fails
+                pass
     else:
         data_dir = tmp_dir / "data"
         data_dir.mkdir()

@@ -3427,10 +3427,21 @@ async function handleFile(f,preloadedText){
       const r=await apiFetch(`${BASE}/api/upload-dataset`,{method:'POST',body:fd});
       if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.detail||'Upload failed','err');return;}
       const info=await r.json();
+
+      // ZIP containing tabular data (CSV/Excel/JSON/Parquet) — treat like a regular CSV upload
+      if(info.type==='csv'&&info.csv){
+        const csvName=info.filename||f.name.replace(/\.zip$/i,'.csv');
+        const fakeFile=new File([info.csv],csvName,{type:'text/csv'});
+        toast(`Extracted ${esc(csvName)} from ZIP`,'ok',3000);
+        if(info.num_files>1)chat('sys',`Found ${info.num_files} files in ZIP: ${info.all_files.map(n=>esc(n)).join(', ')}. Using <strong>${esc(info.filename)}</strong> (largest).`);
+        await handleFile(fakeFile,info.csv);
+        return;
+      }
+
+      // Image / audio dataset
       S.dataset_id=info.dataset_id;S.media_info=info;S.csv=null;
-      // Fake cols/rows for UI
       S.cols=['filepath','label'];S.rows=[];S.colTypes={filepath:'text',label:'categorical'};S.colNulls={};S.totalRows=info.total_files||0;
-      document.getElementById('dz-icon').textContent=ext==='zip'?'🗜️':(info.media_type==='audio'?'🎵':'🖼️');
+      document.getElementById('dz-icon').textContent=info.media_type==='audio'?'🎵':'🖼️';
       document.getElementById('dz-sub').textContent=`${info.total_files||0} files · ${info.num_classes||0} classes`;
       updSide();updStatus();
       document.getElementById('p-exp').innerHTML='';
