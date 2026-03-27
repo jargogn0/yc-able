@@ -4,12 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+    paths:
+      - 'desktop/**'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. v1.0.1)'
+        description: 'Release version (e.g. 1.0.1)'
         required: false
-        default: 'v1.0.0'
+        default: '1.0.0'
 
 jobs:
   build-mac:
@@ -29,34 +31,51 @@ jobs:
         working-directory: desktop
         run: npm install
 
-      - name: Build macOS DMG
+      - name: Set version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="v${{ inputs.version || '1.0.0' }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Build macOS DMG (Intel + Apple Silicon)
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false   # skip code signing (no cert needed for now)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run build:mac
 
       - name: List built artifacts
-        working-directory: desktop/dist
-        run: ls -lh
+        run: ls -lh desktop/dist/
 
-      - name: Upload DMG to GitHub Release
+      - name: Create GitHub Release and upload DMG
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.version }}
-          name: "19Labs ${{ github.ref_name || inputs.version }}"
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "19Labs ${{ steps.version.outputs.version }}"
           body: |
             ## 19Labs Desktop for macOS
 
+            ### Download
+            | Build | Download |
+            |-------|----------|
+            | Apple Silicon (M1/M2/M3) | `19Labs-*-arm64.dmg` |
+            | Intel Mac | `19Labs-*.dmg` (no arm64 suffix) |
+
             ### Install
-            1. Download `19Labs-*.dmg`
+            1. Download the right DMG for your Mac (check  → About This Mac → Chip)
             2. Open the DMG and drag **19Labs** to your Applications folder
-            3. On first launch: right-click the app → **Open** (bypasses Gatekeeper for unsigned apps)
+            3. **First launch only:** right-click the app → **Open** → **Open** again
+               *(bypasses macOS Gatekeeper for unsigned apps)*
 
             ### What's included
-            - Native macOS app window (no browser tabs)
+            - Native macOS app — no browser tabs, lives in your Dock
             - Seamless sign-in with your 19Labs account
-            - Full ML training pipeline powered by yc-able.com
+            - Full autonomous ML training powered by yc-able.com
           draft: false
           prerelease: false
           files: |
