@@ -920,41 +920,6 @@ let _authToken = localStorage.getItem('19labs_auth_token') || '';
 let _savedKeys = {};
 let _authTab = 'signin';
 
-function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
-
-async function initAuth(){
-  // Valid JWT — verify it
-  if(_authToken){
-    try{
-      const r=await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
-      if(r.ok){
-        _authUser=await r.json();
-        hideAuthModal();onAuthSuccess();return;
-      }
-      if(r.status===401){
-        _authToken='';localStorage.removeItem('19labs_auth_token');
-      } else {
-        _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
-      }
-    }catch(e){
-      _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
-    }
-  }
-  // Already in trial mode (they clicked "Try free" before, still have slots left)
-  if(_isTrialMode&&_trialRemaining()>0){
-    _updateTrialBtn();return;
-  }
-  // No session — show the auth modal
-  showAuthModal();
-}
-
-function startTrial(){
-  _isTrialMode=true;
-  localStorage.setItem('19labs_trial_started','1');
-  hideAuthModal();
-  _updateTrialBtn();
-}
-
 // ── TRIAL MODE ───────────────────────────────────────────────
 const TRIAL_LIMIT = 3;
 let _trialCount = parseInt(localStorage.getItem('19labs_trial_count')||'0',10);
@@ -978,9 +943,40 @@ function _updateTrialBtn(){
     btn.style.display='none';
   }
 }
+function startTrial(){
+  _isTrialMode=true;
+  localStorage.setItem('19labs_trial_started','1');
+  hideAuthModal();
+  _updateTrialBtn();
+}
 
 // ── AUTH ─────────────────────────────────────────────────────
-let _authTab = 'signin';
+function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
+
+async function initAuth(){
+  if(_authToken){
+    try{
+      const r=await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
+      if(r.ok){
+        _authUser=await r.json();
+        hideAuthModal();onAuthSuccess();return;
+      }
+      if(r.status===401){
+        _authToken='';localStorage.removeItem('19labs_auth_token');
+      } else {
+        _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+      }
+    }catch(e){
+      _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+    }
+  }
+  // Already in trial mode with slots left — stay in app
+  if(_isTrialMode&&_trialRemaining()>0){
+    _updateTrialBtn();return;
+  }
+  // No session — show the auth modal
+  showAuthModal();
+}
 
 function showAuthModal(){
   document.getElementById('auth-overlay').style.display='flex';
