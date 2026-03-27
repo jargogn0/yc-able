@@ -1574,18 +1574,27 @@ async function runDiscover(hint){
     S.discovery=dj;S.analyzed=true;S.confirmed=false;
     const d=dj.discovery||{};const obj=dj.objective||{};
 
-    let msg=`<strong>Analysis complete.</strong> Here's what I found:<br><br>`;
-    if(dj.used_fallback)msg=`<strong>Analysis complete</strong> (smart inference).<br><br>`;
-    msg+=`<strong>Objective:</strong> ${esc(d.recommended_objective||'Auto-detected')}<br>`;
-    msg+=`<strong>Task:</strong> ${esc(obj.task||'auto')} · <strong>Target:</strong> <code>${esc(obj.target||'auto')}</code><br>`;
-    msg+=`<strong>Metric:</strong> <code>${esc(obj.metric||'auto')}</code> (${esc(obj.direction||'optimize')})<br>`;
-    if(d.first_iteration_plan)msg+=`<br><strong>Plan:</strong> ${esc(d.first_iteration_plan)}<br>`;
-    if(d.risks&&d.risks.length)msg+=`<br><strong>Risks:</strong> ${d.risks.map(r=>esc(r)).join('; ')}<br>`;
-    if(S.mode==='plan')msg+=`<br>Review the plan below, modify if needed, then click <strong>Execute Plan</strong>.`;
-    else msg+=`<br>Say <strong>"go"</strong> to start, or tell me what to change.`;
+    const _task=obj.task||'';const _target=obj.target||'';const _metric=obj.metric||'';const _dir=obj.direction||'';
+    const _taskEmoji={classification:'🎯',regression:'📈',forecasting:'📅',clustering:'🔵',anomaly:'⚠️'}[_task]||'🔬';
+    const _opening=dj.used_fallback
+      ?`Scanned your data — here's my read:`
+      :[
+        `I've mapped out the problem. Here's the plan:`,
+        `Data profiled. I know exactly what to build:`,
+        `Interesting dataset. Here's what I'd do:`,
+        `Got it. Here's my take:`,
+      ][Math.floor(Math.random()*4)];
+
+    let msg=`${_opening}<br><br>`;
+    msg+=`${_taskEmoji} <strong>${esc(d.recommended_objective||'Auto-detected objective')}</strong><br>`;
+    msg+=`<span style="color:var(--text-3);font-size:12px">${esc(_task||'auto')} · target <code>${esc(_target||'auto')}</code> · optimise <code>${esc(_metric||'auto')}</code> (${esc(_dir||'min/max')})</span><br>`;
+    if(d.first_iteration_plan)msg+=`<br>${esc(d.first_iteration_plan)}<br>`;
+    if(d.risks&&d.risks.length)msg+=`<br><span style="color:var(--amber);font-size:12px">⚠ ${d.risks.map(r=>esc(r)).join(' · ')}</span><br>`;
+    if(S.mode==='plan')msg+=`<br>Review the plan below, tweak anything, then hit <strong>Execute Plan</strong>.`;
+    else msg+=`<br>Type <strong>"go"</strong> to start, or tell me what to change.`;
     chat('ai',msg);setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
-    toast('Analysis complete — plan ready','ok');
+    toast('Plan ready','ok');
   }catch(e){
     typing(false);chat('err',`Analysis failed: ${esc(e.message)}`);setBadge('ERROR','err');
     sbUpdate({status:'Analysis failed',running:false,error:true});
