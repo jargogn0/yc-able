@@ -942,7 +942,8 @@ function apiFetch(url,options={}){
   options.headers={...(options.headers||{}),...authH};
   return fetch(url,options).then(r=>{
     // Only force re-login on 401 from auth endpoints (not from API key / model errors)
-    if(r.status===401&&_authToken&&url.includes('/auth/')){_authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();}
+    // Only force re-login on 401 from /auth/me (not from keys/run/etc.)
+    if(r.status===401&&_authToken&&(url.includes('/auth/me')||url.includes('/auth/refresh'))){_authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();}
     return r;
   });
 }
@@ -995,15 +996,21 @@ async function initAuth(){
       const r=await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
       if(r.ok){
         _authUser=await r.json();
-        hideAuthModal();onAuthSuccess();return;
+        hideAuthModal();onAuthSuccess();
+        // Refresh token in background to extend session
+        _refreshTokenSilently();
+        return;
       }
       if(r.status===401){
+        // Token truly invalid — clear it and force re-login
         _authToken='';localStorage.removeItem('19labs_auth_token');
       } else {
-        _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+        // Server error (5xx) or network glitch — don't force logout, proceed with stored token
+        _authUser={id:'offline',email:'',name:''};hideAuthModal();onAuthSuccess();return;
       }
     }catch(e){
-      _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+      // Network unreachable — proceed with stored token, don't lose the session
+      _authUser={id:'offline',email:'',name:''};hideAuthModal();onAuthSuccess();return;
     }
   }
   // Already in trial mode with slots left — stay in app
@@ -1012,6 +1019,17 @@ async function initAuth(){
   }
   // No session — show the auth modal
   showAuthModal();
+}
+
+async function _refreshTokenSilently(){
+  if(!_authToken)return;
+  try{
+    const r=await fetch(`${BASE}/auth/refresh`,{method:'POST',headers:_authHeader()});
+    if(r.ok){
+      const d=await r.json();
+      if(d.token){_authToken=d.token;localStorage.setItem('19labs_auth_token',d.token);}
+    }
+  }catch(_){}
 }
 
 function showAuthModal(){
@@ -1104,10 +1122,26 @@ function onAuthSuccess(){
   document.getElementById('trial-btn').style.display='none';
   _isTrialMode=false;
   localStorage.removeItem('19labs_trial_started');
-  // Nudge to add API key if none configured yet
-  const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
-  if(!hasKey) setTimeout(()=>openKeys(),700);
-  else loadSavedKeys();
+  // Upload any locally-stored keys to server (in case they were set before login)
+  _syncLocalKeysToServer();
+  loadSavedKeys();
+}
+
+async function _syncLocalKeysToServer(){
+  if(!_authToken)return;
+  const payload={};
+  const claudeKey=localStorage.getItem('19labs_api_key_claude');
+  const openaiKey=localStorage.getItem('19labs_api_key_openai');
+  const bedrockKey=localStorage.getItem('19labs_api_key_bedrock');
+  if(claudeKey)payload.claude=claudeKey;
+  if(openaiKey)payload.openai=openaiKey;
+  if(bedrockKey){
+    try{payload.bedrock=JSON.parse(bedrockKey);}catch(_){if(bedrockKey.startsWith('AKIA'))payload.bedrock=bedrockKey;}
+  }
+  if(Object.keys(payload).length===0)return;
+  try{
+    await apiFetch(`${BASE}/auth/keys`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  }catch(_){}
 }
 
 async function doLogout(){
@@ -1115,8 +1149,7 @@ async function doLogout(){
   await fetch(`${BASE}/auth/logout`,{method:'POST',headers:_authHeader()}).catch(()=>{});
   _authToken='';_authUser=null;_savedKeys={};
   localStorage.removeItem('19labs_auth_token');
-  localStorage.removeItem('19labs_provider');
-  ['claude','openai','gemini'].forEach(p=>localStorage.removeItem(`19labs_api_key_${p}`));
+  // Keep API keys in localStorage — user should not have to re-enter them after re-login
   document.getElementById('user-btn').style.display='none';
   showAuthModal();
 }
@@ -1144,12 +1177,18 @@ async function loadSavedKeys(){
     const r=await fetch(`${BASE}/auth/keys`,{headers:_authHeader()});
     if(!r.ok)return;
     _savedKeys=await r.json();
-    for(const [prov,masked] of Object.entries(_savedKeys)){
+    for(const [prov] of Object.entries(_savedKeys)){
       const badge=document.getElementById(`badge-${prov}`);
       if(badge){badge.textContent='Set';badge.className='kp-badge set';}
     }
-    // Key is stored server-side; clear any stale local key so server auto-fills
-    if(Object.keys(_savedKeys).length>0) C.key='';
+    // Update current provider state
+    if(_savedKeys[C.provider]){
+      // Server has key for current provider; C.key stays as localStorage value
+      // (server auto-fills api_key when it's empty in request)
+      setBadge('READY','');
+    }
+    const hasAny=Object.keys(_savedKeys).length>0||gk('claude')||gk('openai')||gk('bedrock');
+    setBadge(hasAny?'READY':'NO KEY',hasAny?'':'err');
   }catch(e){}
 }
 

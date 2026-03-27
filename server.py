@@ -23,6 +23,10 @@ DB_PATH = Path(os.environ.get("NINETEENLABS_DB", Path(__file__).parent / "19labs
 
 def _init_db():
     conn = sqlite3.connect(str(DB_PATH))
+    conn.execute("""CREATE TABLE IF NOT EXISTS app_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS runs (
         id TEXT PRIMARY KEY,
         status TEXT NOT NULL DEFAULT 'running',
@@ -66,21 +70,38 @@ def _init_db():
     conn.close()
 
 # ── AUTH HELPERS ──────────────────────────────────────────────
-# JWT secret — derived deterministically from available env vars so it survives
-# Railway container restarts/redeploys without any extra configuration.
-# Priority: explicit JWT_SECRET → ANTHROPIC_API_KEY → ACCESS_PASSWORD → random (dev only)
-def _derive_jwt_secret() -> str:
+# JWT secret strategy (priority order):
+#   1. JWT_SECRET env var (explicit override)
+#   2. Persisted secret in SQLite app_config table (survives Railway restarts)
+#   3. Derived from ANTHROPIC_API_KEY / ACCESS_PASSWORD (deterministic, no DB needed)
+#   4. Generated once and stored in DB (dev/fresh deploy with no env vars)
+def _get_or_create_jwt_secret() -> str:
+    # Explicit env var always wins
     for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "ACCESS_PASSWORD"):
         val = os.environ.get(var, "").strip()
         if val:
             return hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
-    return _secrets.token_hex(32)  # fallback: only for local dev with no env vars
+    # Try to load from DB (persists across restarts)
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        row = conn.execute("SELECT value FROM app_config WHERE key='jwt_secret'").fetchone()
+        if row and row[0]:
+            conn.close()
+            return row[0]
+        # Generate once and persist
+        secret = _secrets.token_hex(32)
+        conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('jwt_secret', ?)", (secret,))
+        conn.commit()
+        conn.close()
+        return secret
+    except Exception:
+        return _secrets.token_hex(32)
 
-_JWT_SECRET = _derive_jwt_secret()
+_JWT_SECRET = _get_or_create_jwt_secret()
 
 def _make_jwt(user_id: str, email: str, name: str) -> str:
     h = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b'=').decode()
-    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 30*24*3600}).encode()).rstrip(b'=').decode()
+    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 90*24*3600}).encode()).rstrip(b'=').decode()
     sig = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
     return f"{h}.{p}.{sig}"
 
@@ -568,6 +589,15 @@ async def auth_me(request: Request):
     if not user:
         raise HTTPException(401, "Not authenticated")
     return user
+
+@app.post("/auth/refresh")
+async def auth_refresh(request: Request):
+    """Issue a fresh token for a still-valid session (extends expiry)."""
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    token = _make_jwt(user["id"], user["email"], user.get("name", ""))
+    return {"token": token, "user": user}
 
 @app.post("/auth/logout")
 async def auth_logout(request: Request):
