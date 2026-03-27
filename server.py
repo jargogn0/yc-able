@@ -65,8 +65,17 @@ def _init_db():
     conn.close()
 
 # ── AUTH HELPERS ──────────────────────────────────────────────
-# JWT secret — set JWT_SECRET env var in Railway for persistence across deploys
-_JWT_SECRET = os.environ.get("JWT_SECRET", _secrets.token_hex(32))
+# JWT secret — derived deterministically from available env vars so it survives
+# Railway container restarts/redeploys without any extra configuration.
+# Priority: explicit JWT_SECRET → ANTHROPIC_API_KEY → ACCESS_PASSWORD → random (dev only)
+def _derive_jwt_secret() -> str:
+    for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "ACCESS_PASSWORD"):
+        val = os.environ.get(var, "").strip()
+        if val:
+            return hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
+    return _secrets.token_hex(32)  # fallback: only for local dev with no env vars
+
+_JWT_SECRET = _derive_jwt_secret()
 
 def _make_jwt(user_id: str, email: str, name: str) -> str:
     h = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b'=').decode()
@@ -135,9 +144,17 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
             (user_id, provider)
         ).fetchone()
         conn.close()
-        return row[0] if row else ""
+        if row and row[0]:
+            return row[0]
     except Exception:
-        return ""
+        pass
+    # Fallback: env vars (useful when Railway DB is fresh after redeploy)
+    _env_fallbacks = {
+        "claude": os.environ.get("ANTHROPIC_API_KEY", ""),
+        "openai": os.environ.get("OPENAI_API_KEY", ""),
+        "gemini": os.environ.get("GEMINI_API_KEY", ""),
+    }
+    return _env_fallbacks.get(provider, "")
 
 _init_db()
 

@@ -833,7 +833,8 @@ function apiFetch(url,options={}){
   const authH = _authToken ? {'Authorization':`Bearer ${_authToken}`} : (ACCESS_TOKEN?{'Authorization':`Bearer ${ACCESS_TOKEN}`}:{});
   options.headers={...(options.headers||{}),...authH};
   return fetch(url,options).then(r=>{
-    if(r.status===401&&_authToken){_authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();}
+    // Only force re-login on 401 from auth endpoints (not from API key / model errors)
+    if(r.status===401&&_authToken&&url.includes('/auth/')){_authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();}
     return r;
   });
 }
@@ -853,11 +854,21 @@ async function initAuth(){
   if(!_authToken){showAuthModal();return;}
   try{
     const r = await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
-    if(!r.ok){_authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();return;}
+    if(r.status===401){
+      // Token is genuinely invalid (expired or wrong secret) — require re-login
+      _authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();return;
+    }
+    if(!r.ok){
+      // 5xx or network blip — trust the cached token and proceed
+      _authUser={id:'local',email:'',name:''};onAuthSuccess();return;
+    }
     _authUser = await r.json();
     onAuthSuccess();
     loadSavedKeys();
-  }catch(e){showAuthModal();}
+  }catch(e){
+    // Fetch failed entirely (server unreachable) — stay logged in with cached token
+    _authUser={id:'local',email:'',name:''};onAuthSuccess();
+  }
 }
 
 function showAuthModal(){
