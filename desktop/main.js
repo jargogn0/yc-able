@@ -1,17 +1,34 @@
-const { app, BrowserWindow, shell, Menu, protocol, net } = require('electron');
+const { app, BrowserWindow, shell, Menu } = require('electron');
+const http = require('http');
+const fs = require('fs');
 const path = require('path');
-
-// Register BEFORE app is ready — gives app:// a secure, standard origin
-// so fetch() calls to https://yc-able.com resolve DNS + work without CORS issues
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
-]);
 
 app.disableHardwareAcceleration();
 
+let localPort = 0;
 let mainWindow;
 
-function createWindow() {
+// Spin up a local HTTP server to serve app.html
+// localhost always resolves, and from http://localhost the renderer
+// can reach https://yc-able.com without DNS issues
+function startLocalServer(callback) {
+  const server = http.createServer((req, res) => {
+    const filePath = path.join(__dirname, req.url === '/' ? 'app.html' : req.url.replace(/^\//, ''));
+    fs.readFile(filePath, (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      const ext = path.extname(filePath).slice(1);
+      const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', png: 'image/png' };
+      res.writeHead(200, { 'Content-Type': (types[ext] || 'text/plain') + '; charset=utf-8' });
+      res.end(data);
+    });
+  });
+  server.listen(0, '127.0.0.1', () => {
+    localPort = server.address().port;
+    callback(localPort);
+  });
+}
+
+function createWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -31,14 +48,13 @@ function createWindow() {
     },
   });
 
-  // Load via app:// — secure origin that can reach https://yc-able.com
-  mainWindow.loadURL('app://19labs/app.html');
+  // Load from localhost — guaranteed DNS, external requests to yc-able.com work
+  mainWindow.loadURL(`http://127.0.0.1:${port}/app.html`);
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
 
-  // Safety: show after 10s regardless
   setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       mainWindow.show();
@@ -87,15 +103,13 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
-  // Serve bundled files via app:// protocol
-  protocol.handle('app', (request) => {
-    const { pathname } = new URL(request.url);
-    return net.fetch('file://' + path.join(__dirname, pathname));
-  });
-
   buildMenu();
-  createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  startLocalServer((port) => {
+    createWindow(port);
+  });
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(localPort);
+  });
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
