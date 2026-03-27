@@ -1,7 +1,7 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
-// Must be called before app is ready — fixes black screen on macOS
+// Must be called before app is ready
 app.disableHardwareAcceleration();
 
 const APP_URL = process.env.LABS_URL || 'https://yc-able.com/app';
@@ -17,17 +17,17 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#09090b',
-    show: true,   // show immediately — no more black screen waiting
+    show: false,   // hidden until ready-to-show fires (after first real paint)
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false,              // allow mixed content / remote resources
+      webSecurity: false,
       allowRunningInsecureContent: true,
     },
   });
 
-  // Show splash as an overlay on top of the main window
+  // Splash overlay
   const splash = new BrowserWindow({
     width: 380,
     height: 280,
@@ -35,42 +35,44 @@ function createWindow() {
     transparent: true,
     alwaysOnTop: true,
     resizable: false,
-    parent: mainWindow,
   });
   splash.loadFile(path.join(__dirname, 'splash.html'));
   splash.center();
-
-  mainWindow.loadURL(APP_URL);
 
   function closeSplash() {
     try { if (splash && !splash.isDestroyed()) splash.destroy(); } catch (_) {}
   }
 
-  // Close splash when page finishes loading, force repaint to fix black screen
-  mainWindow.webContents.on('did-finish-load', () => {
+  function showMain() {
     closeSplash();
-    // Force a repaint — fixes GPU black screen on macOS
-    mainWindow.webContents.invalidate();
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.hide();
-        mainWindow.show();
-      }
-    }, 100);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }
+
+  // ready-to-show fires after the FIRST PAINT — content is actually visible
+  mainWindow.once('ready-to-show', () => {
+    showMain();
   });
 
-  // On load failure: retry up to 3x then close splash so user isn't stuck
+  // Safety net: always show after 12s even if ready-to-show never fires
+  const safetyTimer = setTimeout(showMain, 12000);
+  mainWindow.once('ready-to-show', () => clearTimeout(safetyTimer));
+
+  mainWindow.loadURL(APP_URL);
+
+  // Retry on network failure
   let retries = 0;
   mainWindow.webContents.on('did-fail-load', (e, code) => {
-    if (code === -3) return; // aborted (navigation)
+    if (code === -3) return; // navigation aborted — not an error
     retries++;
     if (retries <= 3) {
       setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(APP_URL);
       }, retries * 2000);
     } else {
-      closeSplash();
-      mainWindow.loadURL(`data:text/html,<html><body style="background:#09090b;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center"><div><div style="width:48px;height:48px;background:#6366f1;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;margin:0 auto 20px">19</div><h2 style="margin:0 0 8px;font-weight:500">Can't connect</h2><p style="color:rgba(255,255,255,.4);margin:0 0 24px;font-size:13px">Check your internet connection</p><button onclick="location.href='${APP_URL}'" style="background:#6366f1;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:13px;cursor:pointer">Retry</button></div></body></html>`);
+      showMain(); // show the (blank) window so user isn't stuck on splash
     }
   });
 
@@ -79,7 +81,10 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => {
+    clearTimeout(safetyTimer);
+    mainWindow = null;
+  });
 }
 
 function buildMenu() {
@@ -88,7 +93,7 @@ function buildMenu() {
     ...(isMac ? [{ label: '19Labs', submenu: [
       { role: 'about' },
       { type: 'separator' },
-      { label: 'Reload App', accelerator: 'CmdOrCtrl+R', click: () => {
+      { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(APP_URL);
       }},
       { type: 'separator' },
