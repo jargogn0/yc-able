@@ -326,6 +326,56 @@ input[type=file]{display:none}
 /* Monaco editor container */
 #monaco-wrap{width:100%;height:100%;min-height:300px}
 
+/* ── AUTH MODAL ── */
+.auth-overlay{position:fixed;inset:0;background:rgba(5,5,10,.92);backdrop-filter:blur(12px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
+.auth-card{background:#111113;border:1px solid #27272a;border-radius:16px;padding:36px 40px;width:100%;max-width:400px;display:flex;flex-direction:column;gap:0}
+.auth-logo{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;letter-spacing:-.5px;margin-bottom:28px;text-align:center}.auth-logo b{color:#6366f1}
+.auth-tabs{display:flex;gap:0;margin-bottom:28px;border:1px solid #27272a;border-radius:8px;overflow:hidden}
+.auth-tab{flex:1;padding:9px;font-size:13px;font-weight:500;background:transparent;border:none;color:#71717a;cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif}
+.auth-tab.active{background:#18181b;color:#fafafa}
+.auth-field{margin-bottom:14px}
+.auth-field label{display:block;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.auth-field input{width:100%;padding:10px 13px;background:#18181b;border:1px solid #27272a;border-radius:8px;color:#fafafa;font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border-color .15s}
+.auth-field input:focus{border-color:#6366f1}
+.auth-field input::placeholder{color:#3f3f46}
+.auth-err{font-size:12px;color:#ef4444;margin-bottom:12px;min-height:16px;text-align:center}
+.auth-btn{width:100%;padding:11px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;margin-top:4px}
+.auth-btn:hover{background:#5254cc}
+.auth-btn:disabled{opacity:.5;cursor:not-allowed}
+.auth-sub{font-size:12px;color:#52525b;text-align:center;margin-top:16px}
+
+/* ── USER MENU ── */
+.user-btn{display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);cursor:pointer;transition:all var(--t);font-family:var(--sans)}
+.user-btn:hover{border-color:var(--border-2)}
+.user-avatar{width:22px;height:22px;border-radius:50%;background:#6366f1;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+.user-email{font-size:12px;color:var(--text-2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-menu-popup{position:absolute;top:46px;right:8px;background:var(--surface);border:1px solid var(--border-2);border-radius:var(--rl);padding:6px;min-width:200px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none}
+.user-menu-popup.open{display:block}
+.ump-email{padding:8px 12px;font-size:12px;color:var(--text-3);border-bottom:1px solid var(--border);margin-bottom:4px;word-break:break-all}
+.ump-item{padding:8px 12px;font-size:13px;color:var(--text-2);cursor:pointer;border-radius:var(--r);transition:all .1s;display:flex;align-items:center;gap:8px}
+.ump-item:hover{background:var(--surface-2);color:var(--text)}
+.ump-item.danger:hover{background:var(--red-soft);color:var(--red)}
+
+/* ── API KEYS PANEL ── */
+.keys-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:4000;display:none;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)}
+.keys-overlay.open{display:flex}
+.keys-card{background:var(--surface);border:1px solid var(--border-2);border-radius:16px;padding:28px 32px;width:100%;max-width:480px;display:flex;flex-direction:column;gap:20px}
+.keys-card h2{font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:space-between}
+.keys-card h2 button{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px}.keys-card h2 button:hover{color:var(--text)}
+.keys-provider{display:flex;flex-direction:column;gap:8px}
+.keys-provider-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.keys-provider-h .kp-badge{font-size:10px;padding:2px 7px;border-radius:999px;font-weight:600}
+.kp-badge.set{background:rgba(34,197,94,.1);color:#4ade80;border:1px solid rgba(34,197,94,.2)}
+.kp-badge.unset{background:var(--surface-2);color:var(--text-3);border:1px solid var(--border)}
+.keys-input-row{display:flex;gap:8px}
+.keys-input-row input{flex:1;padding:9px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .15s}
+.keys-input-row input:focus{border-color:var(--accent)}
+.keys-input-row input::placeholder{color:var(--text-3)}
+.keys-save-btn{padding:9px 16px;background:var(--accent);border:none;border-radius:var(--r);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);transition:background .15s;white-space:nowrap}
+.keys-save-btn:hover{background:var(--accent-2)}
+.keys-note{font-size:11px;color:var(--text-3);line-height:1.5}
+.keys-saved-msg{font-size:12px;color:#4ade80;text-align:center;display:none}
+
 /* Command palette */
 .cmd-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding-top:20vh;backdrop-filter:blur(2px);animation:fi .1s ease}
 .cmd-box{width:520px;max-width:90vw;background:var(--surface);border:1px solid var(--border-2);border-radius:var(--rl);overflow:hidden;animation:si .15s ease;box-shadow:0 24px 48px rgba(0,0,0,.4)}
@@ -540,8 +590,74 @@ input[type=file]{display:none}
   </div>
 </div>
 
+<!-- AUTH MODAL -->
+<div class="auth-overlay" id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-logo"><b>19</b>Labs</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</button>
+      <button class="auth-tab" id="tab-signup" onclick="switchTab('signup')">Sign up</button>
+    </div>
+    <div id="auth-signup-name" class="auth-field" style="display:none">
+      <label>Name</label>
+      <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+    </div>
+    <div class="auth-field">
+      <label>Email</label>
+      <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doAuth()">
+    </div>
+    <div class="auth-field">
+      <label>Password</label>
+      <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
+    </div>
+    <div class="auth-err" id="auth-err"></div>
+    <button class="auth-btn" id="auth-btn" onclick="doAuth()">Sign in</button>
+    <div class="auth-sub">Your API keys are stored securely in your account.</div>
+  </div>
+</div>
+
+<!-- API KEYS PANEL -->
+<div class="keys-overlay" id="keys-overlay" onclick="if(event.target===this)closeKeys()">
+  <div class="keys-card">
+    <h2>API Keys <button onclick="closeKeys()">✕</button></h2>
+    <p style="font-size:12px;color:var(--text-3);line-height:1.6">Connect your own API keys. Your keys are stored securely and never shared. They're used to power your ML experiments.</p>
+    <div class="keys-provider">
+      <div class="keys-provider-h">
+        <span>Anthropic (Claude)</span>
+        <span class="kp-badge unset" id="badge-anthropic">Not set</span>
+      </div>
+      <div class="keys-input-row">
+        <input type="password" id="key-anthropic" placeholder="sk-ant-api03-…" autocomplete="off">
+        <button class="keys-save-btn" onclick="saveKey('anthropic')">Save</button>
+      </div>
+    </div>
+    <div class="keys-provider">
+      <div class="keys-provider-h">
+        <span>OpenAI (GPT-4)</span>
+        <span class="kp-badge unset" id="badge-openai">Not set</span>
+      </div>
+      <div class="keys-input-row">
+        <input type="password" id="key-openai" placeholder="sk-proj-…" autocomplete="off">
+        <button class="keys-save-btn" onclick="saveKey('openai')">Save</button>
+      </div>
+    </div>
+    <div class="keys-provider">
+      <div class="keys-provider-h">
+        <span>Google (Gemini)</span>
+        <span class="kp-badge unset" id="badge-gemini">Not set</span>
+      </div>
+      <div class="keys-input-row">
+        <input type="password" id="key-gemini" placeholder="AIza…" autocomplete="off">
+        <button class="keys-save-btn" onclick="saveKey('gemini')">Save</button>
+      </div>
+    </div>
+    <div class="keys-saved-msg" id="keys-saved-msg">✓ Saved</div>
+    <div class="keys-note">Keys are sent over HTTPS and stored encrypted on our servers. You can update or remove them at any time.</div>
+  </div>
+</div>
+
 <!-- TOPBAR -->
-<div class="topbar">
+<div class="topbar" style="position:relative">
   <div class="logo"><b>19</b>Labs</div>
   <div class="topbar-sep"></div>
   <div class="topbar-tag">Autonomous ML Research</div>
@@ -550,6 +666,17 @@ input[type=file]{display:none}
     <div class="badge" id="badge">IDLE</div>
     <button class="tbtn" onclick="openCmd()" data-tip="Command Palette (⌘K)">⌘K</button>
     <button class="tbtn" id="tb-prov" onclick="openSettings()" data-tip="Provider settings (⌘,)">Claude</button>
+    <div style="position:relative">
+      <div class="user-btn" id="user-btn" onclick="toggleUserMenu()" style="display:none">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span class="user-email" id="user-email-display"></span>
+      </div>
+      <div class="user-menu-popup" id="user-menu">
+        <div class="ump-email" id="ump-email-full"></div>
+        <div class="ump-item" onclick="openKeys()">🔑 API Keys</div>
+        <div class="ump-item danger" onclick="doLogout()">↩ Sign out</div>
+      </div>
+    </div>
   </div>
 </div>
 <div class="prog"><div class="prog-f" id="prog"></div></div>
@@ -702,13 +829,157 @@ const _apiMeta=document.querySelector('meta[name="api-base"]');
 const BASE=_apiMeta&&_apiMeta.content?_apiMeta.content.replace(/\/$/,''):(window.location.protocol==='file:'||!window.location.host)?(localStorage.getItem('19labs_server')||'http://localhost:8019'):window.location.origin;
 let ACCESS_TOKEN=localStorage.getItem('19labs_access_token')||'';
 function apiFetch(url,options={}){
-  if(ACCESS_TOKEN){options.headers={...( options.headers||{}),'Authorization':`Bearer ${ACCESS_TOKEN}`};}
+  // Merge auth headers: user session token takes priority over legacy access token
+  const authH = _authToken ? {'Authorization':`Bearer ${_authToken}`} : (ACCESS_TOKEN?{'Authorization':`Bearer ${ACCESS_TOKEN}`}:{});
+  options.headers={...(options.headers||{}),...authH};
   return fetch(url,options).then(r=>{
-    if(r.status===401){toast('Access token required. Set it in Settings (⌘,).','err');}
+    if(r.status===401&&_authToken){_authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();}
     return r;
   });
 }
 function sseUrl(path){return ACCESS_TOKEN?`${path}?token=${encodeURIComponent(ACCESS_TOKEN)}`:path;}
+
+// ═══════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════
+let _authUser = null;
+let _authToken = localStorage.getItem('19labs_auth_token') || '';
+let _savedKeys = {};
+let _authTab = 'signin';
+
+function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
+
+async function initAuth(){
+  if(!_authToken){showAuthModal();return;}
+  try{
+    const r = await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
+    if(!r.ok){_authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();return;}
+    _authUser = await r.json();
+    onAuthSuccess();
+    loadSavedKeys();
+  }catch(e){showAuthModal();}
+}
+
+function showAuthModal(){
+  document.getElementById('auth-overlay').style.display='flex';
+}
+function hideAuthModal(){
+  document.getElementById('auth-overlay').style.display='none';
+}
+
+function switchTab(tab){
+  _authTab=tab;
+  document.getElementById('tab-signin').classList.toggle('active',tab==='signin');
+  document.getElementById('tab-signup').classList.toggle('active',tab==='signup');
+  document.getElementById('auth-signup-name').style.display=tab==='signup'?'block':'none';
+  document.getElementById('auth-btn').textContent=tab==='signin'?'Sign in':'Create account';
+  document.getElementById('auth-password').setAttribute('autocomplete',tab==='signin'?'current-password':'new-password');
+  document.getElementById('auth-err').textContent='';
+}
+
+async function doAuth(){
+  const email=document.getElementById('auth-email').value.trim();
+  const password=document.getElementById('auth-password').value;
+  const name=document.getElementById('auth-name').value.trim();
+  const btn=document.getElementById('auth-btn');
+  const err=document.getElementById('auth-err');
+  err.textContent='';
+  if(!email||!password){err.textContent='Please fill in all fields.';return;}
+  btn.disabled=true;btn.textContent='…';
+  try{
+    const url=_authTab==='signin'?`${BASE}/auth/login`:`${BASE}/auth/signup`;
+    const body=_authTab==='signin'?{email,password}:{email,password,name};
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await r.json();
+    if(!r.ok){err.textContent=data.detail||'Something went wrong.';btn.disabled=false;btn.textContent=_authTab==='signin'?'Sign in':'Create account';return;}
+    _authToken=data.token;
+    _authUser=data.user;
+    localStorage.setItem('19labs_auth_token',_authToken);
+    hideAuthModal();
+    onAuthSuccess();
+    if(_authTab==='signup') setTimeout(()=>openKeys(),500);
+    else loadSavedKeys();
+  }catch(e){err.textContent='Network error. Try again.';btn.disabled=false;btn.textContent=_authTab==='signin'?'Sign in':'Create account';}
+}
+
+function onAuthSuccess(){
+  const user=_authUser;
+  if(!user)return;
+  const initials=(user.name||user.email||'?')[0].toUpperCase();
+  document.getElementById('user-avatar').textContent=initials;
+  document.getElementById('user-email-display').textContent=user.name||user.email;
+  document.getElementById('ump-email-full').textContent=user.email;
+  document.getElementById('user-btn').style.display='flex';
+}
+
+async function doLogout(){
+  closeUserMenu();
+  await fetch(`${BASE}/auth/logout`,{method:'POST',headers:_authHeader()}).catch(()=>{});
+  _authToken='';_authUser=null;_savedKeys={};
+  localStorage.removeItem('19labs_auth_token');
+  document.getElementById('user-btn').style.display='none';
+  showAuthModal();
+  switchTab('signin');
+}
+
+function toggleUserMenu(){
+  document.getElementById('user-menu').classList.toggle('open');
+}
+function closeUserMenu(){
+  document.getElementById('user-menu').classList.remove('open');
+}
+
+// Close user menu on outside click
+document.addEventListener('click',e=>{
+  const menu=document.getElementById('user-menu');
+  const btn=document.getElementById('user-btn');
+  if(menu&&btn&&!btn.contains(e.target)&&!menu.contains(e.target)){
+    menu.classList.remove('open');
+  }
+});
+
+// ── API KEYS PANEL ───────────────────────────────────────────
+async function loadSavedKeys(){
+  if(!_authToken)return;
+  try{
+    const r=await fetch(`${BASE}/auth/keys`,{headers:_authHeader()});
+    if(!r.ok)return;
+    _savedKeys=await r.json();
+    for(const [prov,masked] of Object.entries(_savedKeys)){
+      const badge=document.getElementById(`badge-${prov}`);
+      if(badge){badge.textContent='Set';badge.className='kp-badge set';}
+    }
+    // auto-set provider key hint
+    if(_savedKeys[C.provider]) C.key='__saved__';
+  }catch(e){}
+}
+
+function openKeys(){
+  closeUserMenu();
+  document.getElementById('keys-overlay').classList.add('open');
+}
+function closeKeys(){
+  document.getElementById('keys-overlay').classList.remove('open');
+}
+
+async function saveKey(provider){
+  const input=document.getElementById(`key-${provider}`);
+  const key=input.value.trim();
+  if(!key){toast('Paste your API key first','err');return;}
+  try{
+    const body={};body[provider]=key;
+    const r=await fetch(`${BASE}/auth/keys`,{method:'POST',headers:{...{'Content-Type':'application/json'},..._authHeader()},body:JSON.stringify(body)});
+    if(!r.ok){toast('Failed to save key','err');return;}
+    _savedKeys[provider]=key.slice(0,8)+'…'+key.slice(-4);
+    const badge=document.getElementById(`badge-${provider}`);
+    if(badge){badge.textContent='Set';badge.className='kp-badge set';}
+    input.value='';
+    const msg=document.getElementById('keys-saved-msg');
+    msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
+    if(provider==='anthropic'||provider===C.provider) C.key='__saved__';
+  }catch(e){toast('Network error','err');}
+}
+
 const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent'};
 
 // ═══════════════════════════════════════════
@@ -2562,6 +2833,7 @@ setBadge(C.key?'READY':'IDLE','');
 {const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
 ['p-exp','p-art','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
+initAuth();
 </script>
 </body>
 </html>

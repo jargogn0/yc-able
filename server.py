@@ -7,7 +7,7 @@
 - GET  /api/run/{id}/deploy → download deploy.zip
 - GET  /                 → serves 19labs-app.html
 """
-import asyncio, glob, json, os, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
+import asyncio, glob, hashlib, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, RedirectResponse
@@ -42,8 +42,72 @@ def _init_db():
         error TEXT,
         result_json TEXT
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT DEFAULT '',
+        password_hash TEXT NOT NULL,
+        created REAL NOT NULL
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        created REAL NOT NULL,
+        expires REAL NOT NULL
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_api_keys (
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        PRIMARY KEY (user_id, provider)
+    )""")
     conn.commit()
     conn.close()
+
+# ── AUTH HELPERS ──────────────────────────────────────────────
+def _hash_pw(pw: str) -> str:
+    salt = _secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 260000)
+    return f"{salt}:{h.hex()}"
+
+def _verify_pw(pw: str, stored: str) -> bool:
+    try:
+        salt, h = stored.split(':', 1)
+        return hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 260000).hex() == h
+    except Exception:
+        return False
+
+def _get_user(token: str) -> dict | None:
+    if not token:
+        return None
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        row = conn.execute(
+            "SELECT u.id, u.email, u.name FROM users u "
+            "JOIN user_sessions s ON u.id=s.user_id "
+            "WHERE s.token=? AND s.expires>?",
+            (token, time.time())
+        ).fetchone()
+        conn.close()
+        return {"id": row[0], "email": row[1], "name": row[2]} if row else None
+    except Exception:
+        return None
+
+def _token_from_request(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    return auth.replace("Bearer ", "").strip()
+
+def _get_user_api_key(user_id: str, provider: str) -> str:
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        row = conn.execute(
+            "SELECT api_key FROM user_api_keys WHERE user_id=? AND provider=?",
+            (user_id, provider)
+        ).fetchone()
+        conn.close()
+        return row[0] if row else ""
+    except Exception:
+        return ""
 
 _init_db()
 
@@ -258,6 +322,111 @@ def _download_windows():
 def _download_linux():
     return RedirectResponse(_GH_LINUX, status_code=302)
 
+# ── AUTH ENDPOINTS ────────────────────────────────────────────
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    data = await request.json()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    name = data.get("name", "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(400, "Invalid email")
+    if len(password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    user_id = str(uuid.uuid4())
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        conn.execute(
+            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+            (user_id, email, name, _hash_pw(password), time.time())
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(409, "Email already registered")
+    conn.close()
+    token = _secrets.token_urlsafe(32)
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.execute(
+        "INSERT INTO user_sessions (token, user_id, created, expires) VALUES (?,?,?,?)",
+        (token, user_id, time.time(), time.time() + 30 * 24 * 3600)
+    )
+    conn.commit()
+    conn.close()
+    return {"token": token, "user": {"id": user_id, "email": email, "name": name}}
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    data = await request.json()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    conn = sqlite3.connect(str(DB_PATH))
+    row = conn.execute(
+        "SELECT id, email, name, password_hash FROM users WHERE email=?", (email,)
+    ).fetchone()
+    conn.close()
+    if not row or not _verify_pw(password, row[3]):
+        raise HTTPException(401, "Invalid email or password")
+    token = _secrets.token_urlsafe(32)
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.execute(
+        "INSERT INTO user_sessions (token, user_id, created, expires) VALUES (?,?,?,?)",
+        (token, row[0], time.time(), time.time() + 30 * 24 * 3600)
+    )
+    conn.commit()
+    conn.close()
+    return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
+
+@app.get("/auth/me")
+async def auth_me(request: Request):
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    return user
+
+@app.post("/auth/logout")
+async def auth_logout(request: Request):
+    token = _token_from_request(request)
+    if token:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("DELETE FROM user_sessions WHERE token=?", (token,))
+        conn.commit()
+        conn.close()
+    return {"ok": True}
+
+@app.get("/auth/keys")
+async def auth_get_keys(request: Request):
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    conn = sqlite3.connect(str(DB_PATH))
+    rows = conn.execute(
+        "SELECT provider, api_key FROM user_api_keys WHERE user_id=?", (user["id"],)
+    ).fetchall()
+    conn.close()
+    result = {}
+    for provider, key in rows:
+        result[provider] = (key[:8] + "…" + key[-4:]) if len(key) > 12 else "****"
+    return result
+
+@app.post("/auth/keys")
+async def auth_save_keys(request: Request):
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    data = await request.json()
+    conn = sqlite3.connect(str(DB_PATH))
+    for provider, key in data.items():
+        if provider in ("anthropic", "openai", "gemini") and key and key.strip():
+            conn.execute(
+                "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?)",
+                (user["id"], provider, key.strip())
+            )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
 # ── START RUN (JSON body) ──────────────────────────────────────
 class RunRequest(BaseModel):
     filename: str
@@ -364,7 +533,15 @@ def _fallback_discovery(profile: dict, hint: str = ""):
     }
 
 @app.post("/api/run")
-async def start_run(req: RunRequest):
+async def start_run(req: RunRequest, request: Request):
+    # Auto-fill API key from user account if not provided
+    if not req.api_key:
+        user = _get_user(_token_from_request(request))
+        if user:
+            saved = _get_user_api_key(user["id"], req.provider)
+            if saved:
+                req.api_key = saved
+
     if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
         raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
 
