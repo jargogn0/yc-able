@@ -1208,7 +1208,7 @@ RULES:
 - Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics.
 - If the error is a missing package, keep the import — it will be auto-installed before the next run.
 
-Fix the error. Keep the model/approach if possible. Output ONLY fixed ```python code.""", 3000))
+Fix the error. Keep the model/approach if possible. Output ONLY fixed ```python code.""", 6000))
     fixed, _ = apply_code_guardrails(fixed)
     return fixed
 
@@ -1432,9 +1432,34 @@ KARPATHY DISCIPLINE (MANDATORY):
 - This is the ONLY file you edit. Everything must be self-contained in this script.
 
 Output ONLY a complete ```python block.""",
-        4200
+        8000
     )
     clean, _ = apply_code_guardrails(extract_code(code))
+    # Truncation guard: if code looks cut off, retry with simplified prompt
+    if clean and not re.search(r'print\s*\(\s*json\.dumps', clean):
+        import sys as _sys
+        print("[engine] write_train_py: code appears truncated (no metrics print). Retrying with concise prompt.", file=_sys.stderr)
+        code2 = ask(
+            "You write concise, complete Python ML training scripts. Every script MUST end with print(json.dumps(metrics)).",
+            f"""Write a SHORT complete train.py for experiment {exp_num}.
+
+TASK: {obj.get('task')} | TARGET: {obj.get('target')} | METRIC: {obj.get('metric')}
+DATA: DATA_PATH='{obj.get('data_path','data.csv')}' | {profile.get('rows')} rows | cols: {', '.join(profile.get('headers',[])[:15])}
+
+Rules:
+- Load data from DATA_PATH (top of script: DATA_PATH = r'{obj.get('data_path','data.csv')}')
+- Train/test split. Compute metrics on test set.
+- joblib.dump(model, 'model.pkl')
+- LAST LINE: print(json.dumps({{"model":"ModelName","{obj.get('metric','rmse')}":float_val,"r2":float_val,"train_{obj.get('metric','rmse')}":float_val,"test_{obj.get('metric','rmse')}":float_val}}))
+- Keep plots minimal — only predictions.png and residuals.png
+- Keep total script under 120 lines
+
+Output ONLY ```python block.""",
+            6000
+        )
+        clean2, _ = apply_code_guardrails(extract_code(code2))
+        if clean2 and re.search(r'print\s*\(\s*json\.dumps', clean2):
+            clean = clean2
     return clean
 
 def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=""):
@@ -1524,7 +1549,7 @@ CURRENT TRAIN.PY:
 {train_py[:12000]}
 ```
 """,
-        7000
+        10000
     )
 
     keep = bool(re.search(r"KEEP\s*:\s*YES", review, re.IGNORECASE))
@@ -1551,10 +1576,38 @@ CURRENT TRAIN.PY:
         tm = train_py
         used_fallback.append("train_py")
     if used_fallback:
-        # Log that LLM didn't produce structured output — caller will detect stale code
         import sys as _sys
         print(f"[engine] revise_after_iteration: LLM fallback for {used_fallback} — response may be malformed", file=_sys.stderr)
     tm, _ = apply_code_guardrails(tm)
+
+    # Truncation guard: if new train.py is cut off, regenerate it standalone
+    if tm and not re.search(r'print\s*\(\s*json\.dumps', tm):
+        import sys as _sys
+        print("[engine] revise_after_iteration: train.py truncated (missing metrics print). Regenerating standalone.", file=_sys.stderr)
+        fallback_code = ask(
+            "Write a complete, concise Python ML training script. Must end with print(json.dumps(metrics)).",
+            f"""Write the next experiment train.py based on this context.
+
+ERROR FROM LAST RUN: {error or 'none'}
+HISTORY: {hist_txt}
+
+PROGRAM PLAN (follow this):
+{program_md[:3000]}
+
+Rules:
+- Load data from the path defined in DATA_PATH at top of script
+- Train/test split. Compute metrics on TEST set only.
+- joblib.dump(model, 'model.pkl')
+- Save predictions.png and residuals.png (wrap in try/except)
+- FINAL LINE MUST BE: print(json.dumps({{"model":"Name","rmse":0.0,"r2":0.0,"train_rmse":0.0,"test_rmse":0.0,"train_r2":0.0,"test_r2":0.0}}))
+- Keep under 150 lines — no Optuna if it makes the script too long
+
+Output ONLY ```python block.""",
+            6000
+        )
+        fb_clean, _ = apply_code_guardrails(extract_code(fallback_code))
+        if fb_clean and re.search(r'print\s*\(\s*json\.dumps', fb_clean):
+            tm = fb_clean
 
     return {
         "keep": keep,
