@@ -777,6 +777,9 @@ def ask(system, user, max_tokens=3000):
                 return r.choices[0].message.content.strip()
             else:
                 model_id = BEDROCK_MODEL if _provider == "bedrock" else _active_claude_model
+                # Bedrock on-demand requires cross-region inference profile prefix (us./eu./ap.)
+                if _provider == "bedrock" and not model_id.startswith(("us.", "eu.", "ap.")):
+                    model_id = f"us.{model_id}"
                 r = _client.messages.create(
                     model=model_id,
                     max_tokens=max_tokens,
