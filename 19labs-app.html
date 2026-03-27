@@ -644,6 +644,11 @@ input[type=file]{display:none}
         Continue with Google
       </button>
       <div class="auth-err" id="auth-google-err" style="text-align:center;margin-top:8px"></div>
+
+      <div style="text-align:center;margin-top:18px;padding-top:16px;border-top:1px solid #1e1e22">
+        <span style="font-size:12px;color:#52525b">Just exploring? </span>
+        <a style="font-size:12px;color:#818cf8;cursor:pointer;font-weight:600" onclick="startTrial()">Try free (3 experiments, no account) →</a>
+      </div>
     </div>
 
     <!-- Hidden key stage (post-login API key setup) -->
@@ -935,18 +940,25 @@ async function initAuth(){
       _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
     }
   }
-  // No session — allow trial mode (3 free experiments), show "Start Free" / "Sign up"
+  // Already in trial mode (they clicked "Try free" before, still have slots left)
+  if(_isTrialMode&&_trialRemaining()>0){
+    _updateTrialBtn();return;
+  }
+  // No session — show the auth modal
+  showAuthModal();
+}
+
+function startTrial(){
   _isTrialMode=true;
+  localStorage.setItem('19labs_trial_started','1');
   hideAuthModal();
   _updateTrialBtn();
-  // If trial exhausted, show auth immediately
-  if(_trialRemaining()<=0) showAuthModal();
 }
 
 // ── TRIAL MODE ───────────────────────────────────────────────
 const TRIAL_LIMIT = 3;
 let _trialCount = parseInt(localStorage.getItem('19labs_trial_count')||'0',10);
-let _isTrialMode = false;
+let _isTrialMode = localStorage.getItem('19labs_trial_started')==='1';
 
 function _trialRemaining(){ return Math.max(0, TRIAL_LIMIT - _trialCount); }
 function _useTrialSlot(){
@@ -958,8 +970,13 @@ function _updateTrialBtn(){
   const btn=document.getElementById('trial-btn');
   if(!btn)return;
   const rem=_trialRemaining();
-  btn.textContent=rem>0?`Try Free (${rem} left)`:'Sign up to continue';
-  btn.style.display=_isTrialMode?'inline-block':'none';
+  if(_isTrialMode){
+    btn.textContent=rem>0?`Test it (${rem} left)`:'Sign up to continue';
+    btn.style.display='inline-block';
+    btn.onclick=rem>0?null:showAuthModal;
+  } else {
+    btn.style.display='none';
+  }
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -1054,6 +1071,7 @@ function onAuthSuccess(){
   document.getElementById('user-btn').style.display='flex';
   document.getElementById('trial-btn').style.display='none';
   _isTrialMode=false;
+  localStorage.removeItem('19labs_trial_started');
   // Nudge to add API key if none configured yet
   const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
   if(!hasKey) setTimeout(()=>openKeys(),700);
