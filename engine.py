@@ -1383,21 +1383,51 @@ KARPATHY DISCIPLINE (MANDATORY):
   The primary metric value MUST be computed on the TEST set, never the training set.
   Example: print(json.dumps({{"model": "XGBoost", "rmse": 4500.0, "train_rmse": 3200.0, "test_rmse": 4500.0, "train_r2": 0.97, "test_r2": 0.91, "r2": 0.91, "mape": 8.2, "nse": 0.91, "what_worked": "feature engineering"}}))
   NEVER use try/except to print fallback metrics. Let exceptions crash — the system handles recovery.
-- GENERATE PLOTS: After training, save plots using matplotlib (Agg backend).
-  Ultra-minimal dark style — apply this rcParams block before any plotting:
+- GENERATE PLOTS: After training, save ALL of the following plots using matplotlib (Agg backend).
+  Apply this dark style before any plot:
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-    plt.rcParams.update({{'figure.facecolor':'#09090b','axes.facecolor':'#09090b',
-      'axes.spines.top':False,'axes.spines.right':False,'axes.spines.left':False,
-      'axes.edgecolor':'#27272a','text.color':'#fafafa','xtick.color':'#52525b',
-      'ytick.color':'#52525b','axes.grid':True,'grid.color':'#18181b','grid.linewidth':1.0,
-      'legend.facecolor':'#09090b','legend.edgecolor':'#27272a'}})
-  1. predictions.png — scatter (s=18, alpha=0.6, color='#3b82f6'), perfect-prediction line (color='#27272a',lw=1),
-     title="predictions  ·  test set" (left-aligned), hide y-axis, no axis clutter.
-  2. residuals.png — histogram (bins=40, color='#3b82f6', alpha=0.85), vline at 0 (color='#ef4444',lw=1.5),
-     title="residuals", hide y-axis.
-  3. feature_importance.png — horizontal bars top-15 only (color='#3b82f6', height=0.45), hide x-axis,
-     title="feature importance", feature names on y-axis, invert y so most important is on top.
-  fig.savefig(name, dpi=160, facecolor='#09090b', bbox_inches='tight')
+    BG='#09090b'; BLUE='#3b82f6'; PURPLE='#8b5cf6'; GREEN='#34d399'; RED='#ef4444'; DIM='#27272a'; MUTED='#3f3f46'
+    plt.rcParams.update({{'figure.facecolor':BG,'axes.facecolor':BG,'axes.spines.top':False,
+      'axes.spines.right':False,'axes.spines.left':False,'axes.spines.bottom':True,
+      'axes.edgecolor':DIM,'text.color':'#fafafa','xtick.color':'#52525b','ytick.color':'#52525b',
+      'axes.grid':True,'grid.color':'#18181b','grid.linewidth':0.8,'legend.facecolor':BG,'legend.edgecolor':DIM,'legend.fontsize':9}})
+  def _save(fig, name):
+    plt.tight_layout(pad=1.6); fig.savefig(name, dpi=160, facecolor=BG, bbox_inches='tight'); plt.close(fig)
+
+  1. timeseries.png — THE MAIN PLOT. Full time series of actual vs predicted over the ENTIRE date range.
+     - Detect date/time column (parse with pd.to_datetime). If no date column, use index as x-axis.
+     - Sort by date. Plot ACTUALS as a solid white/light line (lw=1.5, alpha=0.9, color='#fafafa', label='actual').
+     - Shade the TRAIN region with ax.axvspan (alpha=0.06, color=BLUE, label='train').
+     - Plot TEST PREDICTIONS as a bold blue line (lw=2.5, color=BLUE, label='predicted', zorder=5).
+     - If forecasting future steps, extend with a dashed line (linestyle='--', color=GREEN).
+     - Add a thin vertical line at train/test boundary (color=DIM, lw=1, linestyle=':').
+     - Title: f"{{target_col}}  ·  forecast vs actual" left-aligned. Hide y-axis label, keep x ticks.
+     - Legend top-right. fig size (14, 4).
+
+  2. correlation.png — Feature correlation heatmap.
+     - Compute df[numeric_cols].corr(). Keep top 20 features by abs correlation with target.
+     - Use: import seaborn as sns (or fall back to plt.imshow if no seaborn).
+     - sns.heatmap(corr, annot=True, fmt='.2f', cmap='RdBu_r', center=0, vmin=-1, vmax=1,
+         linewidths=0.4, linecolor='#18181b', annot_kws={{'size':7}}, ax=ax)
+     - ax.set_facecolor(BG); colorbar text color '#71717a'. Title "feature correlations". fig size (10, 8).
+
+  3. shap.png — SHAP feature importance (preferred) OR fallback to feature importance.
+     - Try: import shap; explainer = shap.Explainer(model, X_train[:200]); sv = explainer(X_test[:200])
+     - shap.summary_plot(sv, X_test[:200], plot_type='bar', show=False, color=BLUE)
+     - plt.gcf().set_facecolor(BG); plt.gca().set_facecolor(BG); _save(plt.gcf(), 'shap.png')
+     - FALLBACK if shap fails or model has no SHAP support: use model's feature_importances_ or coef_,
+       plot top-20 horizontal bars (color=BLUE, height=0.45), invert y, hide x-axis, title="feature importance".
+
+  4. predictions.png — Actual vs predicted scatter on TEST SET only.
+     - scatter(y_test, y_pred, s=16, alpha=0.5, color=BLUE, linewidths=0).
+     - Perfect line: ax.plot([mn,mx],[mn,mx], color=DIM, lw=1).
+     - Title: "actual vs predicted  ·  test set". Hide y-axis. fig size (7, 6).
+
+  5. residuals.png — Residual distribution (y_test - y_pred).
+     - histogram bins=50, color=BLUE, alpha=0.85, edgecolor='none'.
+     - vline at 0 (color=RED, lw=1.5). Title "residuals  ·  test set". Hide y-axis.
+
+  Save in try/except so plot failures never block metrics output.
   If plot generation fails, pass silently — metrics are not optional, plots are.
 - This is the ONLY file you edit. Everything must be self-contained in this script.
 
@@ -1455,19 +1485,20 @@ TRAIN.PY HARD RULES (Karpathy discipline):
 - ALWAYS split data into train/test. Compute metrics on BOTH sets.
 - Final line: print(json.dumps(metrics)) — MUST include "model" key PLUS train_ and test_ prefixed metrics.
   Required keys: "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse" (=test), "r2" (=test), and any other applicable: mape, mae, nse.
-- GENERATE PLOTS (matplotlib, Agg backend). Ultra-minimal dark style:
-    plt.rcParams.update({{'figure.facecolor':'#09090b','axes.facecolor':'#09090b',
-      'axes.spines.top':False,'axes.spines.right':False,'axes.spines.left':False,
-      'axes.edgecolor':'#27272a','text.color':'#fafafa','xtick.color':'#52525b',
-      'ytick.color':'#52525b','axes.grid':True,'grid.color':'#18181b','grid.linewidth':1.0}})
-  1. predictions.png — scatter (s=18,alpha=0.6,color='#3b82f6'), perfect line (color='#27272a',lw=1),
-     title="predictions  ·  test set" loc='left', hide y-axis.
-  2. residuals.png — histogram (bins=40,color='#3b82f6',alpha=0.85), vline at 0 (color='#ef4444',lw=1.5),
-     title="residuals", hide y-axis.
-  3. feature_importance.png — top-15 horizontal bars (color='#3b82f6',height=0.45), hide x-axis,
-     title="feature importance", invert y-axis so best feature is on top.
-  fig.savefig(name, dpi=160, facecolor='#09090b', bbox_inches='tight')
-  Wrap plot generation in try/except so it never blocks metrics output.
+- GENERATE PLOTS (matplotlib, Agg backend). Same 5 plots as always:
+    BG='#09090b'; BLUE='#3b82f6'; RED='#ef4444'; DIM='#27272a'
+    plt.rcParams.update({{'figure.facecolor':BG,'axes.facecolor':BG,'axes.spines.top':False,
+      'axes.spines.right':False,'axes.spines.left':False,'axes.spines.bottom':True,
+      'axes.edgecolor':DIM,'text.color':'#fafafa','xtick.color':'#52525b','ytick.color':'#52525b',
+      'axes.grid':True,'grid.color':'#18181b','grid.linewidth':0.8,'legend.facecolor':BG,'legend.edgecolor':DIM}})
+  1. timeseries.png — full date-range actual vs predicted. Sort by date col. Shade train region (axvspan BLUE,alpha=0.06).
+     Actuals: solid #fafafa line. Test predictions: bold BLUE line. Vertical split line: DIM dotted.
+     Title "{{target_col}}  ·  forecast vs actual". fig (14,4).
+  2. correlation.png — seaborn heatmap of top-20 numeric feature correlations, cmap='RdBu_r', annot=True fmt='.2f'.
+  3. shap.png — shap.summary_plot bar if shap available, else feature_importances_ horizontal bars (top-20, BLUE, height=0.45, invert y).
+  4. predictions.png — scatter actual vs predicted test set (s=16,alpha=0.5,BLUE), perfect line DIM.
+  5. residuals.png — histogram residuals (bins=50,BLUE,alpha=0.85), vline 0 RED.
+  Wrap ALL plot code in try/except — metrics must never fail because of plots.
 - This is a git-tracked experiment. KEEP = commit. DISCARD = git reset --hard.
   You are writing the NEXT experiment. If you KEEP, your code becomes the new baseline.
   If you DISCARD, the codebase reverts to the last KEEP.
@@ -1996,6 +2027,111 @@ def render_final_plots(ws, history, obj, best):
             generated["train_test_png"] = _save(fig, "train_test.png")
     except Exception:
         pass
+
+    # ── 5. DATA CORRELATION HEATMAP (from CSV) ───────────────────────
+    if not (ws / "correlation.png").exists():
+        try:
+            import pandas as pd
+            csv_files = list(ws.glob("*.csv")) + list(ws.glob("*.tsv"))
+            if csv_files:
+                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=5000)
+                num_cols = df.select_dtypes(include="number").columns.tolist()
+                target = obj.get("target", "")
+                if target in num_cols and len(num_cols) >= 3:
+                    # Keep top-N features by abs correlation with target
+                    corr_with_target = df[num_cols].corr()[target].abs().sort_values(ascending=False)
+                    keep = corr_with_target.head(20).index.tolist()
+                    corr = df[keep].corr()
+                    n = len(keep)
+                    fig, ax = plt.subplots(figsize=(max(8, n * 0.6), max(6, n * 0.55)))
+                    try:
+                        import seaborn as sns
+                        sns.heatmap(
+                            corr, annot=True, fmt=".2f", cmap="RdBu_r",
+                            center=0, vmin=-1, vmax=1,
+                            linewidths=0.4, linecolor="#18181b",
+                            annot_kws={"size": 7, "color": "#fafafa"},
+                            ax=ax, cbar_kws={"shrink": 0.7},
+                        )
+                        ax.tick_params(colors="#71717a", labelsize=8)
+                        cbar = ax.collections[0].colorbar
+                        cbar.ax.tick_params(colors="#52525b", labelsize=7)
+                    except Exception:
+                        im = ax.imshow(corr.values, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
+                        ax.set_xticks(range(n)); ax.set_xticklabels(keep, rotation=45, ha="right", fontsize=7, color="#71717a")
+                        ax.set_yticks(range(n)); ax.set_yticklabels(keep, fontsize=7, color="#71717a")
+                        for i in range(n):
+                            for j in range(n):
+                                ax.text(j, i, f"{corr.values[i,j]:.2f}", ha="center", va="center", fontsize=6, color="#fafafa")
+                    ax.set_title(
+                        f"feature correlations  ·  top {n} by |r| with {target}",
+                        fontsize=11, fontweight="600", color="#fafafa", loc="left", pad=14,
+                    )
+                    ax.set_facecolor(BG); fig.set_facecolor(BG)
+                    plt.tight_layout(pad=1.6)
+                    p = ws / "correlation.png"
+                    plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+                    plt.close(fig)
+                    generated["correlation_png"] = str(p)
+        except Exception:
+            pass
+
+    # ── 6. DATA TIME SERIES (from CSV, if not already generated by train.py) ──
+    if not (ws / "timeseries.png").exists():
+        try:
+            import pandas as pd
+            csv_files = list(ws.glob("*.csv")) + list(ws.glob("*.tsv"))
+            if csv_files:
+                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=20000)
+                # Detect date column
+                date_col = None
+                for col in df.columns:
+                    if df[col].dtype == object or "date" in col.lower() or "time" in col.lower() or "period" in col.lower():
+                        try:
+                            parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                            if parsed.notna().mean() > 0.8:
+                                df[col] = parsed
+                                date_col = col
+                                break
+                        except Exception:
+                            pass
+                target = obj.get("target", "")
+                if date_col and target in df.columns:
+                    df = df.sort_values(date_col).reset_index(drop=True)
+                    split_idx = int(len(df) * 0.8)
+                    dates = df[date_col]
+                    vals  = df[target]
+
+                    fig, ax = plt.subplots(figsize=(14, 4))
+                    ax.axvspan(dates.iloc[0], dates.iloc[split_idx], alpha=0.06, color=BLUE, label="train")
+                    ax.plot(dates.iloc[:split_idx+1], vals.iloc[:split_idx+1],
+                            color="#fafafa", lw=1.2, alpha=0.85, label="actual (train)")
+                    ax.plot(dates.iloc[split_idx:], vals.iloc[split_idx:],
+                            color="#a1a1aa", lw=1.2, alpha=0.75, label="actual (test)")
+                    ax.axvline(x=dates.iloc[split_idx], color=DIM, lw=1, linestyle=":")
+                    ax.set_title(
+                        f"{target}  ·  full history  ·  train | test split",
+                        fontsize=12, fontweight="600", color="#fafafa", loc="left", pad=14,
+                    )
+                    ax.yaxis.set_visible(False)
+                    ax.spines["bottom"].set_color(DIM)
+                    ax.tick_params(axis="x", length=0, pad=6)
+                    ax.legend(loc="upper left", fontsize=9)
+                    ax.set_facecolor(BG); fig.set_facecolor(BG)
+                    plt.tight_layout(pad=1.6)
+                    p = ws / "timeseries.png"
+                    plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+                    plt.close(fig)
+                    generated["timeseries_png"] = str(p)
+        except Exception:
+            pass
+
+    # Register any plots already saved by train.py that aren't in generated yet
+    for key, fname in [("timeseries_png","timeseries.png"), ("correlation_png","correlation.png"),
+                        ("shap_png","shap.png"), ("predictions_png","predictions.png"),
+                        ("residuals_png","residuals.png")]:
+        if key not in generated and (ws / fname).exists():
+            generated[key] = str(ws / fname)
 
     return generated
 

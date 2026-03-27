@@ -1444,8 +1444,8 @@ function updStatus(){
 function updArtSide(){
   const al=document.getElementById('art-list');
   if(!S.artifacts||!S.runId){al.innerHTML='';return}
-  const N={experiment_timeline_png:'timeline.png',train_test_png:'train_test.png',model_comparison_png:'comparison.png',metrics_overview_png:'metrics.png',progress_png:'progress.png',program_md:'program.md',prepare_py:'prepare.py',analysis_ipynb:'analysis.ipynb',results_tsv:'results.tsv',train_py:'train.py',final_report_md:'report.md'};
-  const I={experiment_timeline_png:_ico.chart,train_test_png:_ico.bar,model_comparison_png:_ico.medal,metrics_overview_png:_ico.scatter,progress_png:_ico.progress,program_md:_ico.doc,prepare_py:_ico.code,analysis_ipynb:_ico.notebook,results_tsv:_ico.data,train_py:_ico.code,final_report_md:_ico.report};
+  const N={timeseries_png:'timeseries.png',correlation_png:'correlation.png',shap_png:'shap.png',predictions_png:'predictions.png',residuals_png:'residuals.png',experiment_timeline_png:'timeline.png',train_test_png:'train_test.png',model_comparison_png:'comparison.png',metrics_overview_png:'metrics.png',progress_png:'progress.png',program_md:'program.md',prepare_py:'prepare.py',analysis_ipynb:'analysis.ipynb',results_tsv:'results.tsv',train_py:'train.py',final_report_md:'report.md'};
+  const I={timeseries_png:_ico.chart,correlation_png:_ico.scatter,shap_png:_ico.bar,predictions_png:_ico.scatter,residuals_png:_ico.bar,experiment_timeline_png:_ico.chart,train_test_png:_ico.bar,model_comparison_png:_ico.medal,metrics_overview_png:_ico.scatter,progress_png:_ico.progress,program_md:_ico.doc,prepare_py:_ico.code,analysis_ipynb:_ico.notebook,results_tsv:_ico.data,train_py:_ico.code,final_report_md:_ico.report};
   let h='<div class="side-sec">Artifacts</div>';
   for(const[k,n]of Object.entries(N)){if(S.artifacts[k])h+=`<a class="side-item" href="${BASE}/api/run/${S.runId}/artifact/${k}" target="_blank" style="text-decoration:none;color:inherit"><div class="si-icon">${I[k]||_ico.doc}</div><div class="si-name">${n}</div></a>`}
   al.innerHTML=h;
@@ -2089,7 +2089,7 @@ function addExpCard(exp){
   // Build plot thumbnails if run has artifacts
   let plotsHtml='';
   if(S.runId&&exp.success){
-    const plotKeys=[`exp_${String(exp.num).padStart(2,'0')}_predictions_png`,`exp_${String(exp.num).padStart(2,'0')}_residuals_png`,`exp_${String(exp.num).padStart(2,'0')}_feature_importance_png`];
+    const plotKeys=[`exp_${String(exp.num).padStart(2,'0')}_timeseries_png`,`exp_${String(exp.num).padStart(2,'0')}_predictions_png`,`exp_${String(exp.num).padStart(2,'0')}_residuals_png`,`exp_${String(exp.num).padStart(2,'0')}_shap_png`];
     const thumbs=plotKeys.map(k=>{
       const url=`${BASE}/api/run/${S.runId}/artifact/${k}`;
       return`<div class="exp-plot-thumb" onclick="event.stopPropagation();showPlotModal('${url}')"><img src="${url}" onerror="this.parentElement.style.display='none'" loading="lazy"></div>`;
@@ -2135,6 +2135,11 @@ function showArts(runId,arts){
   const el=document.getElementById('p-art');
   const fileItems={program_md:{n:'program.md',i:'📋',t:'Research spec'},prepare_py:{n:'prepare.py',i:'🐍',t:'Data pipeline'},analysis_ipynb:{n:'analysis.ipynb',i:'📓',t:'Notebook'},results_tsv:{n:'results.tsv',i:'📊',t:'Results'},train_py:{n:'train.py',i:'🐍',t:'Training code'},final_report_md:{n:'report.md',i:'📄',t:'Report'}};
   const plotItems=[
+    {key:'timeseries_png',title:'Time Series Forecast',desc:'Full date range · actual vs predicted · train/test split'},
+    {key:'correlation_png',title:'Feature Correlations',desc:'Heatmap · top features by abs correlation with target'},
+    {key:'shap_png',title:'SHAP Feature Importance',desc:'SHAP summary · which features drive predictions'},
+    {key:'predictions_png',title:'Actual vs Predicted',desc:'Scatter plot · test set performance'},
+    {key:'residuals_png',title:'Residuals',desc:'Residual distribution · model error analysis'},
     {key:'experiment_timeline_png',title:'Experiment Timeline',desc:'Progress + train/test + models used'},
     {key:'train_test_png',title:'Train vs Test',desc:'Overfitting analysis per experiment'},
     {key:'model_comparison_png',title:'Model Comparison',desc:'Side-by-side model performance'},
