@@ -1,64 +1,23 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const http = require('http');
 const https = require('https');
-const dns = require('dns');
 const fs = require('fs');
 const path = require('path');
 
 app.disableHardwareAcceleration();
 
-const BACKEND = 'yc-able.com';
+// Root yc-able.com has no A record — www CNAME → elqdcfzi.up.railway.app
+const BACKEND = 'www.yc-able.com';
 let localPort = 0;
 let mainWindow;
-let backendIP = null; // resolved via public DNS
-
-// Resolve backend IP using public DNS (8.8.8.8 / 1.1.1.1)
-// bypasses broken system DNS or corporate DNS filtering
-function resolveBackend() {
-  const resolver = new dns.Resolver();
-  resolver.setServers(['8.8.8.8', '1.1.1.1', '9.9.9.9']);
-  resolver.resolve4(BACKEND, (err, addrs) => {
-    if (!err && addrs.length) {
-      backendIP = addrs[0];
-      console.log(`[dns] ${BACKEND} → ${backendIP}`);
-    } else {
-      console.warn(`[dns] custom resolver failed (${err?.message}), trying DoH`);
-      resolveDOH();
-    }
-  });
-}
-
-// DNS-over-HTTPS fallback — connects to 1.1.1.1 by IP, no DNS needed
-function resolveDOH() {
-  const req = https.get(
-    { hostname: '1.1.1.1', path: `/dns-query?name=${BACKEND}&type=A`, port: 443,
-      headers: { accept: 'application/dns-json' } },
-    (res) => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(d);
-          const a = json.Answer?.find(r => r.type === 1);
-          if (a) { backendIP = a.data; console.log(`[doh] ${BACKEND} → ${backendIP}`); }
-          else console.error('[doh] no A record found');
-        } catch (e) { console.error('[doh] parse error', e.message); }
-      });
-    }
-  );
-  req.on('error', e => console.error('[doh] error', e.message));
-  req.end();
-}
 
 function proxyRequest(req, res) {
-  const target = backendIP || BACKEND;
   const options = {
-    hostname: target,
+    hostname: BACKEND,
     port: 443,
     path: req.url,
     method: req.method,
     headers: { ...req.headers, host: BACKEND, origin: `https://${BACKEND}`, referer: `https://${BACKEND}/` },
-    servername: BACKEND, // TLS SNI — required when connecting via IP
   };
   delete options.headers['accept-encoding'];
 
@@ -93,9 +52,8 @@ function startServer(callback) {
       const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', png: 'image/png' };
       let content = data;
       if (ext === 'html') {
-        // Rewrite api-base to local proxy so all API calls go through Node.js
         content = data.toString('utf-8')
-          .replace(/content="https:\/\/yc-able\.com"/g, `content="http://127.0.0.1:${localPort}"`);
+          .replace(/content="https:\/\/(?:www\.)?yc-able\.com"/g, `content="http://127.0.0.1:${localPort}"`);
       }
       res.writeHead(200, { 'Content-Type': (types[ext] || 'text/plain') + '; charset=utf-8' });
       res.end(content);
@@ -104,7 +62,7 @@ function startServer(callback) {
 
   server.listen(0, '127.0.0.1', () => {
     localPort = server.address().port;
-    console.log(`[server] http://127.0.0.1:${localPort}`);
+    console.log(`[server] http://127.0.0.1:${localPort} → proxying to https://${BACKEND}`);
     callback(localPort);
   });
 }
@@ -161,7 +119,6 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
-  resolveBackend();
   buildMenu();
   startServer((port) => { createWindow(port); });
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(localPort); });

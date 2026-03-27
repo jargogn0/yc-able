@@ -366,7 +366,7 @@ def serve_app_page():
 # ── DIRECT DOWNLOADS ──────────────────────────────────────────
 import io, zipfile, stat
 
-_APP_URL = "https://yc-able.com/app"
+_APP_URL = "https://www.yc-able.com/app"
 
 _INFO_PLIST = """\
 <?xml version="1.0" encoding="UTF-8"?>
