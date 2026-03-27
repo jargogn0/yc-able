@@ -989,28 +989,44 @@ function startTrial(){
 // ── AUTH ─────────────────────────────────────────────────────
 function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
 
+/** Decode JWT payload client-side — no server roundtrip, no signature check needed for UI.
+ *  Server still validates sig on every API call. Returns null if expired or malformed. */
+function _decodeJwt(token){
+  try{
+    const parts=token.split('.');
+    if(parts.length!==3)return null;
+    const pad=s=>s.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(s.length/4)*4,'=');
+    const payload=JSON.parse(atob(pad(parts[1])));
+    // Treat as expired if less than 60 seconds remain (clock skew buffer)
+    if(payload.exp&&payload.exp<(Date.now()/1000)+60)return null;
+    return payload;
+  }catch(e){return null;}
+}
+
 async function initAuth(){
   if(_authToken){
-    try{
-      const r=await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
-      if(r.ok){
-        _authUser=await r.json();
-        hideAuthModal();onAuthSuccess();return;
-      }
-      if(r.status===401){
-        // Token invalid — if user has an API key, let them continue without forcing re-login
-        const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
-        if(hasKey){
-          _authToken='';localStorage.removeItem('19labs_auth_token');
-          _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+    // Decode JWT locally — survives server restarts, zero latency
+    const payload=_decodeJwt(_authToken);
+    if(payload){
+      _authUser={id:payload.sub,email:payload.email||'',name:payload.name||''};
+      hideAuthModal();onAuthSuccess();
+      // Silently refresh user info from server in background (non-blocking)
+      fetch(`${BASE}/auth/me`,{headers:_authHeader()}).then(r=>{
+        if(r.ok)r.json().then(u=>{_authUser=u;});
+        else if(r.status===401){
+          // Token rejected by server — issue fresh JWT next time user hits an API
+          // Don't log them out — they're still locally identified
         }
-        _authToken='';localStorage.removeItem('19labs_auth_token');
-      } else {
-        _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
-      }
-    }catch(e){
-      _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+      }).catch(()=>{});
+      return;
     }
+    // Token expired — clear it
+    _authToken='';localStorage.removeItem('19labs_auth_token');
+  }
+  // Has API key but no account token — continue in key-only mode
+  const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
+  if(hasKey){
+    _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
   }
   // Already in trial mode with slots left — stay in app
   if(_isTrialMode&&_trialRemaining()>0){

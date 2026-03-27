@@ -85,7 +85,7 @@ _JWT_SECRET = _derive_jwt_secret()
 
 def _make_jwt(user_id: str, email: str, name: str) -> str:
     h = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b'=').decode()
-    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 30*24*3600}).encode()).rstrip(b'=').decode()
+    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 365*24*3600}).encode()).rstrip(b'=').decode()
     sig = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
     return f"{h}.{p}.{sig}"
 
