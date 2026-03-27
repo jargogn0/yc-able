@@ -1,10 +1,12 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
+// Must be called before app is ready
+app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
 app.disableHardwareAcceleration();
 
 const APP_URL = process.env.LABS_URL || 'https://yc-able.com/app';
-const DEBUG = process.env.LABS_DEBUG === '1';
 
 let mainWindow;
 
@@ -17,7 +19,7 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#09090b',
-    show: true,   // show immediately
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -28,52 +30,33 @@ function createWindow() {
     },
   });
 
-  // Splash overlay
-  const splash = new BrowserWindow({
-    width: 380,
-    height: 280,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    resizable: false,
-  });
-  splash.loadFile(path.join(__dirname, 'splash.html'));
-  splash.center();
-
-  let splashClosed = false;
-  function closeSplash() {
-    if (splashClosed) return;
-    splashClosed = true;
-    try { if (!splash.isDestroyed()) splash.destroy(); } catch (_) {}
+  let shown = false;
+  function showWindow() {
+    if (shown) return;
+    shown = true;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+    }
   }
 
   mainWindow.loadURL(APP_URL);
 
-  // Log all console messages from the renderer for debugging
   mainWindow.webContents.on('console-message', (e, level, msg, line, src) => {
-    if (level >= 2) console.error(`[renderer] ${msg} (${src}:${line})`);
+    console.log(`[renderer:${level}] ${msg} (${src}:${line})`);
   });
 
-  // did-finish-load fires when HTML is parsed; give JS 3s to run and paint
+  // did-finish-load = HTML parsed; wait 2s for JS to render app
   mainWindow.webContents.on('did-finish-load', () => {
-    setTimeout(closeSplash, 3000);
+    setTimeout(showWindow, 2000);
   });
 
-  // Safety net — close splash after 15s no matter what
-  setTimeout(closeSplash, 15000);
+  // Safety: show after 12s regardless
+  setTimeout(showWindow, 12000);
 
-  // Retry on network failure
-  let retries = 0;
-  mainWindow.webContents.on('did-fail-load', (e, code) => {
+  mainWindow.webContents.on('did-fail-load', (e, code, desc) => {
     if (code === -3) return;
-    retries++;
-    if (retries <= 3) {
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(APP_URL);
-      }, retries * 2000);
-    } else {
-      closeSplash();
-    }
+    console.error(`[main] load failed: ${code} ${desc}`);
+    showWindow(); // show even on failure so user sees error
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
