@@ -1,10 +1,10 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
-// Must be called before app is ready
 app.disableHardwareAcceleration();
 
 const APP_URL = process.env.LABS_URL || 'https://yc-able.com/app';
+const DEBUG = process.env.LABS_DEBUG === '1';
 
 let mainWindow;
 
@@ -17,13 +17,14 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#09090b',
-    show: false,   // hidden until ready-to-show fires (after first real paint)
+    show: true,   // show immediately
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
+      backgroundThrottling: false,
     },
   });
 
@@ -39,40 +40,39 @@ function createWindow() {
   splash.loadFile(path.join(__dirname, 'splash.html'));
   splash.center();
 
+  let splashClosed = false;
   function closeSplash() {
-    try { if (splash && !splash.isDestroyed()) splash.destroy(); } catch (_) {}
+    if (splashClosed) return;
+    splashClosed = true;
+    try { if (!splash.isDestroyed()) splash.destroy(); } catch (_) {}
   }
-
-  function showMain() {
-    closeSplash();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  }
-
-  // ready-to-show fires after the FIRST PAINT — content is actually visible
-  mainWindow.once('ready-to-show', () => {
-    showMain();
-  });
-
-  // Safety net: always show after 12s even if ready-to-show never fires
-  const safetyTimer = setTimeout(showMain, 12000);
-  mainWindow.once('ready-to-show', () => clearTimeout(safetyTimer));
 
   mainWindow.loadURL(APP_URL);
+
+  // Log all console messages from the renderer for debugging
+  mainWindow.webContents.on('console-message', (e, level, msg, line, src) => {
+    if (level >= 2) console.error(`[renderer] ${msg} (${src}:${line})`);
+  });
+
+  // did-finish-load fires when HTML is parsed; give JS 3s to run and paint
+  mainWindow.webContents.on('did-finish-load', () => {
+    setTimeout(closeSplash, 3000);
+  });
+
+  // Safety net — close splash after 15s no matter what
+  setTimeout(closeSplash, 15000);
 
   // Retry on network failure
   let retries = 0;
   mainWindow.webContents.on('did-fail-load', (e, code) => {
-    if (code === -3) return; // navigation aborted — not an error
+    if (code === -3) return;
     retries++;
     if (retries <= 3) {
       setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(APP_URL);
       }, retries * 2000);
     } else {
-      showMain(); // show the (blank) window so user isn't stuck on splash
+      closeSplash();
     }
   });
 
@@ -81,10 +81,7 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  mainWindow.on('closed', () => {
-    clearTimeout(safetyTimer);
-    mainWindow = null;
-  });
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 function buildMenu() {
