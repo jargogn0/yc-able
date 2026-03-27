@@ -200,7 +200,7 @@ _active_openai_model  = OPENAI_MODEL
 # Bedrock model ID — can be overridden via BEDROCK_MODEL env var.
 # Default is claude-3-5-sonnet which is widely available across regions.
 # Cross-region inference prefix format: us.anthropic.claude-... (for us-east-1/us-west-2)
-BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 EXEC_TIMEOUT = 180          # hard wall-clock kill per experiment
 TIME_BUDGET  = 120          # target training budget (seconds) injected into scripts
 STAGNATION_LIMIT = 3

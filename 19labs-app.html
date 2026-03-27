@@ -923,10 +923,13 @@ const P = {
     {id:'o4-mini',         label:'o4-mini'},
   ]},
   bedrock: {label:'Bedrock', kl:'AWS Access Key ID',  ph:'AKIA...', models:[
-    {id:'anthropic.claude-3-5-sonnet-20241022-v2:0', label:'Claude 3.5 Sonnet v2 (default)'},
-    {id:'anthropic.claude-3-5-haiku-20241022-v1:0',  label:'Claude 3.5 Haiku'},
-    {id:'anthropic.claude-3-opus-20240229-v1:0',     label:'Claude 3 Opus'},
-    {id:'us.anthropic.claude-sonnet-4-5-20251001-v1:0', label:'Claude Sonnet 4.5 (us)'},
+    {id:'us.anthropic.claude-3-5-sonnet-20241022-v2:0', label:'Claude 3.5 Sonnet v2 (default)'},
+    {id:'us.anthropic.claude-3-5-haiku-20241022-v1:0',  label:'Claude 3.5 Haiku'},
+    {id:'us.anthropic.claude-3-opus-20240229-v1:0',     label:'Claude 3 Opus'},
+    {id:'us.anthropic.claude-sonnet-4-5-20251001-v1:0', label:'Claude Sonnet 4.5'},
+    {id:'us.anthropic.claude-3-7-sonnet-20250219-v1:0', label:'Claude 3.7 Sonnet'},
+    {id:'eu.anthropic.claude-3-5-sonnet-20241022-v2:0', label:'Claude 3.5 Sonnet v2 (eu)'},
+    {id:'eu.anthropic.claude-3-5-haiku-20241022-v1:0',  label:'Claude 3.5 Haiku (eu)'},
   ]},
 };
 function gk(p){return localStorage.getItem(`19labs_api_key_${p}`)||localStorage.getItem('19labs_api_key_last')||localStorage.getItem('19labs_api_key_claude')||''}
