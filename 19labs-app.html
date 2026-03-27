@@ -648,7 +648,7 @@ input[type=file]{display:none}
         <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('auth-password').focus()">
       </div>
       <div class="auth-field">
-        <label>Password</label>
+        <label style="display:flex;justify-content:space-between;align-items:center">Password <a href="#" id="forgot-pw-link" style="font-size:11px;color:#818cf8;font-weight:400;text-decoration:none" onclick="handleForgotPassword();return false">Forgot password?</a></label>
         <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
       </div>
       <div class="auth-err" id="auth-err-account"></div>
@@ -998,6 +998,12 @@ async function initAuth(){
         hideAuthModal();onAuthSuccess();return;
       }
       if(r.status===401){
+        // Token invalid — if user has an API key, let them continue without forcing re-login
+        const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
+        if(hasKey){
+          _authToken='';localStorage.removeItem('19labs_auth_token');
+          _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+        }
         _authToken='';localStorage.removeItem('19labs_auth_token');
       } else {
         _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
@@ -1018,6 +1024,17 @@ function showAuthModal(){
   document.getElementById('auth-overlay').style.display='flex';
   showAuthStage('providers');
   switchAuthTab('signin');
+  // Auto-fill email from last session
+  const savedEmail=localStorage.getItem('19labs_last_email');
+  if(savedEmail){
+    const emailEl=document.getElementById('auth-email');
+    if(emailEl&&!emailEl.value)emailEl.value=savedEmail;
+    // Focus password if email already filled
+    setTimeout(()=>{
+      const pwEl=document.getElementById('auth-password');
+      if(pwEl)pwEl.focus();
+    },100);
+  }
   // Handle OAuth redirect errors
   const params=new URLSearchParams(window.location.search);
   const authErr=params.get('auth_error');
@@ -1060,22 +1077,47 @@ async function doAuth(){
   const btn=document.getElementById('auth-btn');
   const err=document.getElementById('auth-err-account');
   err.textContent='';
-  if(!email||!password){err.textContent='Please fill in all fields.';return;}
-  if(tab==='signup'&&password.length<6){err.textContent='Password must be at least 6 characters.';return;}
-  btn.disabled=true;btn.textContent='…';
+  // Field validation
+  if(!email){err.textContent='Please enter your email address.';document.getElementById('auth-email').focus();return;}
+  if(!email.includes('@')){err.textContent='Please enter a valid email address.';document.getElementById('auth-email').focus();return;}
+  if(!password){err.textContent='Please enter your password.';document.getElementById('auth-password').focus();return;}
+  if(tab==='signup'&&password.length<6){err.textContent='Password must be at least 6 characters.';document.getElementById('auth-password').focus();return;}
+  const origText=btn.textContent;
+  btn.disabled=true;btn.textContent=tab==='signin'?'Signing in…':'Creating account…';
   try{
     const url=tab==='signin'?`${BASE}/auth/login`:`${BASE}/auth/signup`;
     const body=tab==='signin'?{email,password}:{email,password,name};
     const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await r.json();
-    if(!r.ok){err.textContent=data.detail||'Something went wrong.';btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';return;}
+    if(!r.ok){
+      let msg=data.detail||'Something went wrong. Please try again.';
+      // If signup fails because account exists, offer to switch to sign-in
+      if(r.status===409){
+        err.innerHTML=msg+' <a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signin\');return false">Sign in instead →</a>';
+      } else if(r.status===401){
+        err.textContent='Incorrect email or password. Please check and try again.';
+      } else {
+        err.textContent=msg;
+      }
+      btn.disabled=false;btn.textContent=origText;return;
+    }
     _authToken=data.token;_authUser=data.user;
     localStorage.setItem('19labs_auth_token',_authToken);
+    localStorage.setItem('19labs_last_email',email);
     _isTrialMode=false;
     hideAuthModal();onAuthSuccess();
-    if(tab==='signup') setTimeout(()=>openKeys(),600);
-    else loadSavedKeys();
-  }catch(e){err.textContent='Network error. Try again.';btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';}
+    if(tab==='signup'){
+      toast(`Welcome! Add your API key to get started.`,'ok');
+      setTimeout(()=>openKeys(),600);
+    } else {
+      loadSavedKeys();
+    }
+  }catch(e){err.textContent='Network error — please check your connection and try again.';btn.disabled=false;btn.textContent=origText;}
+}
+
+function handleForgotPassword(){
+  const err=document.getElementById('auth-err-account');
+  err.innerHTML='To reset your password, contact <a href="mailto:support@19labs.ai" style="color:var(--accent)">support@19labs.ai</a>';
 }
 
 async function doProviderLogin(){

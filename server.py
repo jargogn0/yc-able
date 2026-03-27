@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DB_PATH = Path(os.environ.get("NINETEENLABS_DB", Path(__file__).parent / "19labs.db"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists before SQLite opens it
 
 def _init_db():
     conn = sqlite3.connect(str(DB_PATH))
@@ -70,10 +71,14 @@ def _init_db():
 # Railway container restarts/redeploys without any extra configuration.
 # Priority: explicit JWT_SECRET → ANTHROPIC_API_KEY → ACCESS_PASSWORD → random (dev only)
 def _derive_jwt_secret() -> str:
-    for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "ACCESS_PASSWORD"):
+    import sys as _sys
+    for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "OPENAI_API_KEY", "ACCESS_PASSWORD"):
         val = os.environ.get(var, "").strip()
         if val:
-            return hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
+            secret = hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
+            print(f"[auth] JWT secret derived from {var}", file=_sys.stderr, flush=True)
+            return secret
+    print("[auth] WARNING: no env var found for JWT secret — using random (tokens will be invalidated on restart)", file=_sys.stderr, flush=True)
     return _secrets.token_hex(32)  # fallback: only for local dev with no env vars
 
 _JWT_SECRET = _derive_jwt_secret()
@@ -537,13 +542,22 @@ async def auth_signup(request: Request):
         raise HTTPException(400, "Password must be at least 6 characters")
     user_id = str(uuid.uuid4())
     conn = sqlite3.connect(str(DB_PATH))
+    # Check if account already exists
+    existing = conn.execute("SELECT id, email, name, password_hash FROM users WHERE email=?", (email,)).fetchone()
+    if existing:
+        conn.close()
+        if _verify_pw(password, existing[3]):
+            # Correct password — log them in silently (idempotent signup)
+            token = _make_jwt(existing[0], existing[1], existing[2])
+            return {"token": token, "user": {"id": existing[0], "email": existing[1], "name": existing[2]}}
+        raise HTTPException(409, "An account with this email already exists. Please sign in with your existing password.")
     try:
         conn.execute("INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
                      (user_id, email, name, _hash_pw(password), time.time()))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
-        raise HTTPException(409, "Email already registered")
+        raise HTTPException(409, "An account with this email already exists. Please sign in with your existing password.")
     conn.close()
     token = _make_jwt(user_id, email, name)
     return {"token": token, "user": {"id": user_id, "email": email, "name": name}}
