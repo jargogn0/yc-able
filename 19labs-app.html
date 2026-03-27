@@ -1663,22 +1663,58 @@ async function launchRun(){
 
     let es;
     activeAbort=new AbortController();
-    await new Promise((resolve)=>{
-      es=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
-      S._es=es;
-      es.onmessage=e=>{
-        const d=JSON.parse(e.data);
-        if(d.msg==='__DONE__'){es.close();resolve();return}
-        S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
-      };
-      es.onerror=()=>{es.close();
-        // Silently fall back to polling — stream drops are normal on proxied deployments
-        const poll=setInterval(async()=>{try{const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);if(!pr.ok)return;const ps=await pr.json();
-          // Flush any logs we missed while stream was down
-          if(ps.logs){ps.logs.slice(S.logs.length).forEach(l=>{S.logs.push(`[${l.tag}] ${l.msg}`);updLogs();procMsg(l);});}
-          if(ps.status==='done'||ps.status==='error'){clearInterval(poll);resolve();}}catch(_){}},2000);
-      };
-      activeAbort.signal.addEventListener('abort',()=>{es.close();resolve()});
+    await new Promise((resolve,reject)=>{
+      let _resolved=false;
+      function done(err){if(_resolved)return;_resolved=true;if(es){try{es.close()}catch(_){}}err?reject(err):resolve();}
+
+      function startPolling(){
+        const deadline=Date.now()+20*60*1000; // 20-min hard limit
+        const poll=setInterval(async()=>{
+          try{
+            const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);
+            if(pr.status===404){clearInterval(poll);done(new Error('Run lost — server may have restarted. Please try again.'));return;}
+            if(!pr.ok)return;
+            const ps=await pr.json();
+            if(ps.status==='done'||ps.status==='error'){clearInterval(poll);done();return;}
+            if(Date.now()>deadline){clearInterval(poll);done(new Error('Run timed out after 20 minutes.'));return;}
+          }catch(_){}
+        },3000);
+        activeAbort.signal.addEventListener('abort',()=>{clearInterval(poll);done();});
+      }
+
+      function connect(){
+        es=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
+        S._es=es;
+        let gotMessage=false;
+        es.onmessage=e=>{
+          gotMessage=true;
+          const d=JSON.parse(e.data);
+          if(d.msg==='__DONE__'){done();return;}
+          S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
+        };
+        es.onerror=()=>{
+          es.close();
+          if(gotMessage){
+            // Had real data — just switch to polling
+            startPolling();
+          } else {
+            // Never got a message — retry SSE once after 1.5s, then poll
+            setTimeout(()=>{
+              if(_resolved)return;
+              const es2=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
+              S._es=es2;
+              es2.onmessage=e=>{
+                const d=JSON.parse(e.data);
+                if(d.msg==='__DONE__'){es2.close();done();return;}
+                S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
+              };
+              es2.onerror=()=>{es2.close();startPolling();};
+            },1500);
+          }
+        };
+        activeAbort.signal.addEventListener('abort',()=>{es.close();done();});
+      }
+      connect();
     });
 
     setProg(92);
