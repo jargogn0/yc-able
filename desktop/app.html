@@ -1053,6 +1053,11 @@ function _decodeJwt(token){
 }
 
 async function initAuth(){
+  // Desktop app: skip login entirely — go straight into the app
+  if(window.desktop?.isDesktop){
+    if(!_authUser) _authUser={id:'desktop',email:'',name:'Desktop User'};
+    hideAuthModal();onAuthSuccess();return;
+  }
   if(_authToken){
     // Decode JWT locally — survives server restarts, zero latency
     const payload=_decodeJwt(_authToken);
