@@ -57,28 +57,21 @@ MODULE_TO_PIP = {
 
 _installed_session: set = set()
 
-# Packages that need extra install time (large downloads) but ARE supported.
-_HEAVY_PACKAGES = {
-    "tensorflow", "tensorflow-cpu", "keras", "torch", "transformers", "datasets",
-}
+# Import aliases that are not real pip package names
+_NOT_PIP_PACKAGES = {"tf", "np", "pd", "plt", "sns", "sp", "sm"}
 
-# Packages that are truly unsupported — skip entirely and redirect to alternatives.
-_SKIP_PACKAGES = {
-    "tf",          # import alias, not a real pip package
-    "torchvision", "torchaudio",  # need torch first, too large
-    "jax", "jaxlib",              # not available in this environment
-    "diffusers",                  # too large
-    "cv2", "opencv-python", "opencv-python-headless",  # large, install as headless
-    "sentence_transformers", "sentence-transformers",   # too large
-}
-
-# Redirect some pip names
+# Redirect import names → correct pip package names
 _PACKAGE_REDIRECTS = {
-    "cv2": "opencv-python-headless",
+    "cv2":                    "opencv-python-headless",
+    "sklearn":                "scikit-learn",
+    "sentence_transformers":  "sentence-transformers",
+    "PIL":                    "Pillow",
+    "bs4":                    "beautifulsoup4",
+    "yaml":                   "pyyaml",
+    "dotenv":                 "python-dotenv",
 }
 
-_INSTALL_TIMEOUT = 120        # seconds for normal packages
-_HEAVY_INSTALL_TIMEOUT = 480  # seconds for tensorflow/torch (big downloads)
+_INSTALL_TIMEOUT = 480  # 8 minutes — enough for any package including torch/tensorflow
 
 def auto_install_packages(code: str, log=None) -> list:
     """Parse imports from generated code and pip-install any missing packages."""
@@ -89,20 +82,19 @@ def auto_install_packages(code: str, log=None) -> list:
         pip_name = MODULE_TO_PIP.get(mod, mod)
         if pip_name in _installed_session:
             continue
-        # Skip standard library and internal modules
+        # Skip standard library modules
         if mod in {"json", "os", "sys", "re", "time", "math", "random", "pathlib",
                    "collections", "itertools", "functools", "typing", "abc", "io",
                    "csv", "datetime", "warnings", "copy", "string", "struct",
-                   "hashlib", "base64", "urllib", "http", "threading", "subprocess"}:
+                   "hashlib", "base64", "urllib", "http", "threading", "subprocess",
+                   "gc", "traceback", "inspect", "contextlib", "dataclasses",
+                   "enum", "logging", "argparse", "pickle", "shelve", "sqlite3"}:
             continue
-        # Skip unsupported packages entirely
-        if pip_name in _SKIP_PACKAGES:
-            if log:
-                log.engine(f"Skipping {pip_name} (not supported in this environment)")
+        # Skip bare import aliases (not real packages)
+        if pip_name in _NOT_PIP_PACKAGES:
             continue
-        # Redirect some packages to better alternatives
-        if pip_name in _PACKAGE_REDIRECTS:
-            pip_name = _PACKAGE_REDIRECTS[pip_name]
+        # Redirect to correct pip name
+        pip_name = _PACKAGE_REDIRECTS.get(pip_name, pip_name)
         try:
             importlib.import_module(mod)
         except ImportError:
@@ -113,14 +105,11 @@ def auto_install_packages(code: str, log=None) -> list:
     installed = []
     for pkg in to_install:
         try:
-            is_heavy = any(h in pkg for h in _HEAVY_PACKAGES)
-            timeout = _HEAVY_INSTALL_TIMEOUT if is_heavy else _INSTALL_TIMEOUT
             if log:
-                msg = f"Auto-installing {pkg} (this may take a moment)..." if is_heavy else f"Auto-installing {pkg}..."
-                log.engine(msg)
+                log.engine(f"Auto-installing {pkg}...")
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", pkg, "-q", "--no-warn-script-location"],
-                timeout=timeout, capture_output=True, text=True
+                timeout=_INSTALL_TIMEOUT, capture_output=True, text=True
             )
             if result.returncode == 0:
                 _installed_session.add(pkg)
@@ -1028,8 +1017,8 @@ def write_program_md(profile, obj, history, insights, domain_analysis=""):
 ENVIRONMENT:
 - Auto-install is available. Any pip-installable package can be imported.
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
-- Auto-installable on demand: tensorflow, torch, transformers, datasets, prophet, hdbscan, umap-learn, Pillow, and more.
-- NOT available: jax, torchvision, torchaudio, sentence-transformers, diffusers, opencv.
+- Any missing package is auto-installed on demand via pip. Use whatever you need.
+
 - Use whatever is genuinely best for the task. Do NOT artificially limit yourself.
 
 EXPERT DOMAIN ANALYSIS (written by a senior data scientist — treat as ground truth):
@@ -1095,8 +1084,8 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
 ENVIRONMENT:
 - Auto-install available for any pip-installable package.
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
-- Auto-installable: tensorflow, torch, transformers, datasets, prophet, hdbscan, umap-learn, Pillow, and more.
-- NOT available: jax, torchvision, torchaudio, sentence-transformers, diffusers, opencv.
+- Any missing package is auto-installed on demand via pip. Use whatever you need.
+
 - CRITICAL: Use what genuinely fits. For NLP → transformers (HuggingFace). For time series → prophet/statsmodels.
   For imbalanced → SMOTE+class weights. For tabular → gradient boosting + optuna. For images → torch/tensorflow.
 
