@@ -1,7 +1,7 @@
 {
   "name": "19labs",
   "version": "1.0.0",
-  "description": "19Labs — The Cursor for Data Science",
+  "description": "19Labs - The Cursor for Data Science",
   "main": "main.js",
   "author": "19Labs",
   "license": "MIT",
@@ -38,7 +38,7 @@
     }
   },
   "devDependencies": {
-    "electron": "29.4.6",
-    "electron-builder": "24.13.3"
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
   }
 }
