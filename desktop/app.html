@@ -135,6 +135,51 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 @media(max-width:1200px){.layout{grid-template-columns:220px minmax(0,1fr) 340px}}
 @media(max-width:900px){.layout{grid-template-columns:1fr;grid-template-rows:auto 1fr auto}.side{display:none}.chat{max-height:300px;border-left:none;border-top:1px solid var(--border)}}
 
+/* ── MOBILE NAV (≤767px) ── */
+.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:54px;background:var(--surface);border-top:1px solid var(--border);z-index:600;flex-direction:row;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.mn-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:600;font-family:var(--sans);letter-spacing:.3px;transition:color var(--t);padding:6px 0;-webkit-tap-highlight-color:transparent}
+.mn-tab svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7}
+.mn-tab.active{color:var(--accent)}
+.mn-tab .mn-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);position:absolute;top:6px;right:calc(50% - 14px);display:none}
+.mn-tab.has-activity .mn-dot{display:block}
+
+@media(max-width:767px){
+  body{overflow:hidden}
+  .mob-nav{display:flex}
+
+  /* Push layout above the bottom nav */
+  body>:not(.mob-nav){--mob-nav-h:54px}
+  .layout{grid-template-columns:1fr!important;grid-template-rows:1fr!important;padding-bottom:54px}
+
+  /* Each panel takes full space; only one shown at a time */
+  .side{display:flex!important;position:absolute;inset:0;top:0;z-index:1;transform:translateX(-100%);transition:transform .22s ease;height:100%;border:none}
+  .ws{position:absolute;inset:0;top:0;z-index:1;transform:translateX(100%);transition:transform .22s ease}
+  .chat{position:absolute;inset:0;top:0;z-index:1;max-height:none!important;border:none!important;transform:translateX(100%);transition:transform .22s ease}
+  .side.mob-active,.ws.mob-active,.chat.mob-active{transform:translateX(0)!important}
+
+  /* Topbar compact */
+  .topbar-tag,.topbar-sep{display:none}
+  .topbar{padding:0 12px;gap:8px}
+  .badge{font-size:9px;padding:3px 7px}
+  .tbtn{font-size:11px;padding:4px 9px}
+
+  /* Workspace tabs: scrollable */
+  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:0;padding:0 4px}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex-shrink:0;padding:5px 10px;font-size:11px}
+
+  /* Auth modal: full-width on small screens, scrollable */
+  .auth-overlay{align-items:flex-end;padding:0}
+  .auth-card{border-radius:20px 20px 0 0;max-width:100%;width:100%;max-height:92vh;overflow-y:auto;padding:24px 20px 32px}
+
+  /* Chat composer: bigger tap target */
+  .comp-send{width:44px;height:44px}
+  .comp-in{font-size:16px}/* prevent iOS zoom on focus */
+
+  /* Prevent body scroll bleed */
+  .layout{overflow:hidden;position:relative}
+}
+
 /* ── SIDEBAR ── */
 .side{display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--surface);overflow:hidden}
 .side-h{padding:10px 14px 8px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:space-between}
@@ -473,6 +518,7 @@ input[type=file]{display:none}
 
 /* ── STATUS BAR ── */
 .statusbar{height:24px;display:flex;align-items:center;padding:0 12px;gap:16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;font-size:10px;font-family:var(--mono);color:var(--text-3);overflow:hidden}
+@media(max-width:767px){.statusbar{display:none}}
 .sb-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0}
 .sb-dot.off{background:var(--red)}
 .sb-item{display:flex;align-items:center;gap:5px;white-space:nowrap}
@@ -904,6 +950,8 @@ input[type=file]{display:none}
     </div>
   </div>
 
+  <!-- MOBILE NAV (injected by JS) -->
+
   <!-- CHAT -->
   <div class="chat">
     <div class="chat-h">
@@ -939,6 +987,24 @@ input[type=file]{display:none}
 
 </div>
 
+<!-- MOBILE BOTTOM NAV -->
+<nav class="mob-nav" id="mob-nav" aria-label="Mobile navigation">
+  <button class="mn-tab" data-panel="side" onclick="setMobPanel('side')" aria-label="Files">
+    <svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h18" stroke-linecap="round"/></svg>
+    Files
+    <span class="mn-dot"></span>
+  </button>
+  <button class="mn-tab active" data-panel="ws" onclick="setMobPanel('ws')" aria-label="Workspace">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4" stroke-linecap="round"/></svg>
+    Workspace
+  </button>
+  <button class="mn-tab" data-panel="chat" onclick="setMobPanel('chat')" aria-label="Chat">
+    <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Chat
+    <span class="mn-dot" id="chat-mn-dot"></span>
+  </button>
+</nav>
+
 <!-- STATUS BAR -->
 <div class="statusbar" id="statusbar">
   <div class="sb-item"><div class="sb-dot" id="sb-dot"></div><span id="sb-status">Ready</span></div>
@@ -953,6 +1019,44 @@ input[type=file]{display:none}
 </div>
 
 <script>
+// ═══════════════════════════════════════════
+// MOBILE NAV
+// ═══════════════════════════════════════════
+let _mobPanel = 'ws';
+function setMobPanel(panel){
+  _mobPanel = panel;
+  ['side','ws','chat'].forEach(p=>{
+    const el = document.querySelector('.'+p);
+    if(el) el.classList.toggle('mob-active', p===panel);
+  });
+  document.querySelectorAll('.mn-tab').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.panel===panel);
+  });
+  // If switching to chat, clear the activity dot
+  if(panel==='chat') document.getElementById('chat-mn-dot').style.display='none';
+}
+function _mobChatActivity(){
+  // Show dot on chat tab when there's new message and not on chat panel
+  if(_mobPanel!=='chat' && window.innerWidth<=767){
+    document.getElementById('chat-mn-dot').style.display='block';
+  }
+}
+// Init on load
+function _initMobNav(){
+  if(window.innerWidth<=767) setMobPanel('ws');
+}
+window.addEventListener('DOMContentLoaded', _initMobNav);
+window.addEventListener('resize', ()=>{
+  if(window.innerWidth>767){
+    ['side','ws','chat'].forEach(p=>{
+      const el=document.querySelector('.'+p);
+      if(el) el.classList.remove('mob-active');
+    });
+  } else {
+    setMobPanel(_mobPanel);
+  }
+});
+
 // ═══════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════
@@ -1607,6 +1711,7 @@ function chat(role,text){
   const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
   c.appendChild(e);
   if(atBottom)c.scrollTop=c.scrollHeight;
+  if(role==='ai'||role==='sys') _mobChatActivity();
 }
 function typing(on){
   const ex=document.getElementById('ti');if(ex)ex.remove();
