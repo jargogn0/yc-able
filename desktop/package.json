@@ -5,6 +5,10 @@
   "main": "main.js",
   "author": "19Labs",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jargogn0/yc-able"
+  },
   "scripts": {
     "start": "electron .",
     "build:mac": "electron-builder --mac",

@@ -42,7 +42,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./node_modules/.bin/electron-builder --mac
+          ./node_modules/.bin/electron-builder --mac --publish never
           echo "=== Built artifacts ==="
           ls -lh dist/
 
