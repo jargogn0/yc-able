@@ -24,33 +24,30 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: desktop/package-lock.json
+          # No npm cache — desktop/package-lock.json is not committed
 
       - name: Install dependencies
         working-directory: desktop
         run: npm install
 
-      - name: Set version
+      - name: Determine version
         id: version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${{ github.ref_name }}"
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            VERSION="v${{ inputs.version || '1.0.0' }}"
+            echo "version=v${{ inputs.version || '1.0.0' }}" >> $GITHUB_OUTPUT
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
 
       - name: Build macOS DMG (Intel + Apple Silicon)
         working-directory: desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run build:mac
-
-      - name: List built artifacts
-        run: ls -lh desktop/dist/
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run build:mac
+          echo "Build complete. Artifacts:"
+          ls -lh dist/
 
       - name: Create GitHub Release and upload DMG
         uses: softprops/action-gh-release@v2
@@ -61,21 +58,17 @@ jobs:
             ## 19Labs Desktop for macOS
 
             ### Download
-            | Build | Download |
-            |-------|----------|
+            | Mac Type | File |
+            |----------|------|
             | Apple Silicon (M1/M2/M3) | `19Labs-*-arm64.dmg` |
-            | Intel Mac | `19Labs-*.dmg` (no arm64 suffix) |
+            | Intel Mac | `19Labs-*.dmg` (no `-arm64` suffix) |
 
-            ### Install
-            1. Download the right DMG for your Mac (check  → About This Mac → Chip)
-            2. Open the DMG and drag **19Labs** to your Applications folder
-            3. **First launch only:** right-click the app → **Open** → **Open** again
-               *(bypasses macOS Gatekeeper for unsigned apps)*
+            **How to install:**
+            1. Download the right DMG for your Mac ( → About This Mac → Chip)
+            2. Open the DMG and drag **19Labs** into Applications
+            3. First launch: right-click → **Open** → **Open** to bypass Gatekeeper
 
-            ### What's included
-            - Native macOS app — no browser tabs, lives in your Dock
-            - Seamless sign-in with your 19Labs account
-            - Full autonomous ML training powered by yc-able.com
+            **What you get:** Native macOS app window, no browser tabs, full ML training via yc-able.com.
           draft: false
           prerelease: false
           files: |
