@@ -19,8 +19,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = Path(os.environ.get("NINETEENLABS_DB", Path(__file__).parent / "19labs.db"))
+# DB path: explicit env var → Railway /data volume (persistent) → local fallback
+def _resolve_db_path() -> Path:
+    if os.environ.get("NINETEENLABS_DB"):
+        return Path(os.environ["NINETEENLABS_DB"])
+    # Railway mounts persistent volumes at /data — use it automatically if present
+    railway_data = Path("/data")
+    if railway_data.exists() and railway_data.is_dir():
+        return railway_data / "19labs.db"
+    return Path(__file__).parent / "19labs.db"
+
+DB_PATH = _resolve_db_path()
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists before SQLite opens it
+print(f"[db] Using database at {DB_PATH}", flush=True)
 
 def _init_db():
     conn = sqlite3.connect(str(DB_PATH))
