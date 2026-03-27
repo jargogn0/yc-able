@@ -30,33 +30,28 @@ function createWindow() {
     },
   });
 
-  let shown = false;
-  function showWindow() {
-    if (shown) return;
-    shown = true;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-    }
-  }
+  // Load local loader first — guaranteed to render, proves Electron WebKit works
+  mainWindow.loadFile(path.join(__dirname, 'loader.html'));
 
-  mainWindow.loadURL(APP_URL);
+  // Once the local page is ready, show the window then navigate to the real app
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    // Short delay so the loading screen is visible, then navigate
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(APP_URL);
+      }
+    }, 600);
+  });
 
   mainWindow.webContents.on('console-message', (e, level, msg, line, src) => {
     console.log(`[renderer:${level}] ${msg} (${src}:${line})`);
   });
 
-  // did-finish-load = HTML parsed; wait 2s for JS to render app
-  mainWindow.webContents.on('did-finish-load', () => {
-    setTimeout(showWindow, 2000);
-  });
-
-  // Safety: show after 12s regardless
-  setTimeout(showWindow, 12000);
-
-  mainWindow.webContents.on('did-fail-load', (e, code, desc) => {
-    if (code === -3) return;
-    console.error(`[main] load failed: ${code} ${desc}`);
-    showWindow(); // show even on failure so user sees error
+  // Log any load failures to help diagnose the black screen
+  mainWindow.webContents.on('did-fail-load', (e, code, desc, url) => {
+    if (code === -3) return; // navigation aborted (e.g. redirect)
+    console.error(`[main] LOAD FAILED: code=${code} desc=${desc} url=${url}`);
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
