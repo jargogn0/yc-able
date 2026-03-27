@@ -840,10 +840,19 @@ def normalize_reliability_mode(mode: str | None) -> str:
 
 # ── INFER OBJECTIVE ────────────────────────────────────────────
 def infer_objective(profile, hint="", domain_analysis=""):
-    resp = ask(
-        "You are 19Labs. Given a deep expert domain analysis, produce precise ML objective parameters.",
-        f"""Based on the expert domain analysis below, extract the exact ML objective parameters.
+    _hint_block = (
+        f"\n⚠️  USER INSTRUCTION (HIGHEST PRIORITY — overrides ALL profile inferences):\n"
+        f"The user explicitly said: \"{hint}\"\n"
+        f"You MUST respect this. If they say 'no X', do not use X as target or task.\n"
+        f"If they say 'predict Y' or 'classify Z', use that as the target/task.\n"
+        f"Their words override what the data profile suggests.\n"
+    ) if hint else ""
 
+    resp = ask(
+        "You are 19Labs. Given a deep expert domain analysis, produce precise ML objective parameters. "
+        "When the user gives an explicit instruction, you MUST follow it — it overrides profile inferences.",
+        f"""Based on the expert domain analysis below, extract the exact ML objective parameters.
+{_hint_block}
 EXPERT DOMAIN ANALYSIS:
 {domain_analysis or "(not available — reason from profile)"}
 
@@ -852,7 +861,6 @@ DATASET SUMMARY:
 - Columns: {', '.join(profile['headers'])}
 - Signals: {'; '.join(profile.get('signals', []))}
 - Target candidates: {', '.join(profile['target_candidates'])}
-{"- USER HINT: " + hint if hint else ""}
 
 Reply ONLY in this exact format (no extra text):
 DOMAIN: <specific domain>
@@ -911,10 +919,19 @@ def discover_user_need(csv_path, user_hint="", api_key=None, provider="claude"):
         profile = profile_dataset(csv_path)
     obj = infer_objective(profile, user_hint)
 
-    advice_raw = ask(
-        "You are a product-minded ML research copilot. Help clarify user intent before training.",
-        f"""Given this dataset profile and initial objective inference, propose the best next direction.
+    _hint_directive = (
+        f"\n⚠️  USER INSTRUCTION (HIGHEST PRIORITY — must be reflected in your response):\n"
+        f"The user said: \"{user_hint}\"\n"
+        f"Your recommended_objective, recommended_metric, and first_iteration_plan MUST align with this.\n"
+        f"If they said 'no X', exclude X from all recommendations.\n"
+        f"If they said 'predict/classify/cluster Y', make Y the focus.\n"
+    ) if user_hint else ""
 
+    advice_raw = ask(
+        "You are a product-minded ML research copilot. Help clarify user intent before training. "
+        "When the user gives an explicit instruction, your response MUST honor it above all else.",
+        f"""Given this dataset profile and objective, propose the best next direction.
+{_hint_directive}
 Return STRICT JSON with keys:
 {{
   "recommended_objective": "short objective sentence",
@@ -947,11 +964,7 @@ INFERRED OBJECTIVE:
 - target: {obj['target']}
 - metric: {obj['metric']} ({obj['direction']})
 - domain: {obj['domain']}
-- confidence: {obj['confidence']}
 - reasoning: {obj['reasoning']}
-
-USER HINT:
-{user_hint or "(none)"}
 """,
         1200
     )
