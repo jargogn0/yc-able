@@ -7,7 +7,7 @@
 - GET  /api/run/{id}/deploy → download deploy.zip
 - GET  /                 → serves 19labs-app.html
 """
-import asyncio, glob, hashlib, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
+import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, RedirectResponse
@@ -65,6 +65,31 @@ def _init_db():
     conn.close()
 
 # ── AUTH HELPERS ──────────────────────────────────────────────
+# JWT secret — set JWT_SECRET env var in Railway for persistence across deploys
+_JWT_SECRET = os.environ.get("JWT_SECRET", _secrets.token_hex(32))
+
+def _make_jwt(user_id: str, email: str, name: str) -> str:
+    h = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b'=').decode()
+    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 30*24*3600}).encode()).rstrip(b'=').decode()
+    sig = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
+    return f"{h}.{p}.{sig}"
+
+def _verify_jwt(token: str) -> dict | None:
+    try:
+        parts = token.split('.')
+        if len(parts) != 3:
+            return None
+        h, p, s = parts
+        expected = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
+        if not _hmac.compare_digest(s, expected):
+            return None
+        data = json.loads(base64.urlsafe_b64decode(p + '=' * (4 - len(p) % 4)))
+        if data.get('exp', 0) < time.time():
+            return None
+        return data
+    except Exception:
+        return None
+
 def _hash_pw(pw: str) -> str:
     salt = _secrets.token_hex(16)
     h = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 260000)
@@ -80,6 +105,11 @@ def _verify_pw(pw: str, stored: str) -> bool:
 def _get_user(token: str) -> dict | None:
     if not token:
         return None
+    # JWT first — stateless, survives container restarts
+    data = _verify_jwt(token)
+    if data:
+        return {"id": data["sub"], "email": data["email"], "name": data.get("name", "")}
+    # Fallback: DB session (for old tokens)
     try:
         conn = sqlite3.connect(str(DB_PATH))
         row = conn.execute(
@@ -346,14 +376,7 @@ async def auth_signup(request: Request):
         conn.close()
         raise HTTPException(409, "Email already registered")
     conn.close()
-    token = _secrets.token_urlsafe(32)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute(
-        "INSERT INTO user_sessions (token, user_id, created, expires) VALUES (?,?,?,?)",
-        (token, user_id, time.time(), time.time() + 30 * 24 * 3600)
-    )
-    conn.commit()
-    conn.close()
+    token = _make_jwt(user_id, email, name)
     return {"token": token, "user": {"id": user_id, "email": email, "name": name}}
 
 @app.post("/auth/login")
@@ -368,14 +391,7 @@ async def auth_login(request: Request):
     conn.close()
     if not row or not _verify_pw(password, row[3]):
         raise HTTPException(401, "Invalid email or password")
-    token = _secrets.token_urlsafe(32)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute(
-        "INSERT INTO user_sessions (token, user_id, created, expires) VALUES (?,?,?,?)",
-        (token, row[0], time.time(), time.time() + 30 * 24 * 3600)
-    )
-    conn.commit()
-    conn.close()
+    token = _make_jwt(row[0], row[1], row[2])
     return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
 
 @app.get("/auth/me")
@@ -418,7 +434,10 @@ async def auth_save_keys(request: Request):
     data = await request.json()
     conn = sqlite3.connect(str(DB_PATH))
     for provider, key in data.items():
-        if provider in ("anthropic", "openai", "gemini") and key and key.strip():
+        # normalize: 'anthropic' → 'claude' to match engine provider names
+        if provider == "anthropic":
+            provider = "claude"
+        if provider in ("claude", "openai", "gemini") and key and key.strip():
             conn.execute(
                 "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?)",
                 (user["id"], provider, key.strip())

@@ -949,8 +949,8 @@ async function loadSavedKeys(){
       const badge=document.getElementById(`badge-${prov}`);
       if(badge){badge.textContent='Set';badge.className='kp-badge set';}
     }
-    // auto-set provider key hint
-    if(_savedKeys[C.provider]) C.key='__saved__';
+    // Key is stored server-side; clear any stale local key so server auto-fills
+    if(Object.keys(_savedKeys).length>0) C.key='';
   }catch(e){}
 }
 
@@ -974,9 +974,10 @@ async function saveKey(provider){
     const badge=document.getElementById(`badge-${provider}`);
     if(badge){badge.textContent='Set';badge.className='kp-badge set';}
     input.value='';
+    // Clear local key so server uses saved key
+    C.key='';
     const msg=document.getElementById('keys-saved-msg');
     msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
-    if(provider==='anthropic'||provider===C.provider) C.key='__saved__';
   }catch(e){toast('Network error','err');}
 }
 
