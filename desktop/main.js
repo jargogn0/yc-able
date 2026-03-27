@@ -1,12 +1,9 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
-// Must be called before app is ready
 app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-gpu-sandbox');
 app.disableHardwareAcceleration();
-
-const APP_URL = process.env.LABS_URL || 'https://yc-able.com/app';
 
 let mainWindow;
 
@@ -30,28 +27,22 @@ function createWindow() {
     },
   });
 
-  // Load local loader first — guaranteed to render, proves Electron WebKit works
-  mainWindow.loadFile(path.join(__dirname, 'loader.html'));
+  // Load the bundled app.html (API calls still go to https://yc-able.com via meta tag)
+  mainWindow.loadFile(path.join(__dirname, 'app.html'));
 
-  // Once the local page is ready, show the window then navigate to the real app
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    // Short delay so the loading screen is visible, then navigate
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.loadURL(APP_URL);
-      }
-    }, 600);
   });
+
+  // Safety net: show after 10s regardless
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  }, 10000);
 
   mainWindow.webContents.on('console-message', (e, level, msg, line, src) => {
     console.log(`[renderer:${level}] ${msg} (${src}:${line})`);
-  });
-
-  // Log any load failures to help diagnose the black screen
-  mainWindow.webContents.on('did-fail-load', (e, code, desc, url) => {
-    if (code === -3) return; // navigation aborted (e.g. redirect)
-    console.error(`[main] LOAD FAILED: code=${code} desc=${desc} url=${url}`);
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -64,13 +55,14 @@ function createWindow() {
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
+  const reload = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+  };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(isMac ? [{ label: '19Labs', submenu: [
       { role: 'about' },
       { type: 'separator' },
-      { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(APP_URL);
-      }},
+      { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: reload },
       { type: 'separator' },
       { role: 'services' },
       { type: 'separator' },
@@ -80,7 +72,7 @@ function buildMenu() {
     ]}] : []),
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     { label: 'View', submenu: [
-      { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => mainWindow && mainWindow.loadURL(APP_URL) },
+      { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: reload },
       { role: 'toggleDevTools' },
       { type: 'separator' },
       { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
