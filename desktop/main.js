@@ -1,7 +1,7 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
-const APP_URL = process.env.LABS_URL || 'https://yc-able-production.up.railway.app/app';
+const APP_URL = process.env.LABS_URL || 'https://yc-able.com/app';
 
 let mainWindow;
 

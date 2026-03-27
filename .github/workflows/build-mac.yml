@@ -1,0 +1,66 @@
+name: Build macOS App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.1)'
+        required: false
+        default: 'v1.0.0'
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build macOS DMG
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false   # skip code signing (no cert needed for now)
+        run: npm run build:mac
+
+      - name: List built artifacts
+        working-directory: desktop/dist
+        run: ls -lh
+
+      - name: Upload DMG to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.version }}
+          name: "19Labs ${{ github.ref_name || inputs.version }}"
+          body: |
+            ## 19Labs Desktop for macOS
+
+            ### Install
+            1. Download `19Labs-*.dmg`
+            2. Open the DMG and drag **19Labs** to your Applications folder
+            3. On first launch: right-click the app → **Open** (bypasses Gatekeeper for unsigned apps)
+
+            ### What's included
+            - Native macOS app window (no browser tabs)
+            - Seamless sign-in with your 19Labs account
+            - Full ML training pipeline powered by yc-able.com
+          draft: false
+          prerelease: false
+          files: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

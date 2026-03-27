@@ -366,7 +366,7 @@ def serve_app_page():
 # ── DIRECT DOWNLOADS ──────────────────────────────────────────
 import io, zipfile, stat
 
-_APP_URL = "https://yc-able-production.up.railway.app/app"
+_APP_URL = "https://yc-able.com/app"
 
 _INFO_PLIST = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -427,31 +427,50 @@ def _build_mac_zip() -> bytes:
 # Pre-build mac zip once at startup
 _MAC_ZIP = _build_mac_zip()
 
-_GH_RELEASE = "https://github.com/jargogn0/yc-able/releases/download/v1.0.0"
-_GH_MAC   = f"{_GH_RELEASE}/19Labs-1.0.0.dmg"
-_GH_WIN   = f"{_GH_RELEASE}/19Labs%20Setup%201.0.0.exe"
-_GH_LINUX = f"{_GH_RELEASE}/19Labs-1.0.0.AppImage"
+_GH_REPO = "jargogn0/yc-able"
+_GH_RELEASE_BASE = f"https://github.com/{_GH_REPO}/releases"
+_APP_VERSION = "1.0.0"
+
+def _gh_release_url(version: str, filename: str) -> str:
+    return f"{_GH_RELEASE_BASE}/download/v{version}/{filename}"
+
+def _mac_dmg_url(version: str, arch: str = "x64") -> str:
+    # electron-builder naming: 19Labs-1.0.0.dmg (x64), 19Labs-1.0.0-arm64.dmg (arm64)
+    if arch == "arm64":
+        return _gh_release_url(version, f"19Labs-{version}-arm64.dmg")
+    return _gh_release_url(version, f"19Labs-{version}.dmg")
+
+@app.get("/api/latest-release")
+def latest_release():
+    return {"version": f"v{_APP_VERSION}", "mac_x64": _mac_dmg_url(_APP_VERSION), "mac_arm64": _mac_dmg_url(_APP_VERSION, "arm64")}
 
 @app.get("/download")
 async def download_auto(request: Request):
     ua = request.headers.get("user-agent", "").lower()
     if "windows" in ua or "win64" in ua or "win32" in ua:
-        return RedirectResponse(_GH_WIN, status_code=302)
+        return RedirectResponse(_gh_release_url(_APP_VERSION, f"19Labs-Setup-{_APP_VERSION}.exe"), status_code=302)
     if "mac" in ua or "darwin" in ua:
-        return RedirectResponse(_GH_MAC, status_code=302)
-    return RedirectResponse(_GH_LINUX, status_code=302)
+        # Default to x64 (works on Apple Silicon via Rosetta too)
+        return RedirectResponse(_mac_dmg_url(_APP_VERSION), status_code=302)
+    return RedirectResponse(_gh_release_url(_APP_VERSION, f"19Labs-{_APP_VERSION}.AppImage"), status_code=302)
 
 @app.get("/download/mac")
-def _download_mac():
-    return RedirectResponse(_GH_MAC, status_code=302)
+async def _download_mac(request: Request, arch: str = ""):
+    """Download macOS DMG. ?arch=arm64 for Apple Silicon native build."""
+    a = arch or ("arm64" if "arm64" in request.headers.get("user-agent", "").lower() else "x64")
+    return RedirectResponse(_mac_dmg_url(_APP_VERSION, a), status_code=302)
+
+@app.get("/download/mac/arm64")
+def _download_mac_arm64():
+    return RedirectResponse(_mac_dmg_url(_APP_VERSION, "arm64"), status_code=302)
 
 @app.get("/download/win")
 def _download_windows():
-    return RedirectResponse(_GH_WIN, status_code=302)
+    return RedirectResponse(_gh_release_url(_APP_VERSION, f"19Labs-Setup-{_APP_VERSION}.exe"), status_code=302)
 
 @app.get("/download/linux")
 def _download_linux():
-    return RedirectResponse(_GH_LINUX, status_code=302)
+    return RedirectResponse(_gh_release_url(_APP_VERSION, f"19Labs-{_APP_VERSION}.AppImage"), status_code=302)
 
 # ── AUTH ENDPOINTS ────────────────────────────────────────────
 # In-memory CSRF state store for Google OAuth (short-lived)

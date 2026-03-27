@@ -15,10 +15,18 @@
   "build": {
     "appId": "com.19labs.app",
     "productName": "19Labs",
+    "copyright": "Copyright © 2025 19Labs",
     "files": ["main.js", "preload.js", "splash.html"],
     "mac": {
-      "target": "dmg",
-      "category": "public.app-category.developer-tools"
+      "target": [
+        {"target": "dmg", "arch": ["x64", "arm64"]},
+        {"target": "zip", "arch": ["x64", "arm64"]}
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "icon.png",
+      "darkModeSupport": true,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "win": {
       "target": "nsis"
@@ -31,10 +39,13 @@
       "oneClick": true
     },
     "dmg": {
+      "title": "19Labs ${version}",
+      "background": null,
       "contents": [
         {"x": 130, "y": 220},
         {"x": 410, "y": 220, "type": "link", "path": "/Applications"}
-      ]
+      ],
+      "window": {"width": 540, "height": 380}
     }
   },
   "devDependencies": {
