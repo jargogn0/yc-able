@@ -192,8 +192,12 @@ def write_workspace_requirements(ws, train_py_code):
     return req_text
 
 # ── CONFIG ─────────────────────────────────────────────────────
-CLAUDE_MODEL = "claude-sonnet-4-6"
-OPENAI_MODEL = "gpt-4o"
+CLAUDE_MODEL  = "claude-sonnet-4-6"
+OPENAI_MODEL  = "gpt-4o"
+# Bedrock model ID — can be overridden via BEDROCK_MODEL env var.
+# Default is claude-3-5-sonnet which is widely available across regions.
+# Cross-region inference prefix format: us.anthropic.claude-... (for us-east-1/us-west-2)
+BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0")
 EXEC_TIMEOUT = 180          # hard wall-clock kill per experiment
 TIME_BUDGET  = 120          # target training budget (seconds) injected into scripts
 STAGNATION_LIMIT = 3
@@ -750,11 +754,7 @@ def ask(system, user, max_tokens=3000):
                     _token_usage["output"] += r.usage.completion_tokens or 0
                 return r.choices[0].message.content.strip()
             else:
-                # Bedrock uses a different model ID format
-                model_id = (
-                    "anthropic.claude-sonnet-4-5" if _provider == "bedrock"
-                    else CLAUDE_MODEL
-                )
+                model_id = BEDROCK_MODEL if _provider == "bedrock" else CLAUDE_MODEL
                 r = _client.messages.create(
                     model=model_id,
                     max_tokens=max_tokens,
