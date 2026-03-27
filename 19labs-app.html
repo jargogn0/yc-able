@@ -1671,8 +1671,12 @@ async function launchRun(){
         if(d.msg==='__DONE__'){es.close();resolve();return}
         S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
       };
-      es.onerror=()=>{es.close();chat('sys','Stream disconnected, polling...');
-        const poll=setInterval(async()=>{try{const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);if(!pr.ok)return;const ps=await pr.json();if(ps.status==='done'||ps.status==='error'){clearInterval(poll);resolve()}}catch(_){}},3000);
+      es.onerror=()=>{es.close();
+        // Silently fall back to polling — stream drops are normal on proxied deployments
+        const poll=setInterval(async()=>{try{const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);if(!pr.ok)return;const ps=await pr.json();
+          // Flush any logs we missed while stream was down
+          if(ps.logs){ps.logs.slice(S.logs.length).forEach(l=>{S.logs.push(`[${l.tag}] ${l.msg}`);updLogs();procMsg(l);});}
+          if(ps.status==='done'||ps.status==='error'){clearInterval(poll);resolve();}}catch(_){}},2000);
       };
       activeAbort.signal.addEventListener('abort',()=>{es.close();resolve()});
     });
