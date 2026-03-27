@@ -691,8 +691,8 @@ input[type=file]{display:none}
       <div class="dz" id="dz" onclick="document.getElementById('fi').click()">
         <div class="dz-icon" id="dz-icon">+</div>
         <div class="dz-title" id="dz-title">Add Dataset</div>
-        <div class="dz-sub" id="dz-sub">CSV, Excel, JSON, TSV</div>
-        <input type="file" id="fi" accept=".csv,.xlsx,.xls,.json,.tsv,.txt" multiple onchange="onFile(event)">
+        <div class="dz-sub" id="dz-sub">CSV, Excel, JSON, TSV · ZIP of images/audio</div>
+        <input type="file" id="fi" accept=".csv,.xlsx,.xls,.json,.tsv,.txt,.zip,.jpg,.jpeg,.png,.gif,.bmp,.webp,.mp3,.wav,.ogg,.flac,.m4a" multiple onchange="onFile(event)">
       </div>
       <div class="url-row">
         <input class="url-in" id="url-in" placeholder="Paste URL or Google Sheets link..." onkeydown="if(event.key==='Enter')fetchFromURL()">
@@ -992,7 +992,7 @@ async function saveKey(provider){
   }catch(e){toast('Network error','err');}
 }
 
-const S={file:null,csv:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent'};
+const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent'};
 
 // ═══════════════════════════════════════════
 // SETTINGS
@@ -1452,7 +1452,10 @@ async function launchRun(){
 
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
   try{
-    const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous})});
+    const _runBody=S.dataset_id
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous};
+    const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok)throw new Error(`Server error (${sr.status}): ${await sr.text()}`);
     const{run_id}=await sr.json();S.runId=run_id;updStatus();
     addRunHistory(run_id,'running',S.file?.name||'Run');
@@ -2759,7 +2762,7 @@ async function handleFile(f,preloadedText){
     chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset. Click <strong>Join All Datasets</strong> in the sidebar to merge them.`);
     return;
   }
-  S.file=f;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
+  S.file=f;S.dataset_id=null;S.media_info=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
   document.getElementById('dz-icon').textContent='📊';
   document.getElementById('dz-title').textContent=f.name;
   document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
@@ -2772,6 +2775,37 @@ async function handleFile(f,preloadedText){
 
   let text=preloadedText||null;
   const ext=f.name.split('.').pop().toLowerCase();
+  const _mediaExts=new Set(['zip','jpg','jpeg','png','gif','bmp','webp','tiff','tif','mp3','wav','ogg','flac','m4a','aac']);
+
+  if(_mediaExts.has(ext)&&!preloadedText){
+    // Media / ZIP dataset — upload to server, get dataset_id back
+    document.getElementById('dz-icon').textContent='⏫';
+    document.getElementById('dz-sub').textContent='Uploading…';
+    try{
+      const fd=new FormData();fd.append('file',f);
+      const r=await apiFetch(`${BASE}/api/upload-dataset`,{method:'POST',body:fd});
+      if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.detail||'Upload failed','err');return;}
+      const info=await r.json();
+      S.dataset_id=info.dataset_id;S.media_info=info;S.csv=null;
+      // Fake cols/rows for UI
+      S.cols=['filepath','label'];S.rows=[];S.colTypes={filepath:'text',label:'categorical'};S.colNulls={};S.totalRows=info.total_files||0;
+      document.getElementById('dz-icon').textContent=ext==='zip'?'🗜️':(info.media_type==='audio'?'🎵':'🖼️');
+      document.getElementById('dz-sub').textContent=`${info.total_files||0} files · ${info.num_classes||0} classes`;
+      updSide();updStatus();
+      document.getElementById('p-exp').innerHTML='';
+      document.getElementById('p-data').style.display='';
+      document.getElementById('ws-empty').style.display='none';
+      stab('data');
+      let msg=`Uploaded <strong>${esc(f.name)}</strong> — <strong>${info.total_files||0} ${info.media_type||'media'} files</strong>`;
+      if(info.num_classes>0){
+        const cls=Object.entries(info.classes||{}).map(([k,v])=>`<code>${esc(k)}</code> (${v})`).join(', ');
+        msg+=`, ${info.num_classes} classes: ${cls}`;
+      }
+      msg+=`.<br><br>Say <strong>"go"</strong> to train a classifier, or describe your goal.`;
+      chat('ai',msg);
+    }catch(e){toast('Upload failed: '+e.message,'err');}
+    return;
+  }
 
   if(text){
     // Already have the text (from URL fetch or paste)

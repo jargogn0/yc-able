@@ -9,7 +9,7 @@
 """
 import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -242,6 +242,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 RUNS: dict[str, dict] = {}
 _shared_results: dict[str, dict] = {}
+# In-memory store for pre-uploaded media datasets (images / audio / zip)
+_MEDIA_DATASETS: dict[str, dict] = {}
 APP_HTML = Path(__file__).parent / "19labs-app.html"
 LANDING_HTML = Path(__file__).parent / "landing.html"
 
@@ -466,7 +468,8 @@ async def auth_save_keys(request: Request):
 # ── START RUN (JSON body) ──────────────────────────────────────
 class RunRequest(BaseModel):
     filename: str
-    csv: str           # full CSV text
+    csv: str = ""          # full CSV text (empty when dataset_id is set)
+    dataset_id: str = ""   # pre-uploaded media dataset (images / audio)
     hint: str = ""
     budget: int = 6
     reliability_mode: str = "balanced"
@@ -568,6 +571,68 @@ def _fallback_discovery(profile: dict, hint: str = ""):
         "warning": hint and "Used fallback discovery; user hint captured." or "Used fallback discovery; add API key for richer guidance.",
     }
 
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+_AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
+
+def _profile_media_dir(data_dir: Path) -> dict:
+    """Scan a directory of images/audio and return dataset info."""
+    data_dir = Path(data_dir)
+    all_files = [f for f in data_dir.rglob("*") if f.is_file() and not f.name.startswith(".")]
+    image_files = [f for f in all_files if f.suffix.lower() in _IMAGE_EXTS]
+    audio_files = [f for f in all_files if f.suffix.lower() in _AUDIO_EXTS]
+    media_files = image_files if image_files else audio_files
+    media_type = "image" if image_files else ("audio" if audio_files else "unknown")
+
+    classes: dict[str, int] = {}
+    for item in sorted(data_dir.iterdir()):
+        if item.is_dir():
+            cls_files = [f for f in item.rglob("*") if f.is_file() and f.suffix.lower() in (_IMAGE_EXTS if image_files else _AUDIO_EXTS)]
+            if cls_files:
+                classes[item.name] = len(cls_files)
+
+    task_type = f"{media_type}_classification" if classes else media_type
+    return {
+        "type": task_type,
+        "media_type": media_type,
+        "data_dir": str(data_dir),
+        "total_files": len(media_files),
+        "classes": classes,
+        "num_classes": len(classes),
+        "sample_files": [str(f.relative_to(data_dir)) for f in media_files[:6]],
+    }
+
+
+@app.post("/api/upload-dataset")
+async def upload_media_dataset(file: UploadFile = File(...)):
+    """Accept ZIP/image/audio dataset. Returns dataset_id for use in /api/run."""
+    dataset_id = str(uuid.uuid4())[:10]
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f"19labs_media_{dataset_id}_"))
+    filename = file.filename or "dataset.zip"
+    ext = Path(filename).suffix.lower()
+    content = await file.read()
+
+    if ext == ".zip":
+        zip_path = tmp_dir / filename
+        zip_path.write_bytes(content)
+        data_dir = tmp_dir / "data"
+        data_dir.mkdir()
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(data_dir)
+        zip_path.unlink()
+        # Unwrap single top-level folder if that's all there is
+        items = [x for x in data_dir.iterdir()]
+        if len(items) == 1 and items[0].is_dir():
+            data_dir = items[0]
+    else:
+        data_dir = tmp_dir / "data"
+        data_dir.mkdir()
+        (data_dir / filename).write_bytes(content)
+
+    info = _profile_media_dir(data_dir)
+    _MEDIA_DATASETS[dataset_id] = {"path": str(data_dir), "filename": filename, **info}
+    return {"dataset_id": dataset_id, **info}
+
+
 @app.post("/api/run")
 async def start_run(req: RunRequest, request: Request):
     # Auto-fill API key from user account if not provided
@@ -578,15 +643,21 @@ async def start_run(req: RunRequest, request: Request):
             if saved:
                 req.api_key = saved
 
-    if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
-        raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
-
     run_id = str(uuid.uuid4())[:12]
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
 
-    # Write CSV to disk
-    csv_path = ws / req.filename
-    csv_path.write_text(req.csv)
+    if req.dataset_id:
+        # Media dataset (images / audio) — use pre-uploaded directory
+        media = _MEDIA_DATASETS.get(req.dataset_id)
+        if not media:
+            raise HTTPException(404, "Media dataset not found. Please re-upload.")
+        csv_path = Path(media["path"])  # directory, not a CSV file
+    else:
+        if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
+            raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
+        # Write CSV to disk
+        csv_path = ws / req.filename
+        csv_path.write_text(req.csv)
 
     cancel_event = threading.Event()
     RUNS[run_id] = dict(

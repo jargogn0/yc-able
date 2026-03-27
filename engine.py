@@ -378,6 +378,62 @@ def _read_csv_smart(csv_path):
     except Exception as e:
         raise RuntimeError(f"Cannot read CSV: {last_err or e}") from (last_err or e)
 
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+_AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
+
+def profile_media_dataset(data_dir):
+    """Profile a directory of images or audio files. Returns a profile dict compatible with the CSV profile format."""
+    data_dir = pathlib.Path(data_dir)
+    all_files = [f for f in data_dir.rglob("*") if f.is_file() and not f.name.startswith(".")]
+    image_files = [f for f in all_files if f.suffix.lower() in _IMAGE_EXTS]
+    audio_files = [f for f in all_files if f.suffix.lower() in _AUDIO_EXTS]
+    media_files = image_files if image_files else audio_files
+    media_type = "image" if image_files else ("audio" if audio_files else "file")
+
+    classes = {}
+    rows_data = []
+    for item in sorted(data_dir.iterdir()):
+        if item.is_dir():
+            cls_files = [f for f in item.rglob("*") if f.is_file() and f.suffix.lower() in (_IMAGE_EXTS if image_files else _AUDIO_EXTS)]
+            if cls_files:
+                classes[item.name] = len(cls_files)
+                for f in cls_files:
+                    rows_data.append({"filepath": str(f), "label": item.name})
+
+    if not rows_data:
+        for f in media_files:
+            rows_data.append({"filepath": str(f), "label": ""})
+
+    task_type = f"{media_type}_classification" if classes else media_type
+    signals = [task_type, f"{len(media_files)}_files"]
+    if classes:
+        signals.append(f"{len(classes)}_classes")
+
+    return {
+        "path": str(data_dir),
+        "media_type": media_type,
+        "task_type": task_type,
+        "rows": len(rows_data),
+        "cols": 2,
+        "headers": ["filepath", "label"],
+        "columns": {"filepath": {"type": "text"}, "label": {"type": "categorical"}},
+        "numeric": [],
+        "categorical": ["label"] if classes else [],
+        "text": ["filepath"],
+        "datetime": [],
+        "target_candidates": ["label"],
+        "signals": signals,
+        "classes": classes,
+        "num_classes": len(classes),
+        "total_files": len(media_files),
+        "sample_files": [str(f.relative_to(data_dir)) for f in media_files[:6]],
+        "missing": {},
+        "outlier_cols": [],
+        "separator": None,
+        "is_media": True,
+    }
+
+
 def profile_dataset(csv_path):
     df, detected_sep, detected_enc = _read_csv_smart(csv_path)
     if df.empty:
@@ -1110,16 +1166,16 @@ DATA PROFILE:
 - Headers: {', '.join(profile['headers'])}
 - Text columns: {', '.join(profile.get('text', [])) or 'none'}
 - Signals: {'; '.join(profile.get('signals', []))}
+{f"- Media type: {profile['media_type']} | Files: {profile['total_files']} | Classes: {list(profile['classes'].keys())}" if profile.get('is_media') else ""}
 
 EXECUTION POLICY:
 - Reliability mode: {obj.get('reliability_mode', 'balanced')}
 - {obj.get('execution_policy', 'Balance reliability and performance.')}
 
 KARPATHY DISCIPLINE (MANDATORY):
-- DATA_PATH, DATA_SEP, and TIME_BUDGET are Python variables pre-defined BEFORE your code runs (injected at line 1).
-  DO NOT redefine them. DO NOT use os.environ.get(). Use them directly:
-  `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)` — this is the ONLY way to load data.
-  DATA_SEP is already set to the correct delimiter (e.g. ',' or ';' or '\\t').
+- DATA_PATH and TIME_BUDGET are Python variables pre-defined BEFORE your code runs (injected at line 1).
+  DO NOT redefine them. DO NOT use os.environ.get(). Use them directly.
+{"- DATA_PATH is a DIRECTORY path containing class subfolders of " + profile.get('media_type','') + " files (e.g. DATA_PATH/cats/*.jpg, DATA_PATH/dogs/*.jpg). Load with glob/PIL/librosa — NOT pd.read_csv." if profile.get('is_media') else "- `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)` — this is the ONLY way to load data. DATA_SEP is already set to the correct delimiter (e.g. ',' or ';' or '\\t')."}
 - TIME_BUDGET is also pre-defined. DO NOT redefine it. Your entire training MUST complete within it.
   Add a wall-clock check: `import time; _start = time.time()` at top, and periodically
   check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
@@ -1995,7 +2051,13 @@ def run_research(
     # PROFILE
     log.engine("Profiling dataset...")
     narrate(log_callback, "profiling_start")
-    profile = profile_dataset(csv_path)
+    _csv_path_obj = pathlib.Path(csv_path)
+    if _csv_path_obj.is_dir():
+        log.engine(f"Media dataset detected at {csv_path} — using media profiler")
+        profile = profile_media_dataset(csv_path)
+        log.engine(f"Media: {profile['media_type']} | {profile['total_files']} files | {profile['num_classes']} classes: {list(profile['classes'].keys())[:8]}")
+    else:
+        profile = profile_dataset(csv_path)
     log.engine(f"{profile['rows']:,} rows × {profile['cols']} cols | numeric={profile['numeric']} | cat={profile['categorical']}")
     log.engine(f"Signals: {' | '.join(profile.get('signals', []))}")
     narrate(log_callback, "profiling_done", rows=profile['rows'], cols=profile['cols'], signals='; '.join(profile.get('signals', [])[:2]))
