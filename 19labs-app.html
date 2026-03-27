@@ -682,7 +682,7 @@ input[type=file]{display:none}
         <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('auth-password').focus()">
       </div>
       <div class="auth-field">
-        <label>Password</label>
+        <label style="display:flex;justify-content:space-between;align-items:center">Password <a href="#" id="forgot-pw-link" style="font-size:11px;color:#818cf8;font-weight:400;text-decoration:none" onclick="handleForgotPassword();return false">Forgot password?</a></label>
         <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
       </div>
       <div class="auth-err" id="auth-err-account"></div>
@@ -1037,28 +1037,40 @@ function startTrial(){
 // ── AUTH ─────────────────────────────────────────────────────
 function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
 
+/** Decode JWT payload client-side — no server roundtrip, no signature check needed for UI.
+ *  Server still validates sig on every API call. Returns null if expired or malformed. */
+function _decodeJwt(token){
+  try{
+    const parts=token.split('.');
+    if(parts.length!==3)return null;
+    const pad=s=>s.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(s.length/4)*4,'=');
+    const payload=JSON.parse(atob(pad(parts[1])));
+    // Treat as expired if less than 60 seconds remain (clock skew buffer)
+    if(payload.exp&&payload.exp<(Date.now()/1000)+60)return null;
+    return payload;
+  }catch(e){return null;}
+}
+
 async function initAuth(){
   if(_authToken){
-    try{
-      const r=await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
-      if(r.ok){
-        _authUser=await r.json();
-        hideAuthModal();onAuthSuccess();
-        // Refresh token in background to extend session
-        _refreshTokenSilently();
-        return;
-      }
-      if(r.status===401){
-        // Token truly invalid — clear it and force re-login
-        _authToken='';localStorage.removeItem('19labs_auth_token');
-      } else {
-        // Server error (5xx) or network glitch — don't force logout, proceed with stored token
-        _authUser={id:'offline',email:'',name:''};hideAuthModal();onAuthSuccess();return;
-      }
-    }catch(e){
-      // Network unreachable — proceed with stored token, don't lose the session
-      _authUser={id:'offline',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+    // Decode JWT locally — survives server restarts, zero latency
+    const payload=_decodeJwt(_authToken);
+    if(payload){
+      _authUser={id:payload.sub,email:payload.email||'',name:payload.name||''};
+      hideAuthModal();onAuthSuccess();
+      // Silently refresh user info from server in background (non-blocking)
+      fetch(`${BASE}/auth/me`,{headers:_authHeader()}).then(r=>{
+        if(r.ok)r.json().then(u=>{_authUser=u;});
+      }).catch(()=>{});
+      return;
     }
+    // Token expired — clear it
+    _authToken='';localStorage.removeItem('19labs_auth_token');
+  }
+  // Has API key but no account token — continue in key-only mode
+  const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
+  if(hasKey){
+    _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
   }
   // Already in trial mode with slots left — stay in app
   if(_isTrialMode&&_trialRemaining()>0){
@@ -1083,6 +1095,17 @@ function showAuthModal(){
   document.getElementById('auth-overlay').style.display='flex';
   showAuthStage('providers');
   switchAuthTab('signin');
+  // Auto-fill email from last session
+  const savedEmail=localStorage.getItem('19labs_last_email');
+  if(savedEmail){
+    const emailEl=document.getElementById('auth-email');
+    if(emailEl&&!emailEl.value)emailEl.value=savedEmail;
+    // Focus password if email already filled
+    setTimeout(()=>{
+      const pwEl=document.getElementById('auth-password');
+      if(pwEl)pwEl.focus();
+    },100);
+  }
   // Handle OAuth redirect errors
   const params=new URLSearchParams(window.location.search);
   const authErr=params.get('auth_error');
@@ -1125,33 +1148,51 @@ async function doAuth(){
   const btn=document.getElementById('auth-btn');
   const err=document.getElementById('auth-err-account');
   err.textContent='';
-  if(!email||!password){err.textContent='Please fill in all fields.';return;}
-  if(tab==='signup'&&password.length<6){err.textContent='Password must be at least 6 characters.';return;}
-  btn.disabled=true;btn.textContent='…';
+  // Field validation
+  if(!email){err.textContent='Please enter your email address.';document.getElementById('auth-email').focus();return;}
+  if(!email.includes('@')){err.textContent='Please enter a valid email address.';document.getElementById('auth-email').focus();return;}
+  if(!password){err.textContent='Please enter your password.';document.getElementById('auth-password').focus();return;}
+  if(tab==='signup'&&password.length<6){err.textContent='Password must be at least 6 characters.';document.getElementById('auth-password').focus();return;}
+  const origText=btn.textContent;
+  btn.disabled=true;btn.textContent=tab==='signin'?'Signing in…':'Creating account…';
   try{
     const url=tab==='signin'?`${BASE}/auth/login`:`${BASE}/auth/signup`;
     const body=tab==='signin'?{email,password}:{email,password,name};
     const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await r.json();
     if(!r.ok){
-      let msg=data.detail||'Something went wrong.';
-      // If signup says account exists, suggest signing in
+      let msg=data.detail||'Something went wrong. Please try again.';
       if(r.status===409){
-        err.innerHTML=msg+' <a style="color:#818cf8;cursor:pointer;text-decoration:underline" onclick="switchAuthTab(\'signin\')">Sign in →</a>';
-      } else if(r.status===401&&tab==='signin'){
-        err.innerHTML=msg+(msg.includes('No account')?` <a style="color:#818cf8;cursor:pointer;text-decoration:underline" onclick="switchAuthTab(\'signup\')">Create account →</a>`:'');
+        err.innerHTML=msg+' <a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signin\');return false">Sign in instead →</a>';
+      } else if(r.status===401){
+        err.textContent=msg.includes('No account')||msg.includes('not found')
+          ? msg+' '
+          : 'Incorrect email or password. Please check and try again.';
+        if(msg.includes('No account')||msg.includes('not found')){
+          err.innerHTML=err.textContent+'<a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signup\');return false">Create account →</a>';
+        }
       } else {
         err.textContent=msg;
       }
-      btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';return;
+      btn.disabled=false;btn.textContent=origText;return;
     }
     _authToken=data.token;_authUser=data.user;
     localStorage.setItem('19labs_auth_token',_authToken);
+    localStorage.setItem('19labs_last_email',email);
     _isTrialMode=false;
     hideAuthModal();onAuthSuccess();
-    if(tab==='signup') setTimeout(()=>openKeys(),600);
-    else loadSavedKeys();
-  }catch(e){err.textContent='Network error. Try again.';btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';}
+    if(tab==='signup'){
+      toast(`Welcome! Add your API key to get started.`,'ok');
+      setTimeout(()=>openKeys(),600);
+    } else {
+      loadSavedKeys();
+    }
+  }catch(e){err.textContent='Network error — please check your connection and try again.';btn.disabled=false;btn.textContent=origText;}
+}
+
+function handleForgotPassword(){
+  const err=document.getElementById('auth-err-account');
+  err.innerHTML='To reset your password, contact <a href="mailto:support@19labs.ai" style="color:var(--accent)">support@19labs.ai</a>';
 }
 
 async function doProviderLogin(){

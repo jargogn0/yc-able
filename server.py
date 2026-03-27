@@ -19,7 +19,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = Path(os.environ.get("NINETEENLABS_DB", Path(__file__).parent / "19labs.db"))
+# DB path: explicit env var → Railway /data volume (persistent) → local fallback
+def _resolve_db_path() -> Path:
+    if os.environ.get("NINETEENLABS_DB"):
+        return Path(os.environ["NINETEENLABS_DB"])
+    # Railway mounts persistent volumes at /data — use it automatically if present
+    railway_data = Path("/data")
+    if railway_data.exists() and railway_data.is_dir():
+        return railway_data / "19labs.db"
+    return Path(__file__).parent / "19labs.db"
+
+DB_PATH = _resolve_db_path()
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists before SQLite opens it
+print(f"[db] Using database at {DB_PATH}", flush=True)
 
 def _init_db():
     conn = sqlite3.connect(str(DB_PATH))
@@ -78,36 +90,41 @@ def _init_db():
 # ── AUTH HELPERS ──────────────────────────────────────────────
 # JWT secret strategy (priority order):
 #   1. JWT_SECRET env var (explicit override)
-#   2. Persisted secret in SQLite app_config table (survives Railway restarts)
-#   3. Derived from ANTHROPIC_API_KEY / ACCESS_PASSWORD (deterministic, no DB needed)
-#   4. Generated once and stored in DB (dev/fresh deploy with no env vars)
+#   2. Derived from API key env vars (deterministic, survives restarts with no extra config)
+#   3. Persisted in SQLite app_config (survives restarts when DB is on a persistent volume)
+#   4. Random (dev only — tokens invalidated on restart, warns loudly)
 def _get_or_create_jwt_secret() -> str:
-    # Explicit env var always wins
-    for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "ACCESS_PASSWORD"):
+    import sys as _sys
+    for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "OPENAI_API_KEY", "ACCESS_PASSWORD"):
         val = os.environ.get(var, "").strip()
         if val:
-            return hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
-    # Try to load from DB (persists across restarts)
+            secret = hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
+            print(f"[auth] JWT secret derived from {var}", file=_sys.stderr, flush=True)
+            return secret
+    # Try to load/persist in DB (works when /data volume is mounted)
     try:
         conn = sqlite3.connect(str(DB_PATH))
         row = conn.execute("SELECT value FROM app_config WHERE key='jwt_secret'").fetchone()
         if row and row[0]:
             conn.close()
+            print("[auth] JWT secret loaded from database", file=_sys.stderr, flush=True)
             return row[0]
-        # Generate once and persist
         secret = _secrets.token_hex(32)
         conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('jwt_secret', ?)", (secret,))
         conn.commit()
         conn.close()
+        print("[auth] JWT secret generated and stored in database", file=_sys.stderr, flush=True)
         return secret
     except Exception:
-        return _secrets.token_hex(32)
+        pass
+    print("[auth] WARNING: no stable JWT secret source — tokens will be invalidated on restart", file=_sys.stderr, flush=True)
+    return _secrets.token_hex(32)
 
 _JWT_SECRET = _get_or_create_jwt_secret()
 
 def _make_jwt(user_id: str, email: str, name: str) -> str:
     h = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b'=').decode()
-    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 90*24*3600}).encode()).rstrip(b'=').decode()
+    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 365*24*3600}).encode()).rstrip(b'=').decode()
     sig = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
     return f"{h}.{p}.{sig}"
 
@@ -600,13 +617,13 @@ async def auth_signup(request: Request):
     conn = sqlite3.connect(str(DB_PATH))
     row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
     if row:
-        # Account exists — treat signup as login attempt
+        # Account exists — treat signup as login attempt (idempotent)
         if _verify_pw(password, row[3]):
             conn.close()
             token = _make_jwt(row[0], row[1], row[2])
             return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
         conn.close()
-        raise HTTPException(409, "An account with this email already exists. Please sign in instead.")
+        raise HTTPException(409, "An account with this email already exists. Please sign in with your existing password.")
     conn.execute("INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
                  (user_id, email, name, _hash_pw(password), time.time()))
     conn.commit()
