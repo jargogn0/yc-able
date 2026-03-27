@@ -1,5 +1,11 @@
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, protocol, net } = require('electron');
 const path = require('path');
+
+// Register BEFORE app is ready — gives app:// a secure, standard origin
+// so fetch() calls to https://yc-able.com resolve DNS + work without CORS issues
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
+]);
 
 app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-gpu-sandbox');
@@ -27,14 +33,14 @@ function createWindow() {
     },
   });
 
-  // Load the bundled app.html (API calls still go to https://yc-able.com via meta tag)
-  mainWindow.loadFile(path.join(__dirname, 'app.html'));
+  // Load via app:// — secure origin that can reach https://yc-able.com
+  mainWindow.loadURL('app://19labs/app.html');
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
 
-  // Safety net: show after 10s regardless
+  // Safety: show after 10s regardless
   setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       mainWindow.show();
@@ -83,6 +89,12 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  // Serve bundled files via app:// protocol
+  protocol.handle('app', (request) => {
+    const { pathname } = new URL(request.url);
+    return net.fetch('file://' + path.join(__dirname, pathname));
+  });
+
   buildMenu();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
