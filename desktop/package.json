@@ -7,7 +7,6 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux"
@@ -28,19 +27,8 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
-    "win": {
-      "target": "nsis"
-    },
-    "linux": {
-      "target": "AppImage",
-      "category": "Development"
-    },
-    "nsis": {
-      "oneClick": true
-    },
     "dmg": {
-      "title": "19Labs ${version}",
-      "background": null,
+      "title": "19Labs",
       "contents": [
         {"x": 130, "y": 220},
         {"x": 410, "y": 220, "type": "link", "path": "/Applications"}
@@ -49,7 +37,8 @@
     }
   },
   "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.0.0"
+    "electron": "28.3.3",
+    "electron-builder": "24.13.3",
+    "dmg-license": "1.0.11"
   }
 }

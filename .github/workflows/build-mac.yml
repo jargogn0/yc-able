@@ -20,15 +20,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # No npm cache — desktop/package-lock.json is not committed
 
       - name: Install dependencies
         working-directory: desktop
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Determine version
         id: version
@@ -46,29 +45,33 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build:mac
-          echo "Build complete. Artifacts:"
+          echo "=== Build artifacts ==="
           ls -lh dist/
 
-      - name: Create GitHub Release and upload DMG
+      - name: Upload DMG as artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 19Labs-mac-dmg
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+          retention-days: 30
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: "19Labs ${{ steps.version.outputs.version }}"
+          make_latest: true
           body: |
             ## 19Labs Desktop for macOS
 
-            ### Download
             | Mac Type | File |
             |----------|------|
             | Apple Silicon (M1/M2/M3) | `19Labs-*-arm64.dmg` |
             | Intel Mac | `19Labs-*.dmg` (no `-arm64` suffix) |
 
-            **How to install:**
-            1. Download the right DMG for your Mac ( → About This Mac → Chip)
-            2. Open the DMG and drag **19Labs** into Applications
-            3. First launch: right-click → **Open** → **Open** to bypass Gatekeeper
-
-            **What you get:** Native macOS app window, no browser tabs, full ML training via yc-able.com.
+            **Install:** Download DMG → drag to Applications → first launch: right-click → Open
           draft: false
           prerelease: false
           files: |
