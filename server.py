@@ -643,9 +643,9 @@ async def auth_login(request: Request):
     row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
     conn.close()
     if not row:
-        raise HTTPException(401, "No account found with this email. Please create an account first.")
+        raise HTTPException(401, "No account found with this email. If you had an account before, the server may have reset — please create a new account (your API keys are saved in your browser).")
     if not _verify_pw(password, row[3]):
-        raise HTTPException(401, "Incorrect password")
+        raise HTTPException(401, "Incorrect password. Please check and try again.")
     token = _make_jwt(row[0], row[1], row[2])
     return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
 
@@ -975,7 +975,7 @@ async def start_run(req: RunRequest, request: Request):
             raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
         # Write CSV to disk
         csv_path = ws / req.filename
-        csv_path.write_text(req.csv)
+        csv_path.write_text(req.csv, encoding="utf-8")
 
     cancel_event = threading.Event()
     RUNS[run_id] = dict(
@@ -1087,7 +1087,7 @@ async def discover(req: DiscoverRequest):
             if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
                 raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
             csv_path = ws / req.filename
-            csv_path.write_text(req.csv)
+            csv_path.write_text(req.csv, encoding="utf-8")
             data_path = str(csv_path)
             profile = profile_dataset(data_path)
 
@@ -1103,10 +1103,19 @@ async def discover(req: DiscoverRequest):
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
-        msg = str(e)
-        if msg.strip() == "Connection error.":
+        import traceback as _tb
+        tb = _tb.format_exc()
+        print(f"[discover] ERROR: {e}\n{tb}", flush=True)
+        msg = str(e).strip()
+        if not msg:
+            msg = f"{type(e).__name__}: {tb.splitlines()[-1] if tb else 'unknown error'}"
+        if "Connection error" in msg:
             msg = "API connection error during discovery. Check internet/VPN/firewall/proxy."
-        return {"ok": False, "error": msg, "used_fallback": False}
+        elif "Invalid API key" in msg or "authentication" in msg.lower() or "api_key" in msg.lower():
+            msg = "Invalid API key. Please check your key in Settings."
+        elif "ModuleNotFoundError" in msg or "ImportError" in msg:
+            msg = f"Missing dependency: {msg}. Try re-deploying or contact support."
+        return {"ok": False, "error": msg or "Unexpected server error during discovery", "used_fallback": False}
     finally:
         if cleanup_ws:
             shutil.rmtree(ws, ignore_errors=True)
