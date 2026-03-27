@@ -170,9 +170,7 @@ nav{
   </div>
   <div class="nav-r">
     <a href="/app" class="btn-ghost">Sign in</a>
-    <a href="https://github.com/jargogn0/yc-able/releases/latest" class="btn-solid" id="nav-dl">
-      Download
-    </a>
+    <a href="/app" class="btn-solid" id="nav-dl">Start Free</a>
   </div>
 </nav>
 
@@ -190,21 +188,14 @@ nav{
 
   <div class="cta">
     <div class="cta-btns">
-      <a class="dl-primary" href="/download/mac" id="dl-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span id="dl-label">Download for macOS</span>
+      <a class="dl-primary" href="/app" id="dl-btn">
+        Start Free — 3 experiments
       </a>
       <a class="dl-web" href="/app">
-        Use in browser →
+        Sign in →
       </a>
     </div>
-    <div class="platforms">
-      <a href="/download/mac" download="19Labs.zip">macOS</a>
-      <span class="sep">·</span>
-      <a href="/download/win" download="19Labs.bat">Windows</a>
-      <span class="sep">·</span>
-      <a href="/download/linux" download="19labs.sh">Linux</a>
-    </div>
+    <div class="platforms" style="color:#52525b">No credit card · No install · Runs in browser</div>
   </div>
 </div>
 
@@ -322,25 +313,6 @@ addEventListener('touchmove',e=>{if(e.touches[0]){mouse.x=e.touches[0].clientX;m
 addEventListener('touchend',()=>{mouse.x=-9e9;mouse.y=-9e9});
 resize();frame();
 
-// OS detection — point button to right platform endpoint
-(function(){
-  const btn=document.getElementById('dl-btn');
-  const lbl=document.getElementById('dl-label');
-  const ua=navigator.userAgent||'';
-  if(/Win/i.test(ua)){
-    lbl.textContent='Download for Windows';
-    btn.href='/download/win';
-    btn.setAttribute('download','19Labs.bat');
-  } else if(/Linux/i.test(ua)&&!/Android/i.test(ua)){
-    lbl.textContent='Download for Linux';
-    btn.href='/download/linux';
-    btn.setAttribute('download','19labs.sh');
-  } else {
-    lbl.textContent='Download for macOS';
-    btn.href='/download/mac';
-    btn.setAttribute('download','19Labs.zip');
-  }
-})();
 </script>
 </body>
 </html>
