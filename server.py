@@ -1285,11 +1285,18 @@ def download_deploy(run_id: str):
     dp = Path(result["deploy_path"])
     if not dp.exists():
         raise HTTPException(404, "Deploy directory missing")
+    ws = Path(RUNS[run_id].get("ws", ""))
     zip_path = dp.parent / f"deploy_{run_id}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for f in dp.rglob("*"):
             if f.is_file():
                 z.write(f, f.relative_to(dp))
+        # If model.pkl missing from deploy dir, inject best_model.pkl or ws/model.pkl
+        if not (dp / "model.pkl").exists():
+            for candidate in [ws / "best_model.pkl", ws / "model.pkl"]:
+                if candidate.exists():
+                    z.write(candidate, Path("model.pkl"))
+                    break
     return FileResponse(
         str(zip_path),
         filename=f"19labs_model_{run_id}.zip",
@@ -1631,8 +1638,18 @@ async def create_api_server(run_id: str, request: Request):
         f"## Predict\n```bash\ncurl -X POST http://localhost:8000/predict \\\n"
         f"  -H 'Content-Type: application/json' \\\n  -d '{{\"feature1\": 1.0, \"feature2\": \"value\"}}'\n```\n"
     )
-    # Copy model files from workspace
-    for pattern in ["*.pkl", "*.joblib", "*.pt", "*.h5", "best_model*", "model.*"]:
+    # Copy model files — prefer best_model.pkl (preserved per new-best event)
+    model_copied = False
+    for src_name in ["best_model.pkl", "model.pkl"]:
+        for search_dir in [dp, ws]:
+            src = search_dir / src_name
+            if src.exists() and src.is_file():
+                shutil.copy2(src, api_dir / "model.pkl")
+                model_copied = True
+                break
+        if model_copied:
+            break
+    for pattern in ["*.joblib", "*.pt", "*.h5"]:
         for f in list(dp.glob(pattern)) + list(ws.glob(pattern)):
             if f.is_file() and f.parent != api_dir:
                 shutil.copy2(f, api_dir / f.name)

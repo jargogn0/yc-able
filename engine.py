@@ -274,7 +274,7 @@ def git_init_workspace(ws, run_tag):
         _git(ws, "init")
         _git(ws, "checkout", "-b", f"autoresearch/{run_tag}")
         gitignore = ws / ".gitignore"
-        gitignore.write_text("__pycache__/\n*.pyc\nmodel.pkl\nrun.log\n*.zip\n")
+        gitignore.write_text("__pycache__/\n*.pyc\nmodel.pkl\nrun.log\n*.zip\ndeploy/\n")
         _git(ws, "add", "-A")
         _git(ws, "commit", "-m", "init: workspace setup", "--allow-empty")
         return True
@@ -2159,13 +2159,21 @@ def package_deployment(ws, best_exp, obj, profile):
         shutil.copy(src, d / "train.py")
     elif (ws / "train.py").exists():
         shutil.copy(ws / "train.py", d / "train.py")
-    # model.pkl if saved
-    pkl = ws / "model.pkl"
-    if pkl.exists(): shutil.copy(pkl, d / "model.pkl")
+
+    # Use best_model.pkl (preserved at each new-best event) — fall back to model.pkl
+    model_src = None
+    for candidate in [ws / "best_model.pkl", ws / "model.pkl"]:
+        if candidate.exists():
+            model_src = candidate
+            break
+    if model_src:
+        shutil.copy2(model_src, d / "model.pkl")
+
+    train_code = (d / "train.py").read_text() if (d / "train.py").exists() else ""
 
     inference = extract_code(ask(
         "Write production Python inference code. FastAPI endpoint + CLI. Output ONLY ```python.",
-        f"""Production inference script.
+        f"""Production inference script for a trained ML model.
 
 MODEL: {best_exp['model']} | TASK: {obj['task']} | TARGET: {obj['target']}
 METRIC: {best_exp['metric_name']}={best_exp['metric_val']:.6f}
@@ -2173,29 +2181,51 @@ COLS: {', '.join(profile['headers'])}
 NUMERIC: {', '.join(profile['numeric'])}
 CATEGORICAL: {', '.join(profile['categorical'])}
 
+TRAINING CODE (for reference on preprocessing):
+```python
+{train_code[:2000]}
+```
+
 Requirements:
-- Load model.pkl with joblib
-- FastAPI POST /predict — accepts JSON {{"data": [row_dict, ...]}} → returns {{"predictions": [...]}}
-- CLI: python predict.py --input data.csv --output predictions.csv
-- Same preprocessing as training
-- Handle nulls and encoding robustly
+- File is named inference_server.py, FastAPI app object MUST be named `app`
+- Startup: load model.pkl via joblib (scan directory for *.pkl, *.joblib if not found)
+- POST /predict — accepts flat JSON dict of feature values → returns {{"prediction": value}}
+- GET /health — returns {{"status": "ok", "model": "{best_exp['model']}", "task": "{obj['task']}"}}
+- Use $PORT env var (default 8000) for Railway compatibility
+- Apply same preprocessing as training (encode categoricals, impute nulls)
+- Handle missing/extra input fields gracefully
 
-Output ONLY ```python code.""", 2500))
+Output ONLY ```python code.""", 3000))
 
-    (d / "predict.py").write_text(inference)
-    train_code = ""
-    if (d / "train.py").exists():
-        train_code = (d / "train.py").read_text()
+    (d / "inference_server.py").write_text(inference)
     dep_reqs = build_requirements_from_code(
         train_code,
         inference,
-        extra_modules={"fastapi", "uvicorn"},
+        extra_modules={"fastapi", "uvicorn", "joblib"},
     )
     (d / "requirements.txt").write_text(dep_reqs)
+
+    # Railway + Docker deployment files
+    (d / "Dockerfile").write_text(
+        "FROM python:3.11-slim\n"
+        "WORKDIR /app\n"
+        "COPY . .\n"
+        "RUN pip install --no-cache-dir -r requirements.txt\n"
+        'CMD uvicorn inference_server:app --host 0.0.0.0 --port ${PORT:-8000}\n'
+    )
+    import json as _json
+    (d / "railway.json").write_text(_json.dumps({
+        "$schema": "https://railway.app/railway.schema.json",
+        "deploy": {
+            "startCommand": "uvicorn inference_server:app --host 0.0.0.0 --port $PORT",
+            "healthcheckPath": "/health"
+        }
+    }, indent=2))
 
     history_lines = "\n".join(
         f"- Exp {h['num']:02d}: {h['model']} → {h['metric_name']}={h['metric_val']:.6f}"
         for h in best_exp.get("all_history", []))
+    model_note = "✅ model.pkl included" if model_src else "⚠️  model.pkl not found — run train.py to generate it"
     (d / "README.md").write_text(f"""# 19Labs Deployed Model
 
 ## Model
@@ -2204,19 +2234,32 @@ Output ONLY ```python code.""", 2500))
 - Model: **{best_exp['model']}**
 - {best_exp['metric_name'].upper()}: **{best_exp['metric_val']:.6f}**
 - Trained: {time.strftime('%Y-%m-%d %H:%M:%S')}
+- {model_note}
 
-## Quick Start
+## Deploy to Railway (1 command)
+```bash
+railway login && railway up
+```
+
+## Run locally
 ```bash
 pip install -r requirements.txt
-python train.py        # retrain → saves model.pkl
-uvicorn predict:app    # serve API on :8000
+uvicorn inference_server:app --reload   # API on :8000
+```
+
+## Retrain
+```bash
+python train.py   # → saves model.pkl
 ```
 
 ## API
 ```bash
 POST /predict
-{{"data": [{{"col1": val1, "col2": val2}}]}}
-→ {{"predictions": [42.0]}}
+{{"feature1": 1.0, "feature2": "category"}}
+→ {{"prediction": 42.0}}
+
+GET /health
+→ {{"status": "ok", "model": "{best_exp['model']}", "task": "{obj['task']}"}}
 ```
 
 ## Experiment History
@@ -2761,6 +2804,14 @@ def run_research(
                     "all_history": history,
                 }
                 no_improve_rounds = 0
+                # Preserve best model artifact — model.pkl gets overwritten each experiment
+                _src_pkl = ws / "model.pkl"
+                if _src_pkl.exists():
+                    try:
+                        shutil.copy2(_src_pkl, ws / "best_model.pkl")
+                        log.engine(f"Saved best_model.pkl from exp {n}")
+                    except Exception:
+                        pass
             else:
                 no_improve_rounds += 1
             insights.append(f"Exp {n}: KEEP — {reasoning}")
