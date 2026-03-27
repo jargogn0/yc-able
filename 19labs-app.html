@@ -1157,6 +1157,49 @@ function onAuthSuccess(){
   // Upload any locally-stored keys to server (in case they were set before login)
   _syncLocalKeysToServer();
   loadSavedKeys();
+  // Restore run history from server and last active run
+  _restoreRunHistory();
+}
+
+async function _restoreRunHistory(){
+  // Merge server-side run list into local history
+  try{
+    const r=await apiFetch(`${BASE}/api/runs`);
+    if(r.ok){
+      const d=await r.json();
+      (d.runs||[]).forEach(run=>{
+        const label=run.filename||(run.best_model?`${run.best_model}`:'Run');
+        const status=run.status==='done'?'done':run.status==='error'?'error':'done';
+        if(!runHistory.find(rh=>rh.id===run.id))runHistory.push({id:run.id,status,label});
+      });
+      runHistory.sort((a,b)=>{
+        // Keep order stable — no timestamp on local items, just deduplicate
+        return 0;
+      });
+      _rhSave();
+      renderRunHistory();
+    }
+  }catch(_){}
+  // Restore last active run on page reload
+  const lastRun=localStorage.getItem('19labs_last_run_id');
+  if(lastRun&&!S.runId){
+    try{
+      const r=await apiFetch(`${BASE}/api/run/${lastRun}/status`);
+      if(r.ok){
+        const st=await r.json();
+        if(st.status==='done'||st.status==='running'){
+          S.runId=lastRun;
+          if(st.best){S.best=st.best;showBest(st.best,st.objective,lastRun)}
+          if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
+          if(st.artifacts){S.artifacts=st.artifacts;showArts(lastRun,st.artifacts);updArtSide()}
+          if(st.report){S.report=st.report;showRpt(st.report)}
+          updStatus();
+          stab('exp');
+          toast(`Restored last run ${lastRun}`,'info',3000);
+        }
+      }
+    }catch(_){}
+  }
 }
 
 async function _syncLocalKeysToServer(){
@@ -1836,6 +1879,7 @@ async function launchRun(){
       throw new Error(errMsg);
     }
     const{run_id}=await sr.json();S.runId=run_id;updStatus();
+    localStorage.setItem('19labs_last_run_id',run_id);
     addRunHistory(run_id,'running',S.file?.name||'Run');
     toast(`Run ${run_id} started`,'ok');
     sbUpdate({runId:run_id});
@@ -2343,11 +2387,17 @@ async function cancelRun(){
 // ═══════════════════════════════════════════
 // RUN HISTORY (sidebar)
 // ═══════════════════════════════════════════
-const runHistory=[];
+// ── RUN HISTORY (persisted to localStorage + server) ───────────
+const _RH_KEY='19labs_run_history';
+function _rhLoad(){try{return JSON.parse(localStorage.getItem(_RH_KEY)||'[]')}catch(_){return[]}}
+function _rhSave(){try{localStorage.setItem(_RH_KEY,JSON.stringify(runHistory.slice(0,30)))}catch(_){}}
+const runHistory=_rhLoad();
 function addRunHistory(id,status,label){
   const existing=runHistory.find(r=>r.id===id);
   if(existing){existing.status=status;existing.label=label||existing.label}
   else runHistory.unshift({id,status,label:label||id});
+  if(runHistory.length>30)runHistory.splice(30);
+  _rhSave();
   renderRunHistory();
 }
 function renderRunHistory(){
@@ -2362,13 +2412,16 @@ function renderRunHistory(){
 }
 async function loadRunStatus(id){
   try{
-    const r=await apiFetch(`${BASE}/api/run/${id}/status`);if(!r.ok)return;
+    const r=await apiFetch(`${BASE}/api/run/${id}/status`);if(!r.ok){toast(`Run ${id} not found on server`,'warn');return;}
     const st=await r.json();
-    if(st.best){S.best=st.best;S.runId=id}
+    S.runId=id;localStorage.setItem('19labs_last_run_id',id);
+    S.exps=[];document.getElementById('p-exp').innerHTML='';
+    if(st.best){S.best=st.best;showBest(st.best,st.objective,id)}
     if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
     if(st.artifacts){S.artifacts=st.artifacts;showArts(id,st.artifacts);updArtSide()}
     if(st.report){S.report=st.report;showRpt(st.report)}
-    toast(`Loaded run ${id}: ${st.status}`,'info',3000);
+    updStatus();stab('exp');
+    toast(`Loaded run ${id}`,'ok',2500);
   }catch(_){}
 }
 
@@ -3302,6 +3355,8 @@ setBadge(C.key?'READY':'IDLE','');
 {const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
 ['p-exp','p-art','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
+// Render persisted run history immediately so sidebar isn't empty on reload
+renderRunHistory();
 _loadServerConfig().then(()=>initAuth());
 </script>
 </body>
