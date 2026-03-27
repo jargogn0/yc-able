@@ -1,6 +1,9 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
+// Must be called before app is ready — fixes black screen on macOS
+app.disableHardwareAcceleration();
+
 const APP_URL = process.env.LABS_URL || 'https://yc-able.com/app';
 
 let mainWindow;
@@ -21,7 +24,6 @@ function createWindow() {
       nodeIntegration: false,
       webSecurity: false,              // allow mixed content / remote resources
       allowRunningInsecureContent: true,
-      partition: 'persist:19labs',     // persistent session — keeps login cookies
     },
   });
 
@@ -44,9 +46,17 @@ function createWindow() {
     try { if (splash && !splash.isDestroyed()) splash.destroy(); } catch (_) {}
   }
 
-  // Close splash when page finishes loading
+  // Close splash when page finishes loading, force repaint to fix black screen
   mainWindow.webContents.on('did-finish-load', () => {
     closeSplash();
+    // Force a repaint — fixes GPU black screen on macOS
+    mainWindow.webContents.invalidate();
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+        mainWindow.show();
+      }
+    }, 100);
   });
 
   // On load failure: retry up to 3x then close splash so user isn't stuck
