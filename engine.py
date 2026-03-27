@@ -194,6 +194,9 @@ def write_workspace_requirements(ws, train_py_code):
 # ── CONFIG ─────────────────────────────────────────────────────
 CLAUDE_MODEL  = "claude-sonnet-4-6"
 OPENAI_MODEL  = "gpt-4o"
+# Active model overrides (set by _init_client when caller passes a model)
+_active_claude_model  = CLAUDE_MODEL
+_active_openai_model  = OPENAI_MODEL
 # Bedrock model ID — can be overridden via BEDROCK_MODEL env var.
 # Default is claude-3-5-sonnet which is widely available across regions.
 # Cross-region inference prefix format: us.anthropic.claude-... (for us-east-1/us-west-2)
@@ -693,14 +696,26 @@ def reset_token_usage():
     _token_usage["calls"] = 0
 
 # ── LLM (multi-provider) ───────────────────────────────────────
-def _init_client(api_key, provider="claude"):
+def _init_client(api_key, provider="claude", model=None):
     """Initialise the LLM client.
 
     For Bedrock, api_key is a JSON string:
       {"access_key": "AKIA...", "secret_key": "...", "region": "us-east-1"}
+    model: optional override for the model to use for this session.
     """
-    global _client, _provider
+    global _client, _provider, _active_claude_model, _active_openai_model, BEDROCK_MODEL
     _provider = (provider or "claude").lower()
+    if model:
+        if _provider == "openai":
+            _active_openai_model = model
+        elif _provider == "bedrock":
+            BEDROCK_MODEL = model
+        else:
+            _active_claude_model = model
+    else:
+        # Reset to defaults when no model override given
+        _active_claude_model = CLAUDE_MODEL
+        _active_openai_model = OPENAI_MODEL
     if _provider == "openai":
         if OpenAI is None:
             raise RuntimeError("openai package not installed. Run: pip install openai")
@@ -741,7 +756,7 @@ def ask(system, user, max_tokens=3000):
         try:
             if _provider == "openai":
                 r = _client.chat.completions.create(
-                    model=OPENAI_MODEL,
+                    model=_active_openai_model,
                     max_tokens=max_tokens,
                     messages=[
                         {"role": "system", "content": system},
@@ -754,7 +769,7 @@ def ask(system, user, max_tokens=3000):
                     _token_usage["output"] += r.usage.completion_tokens or 0
                 return r.choices[0].message.content.strip()
             else:
-                model_id = BEDROCK_MODEL if _provider == "bedrock" else CLAUDE_MODEL
+                model_id = BEDROCK_MODEL if _provider == "bedrock" else _active_claude_model
                 r = _client.messages.create(
                     model=model_id,
                     max_tokens=max_tokens,
@@ -978,11 +993,11 @@ def _extract_json_blob(txt):
     except Exception:
         return {}
 
-def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=None, provider="claude"):
+def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=None, provider="claude", model=None):
     key = api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key:
         raise RuntimeError("No API key.")
-    _init_client(key, provider)
+    _init_client(key, provider, model=model)
 
     # Support media (image/audio) directories in addition to CSV files
     _path = pathlib.Path(csv_path)
@@ -2201,6 +2216,7 @@ def run_research(
     continuous=False,
     cancel_event=None,
     provider="claude",
+    model=None,
 ):
     """
     Karpathy-discipline autoresearch loop.
@@ -2218,7 +2234,7 @@ def run_research(
     global AVAILABLE_PKGS
     key = api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key: raise RuntimeError("No API key.")
-    _init_client(key, provider)
+    _init_client(key, provider, model=model)
     reset_token_usage()
 
     mode = normalize_reliability_mode(reliability_mode)
@@ -2790,7 +2806,7 @@ Output ONLY a complete ```python block.""", 4200)
         token_usage=get_token_usage())
 
 # ── CHAT WITH DATA ─────────────────────────────────────────────
-def chat_with_data(message: str, context: dict, api_key: str, provider: str = "claude") -> str:
+def chat_with_data(message: str, context: dict, api_key: str, provider: str = "claude", model: str = None) -> str:
     """Free-form conversational AI about the current dataset/model."""
     ctx_parts = []
     if context.get("filename"):
@@ -2818,7 +2834,7 @@ def chat_with_data(message: str, context: dict, api_key: str, provider: str = "c
         if provider == "openai" and OpenAI:
             client = OpenAI(api_key=api_key)
             resp = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model or "gpt-4o-mini",
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": message}],
                 max_tokens=800
             )
@@ -2826,7 +2842,7 @@ def chat_with_data(message: str, context: dict, api_key: str, provider: str = "c
         else:
             client = Anthropic(api_key=api_key)
             resp = client.messages.create(
-                model=CLAUDE_MODEL, max_tokens=800,
+                model=model or CLAUDE_MODEL, max_tokens=800,
                 system=system,
                 messages=[{"role": "user", "content": message}]
             )

@@ -573,6 +573,8 @@ input[type=file]{display:none}
     </div>
     <label id="key-label">Anthropic API Key</label>
     <input type="password" id="key-input" placeholder="sk-ant-api03-..." autocomplete="off">
+    <label>Model</label>
+    <select id="model-select" style="width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;font-family:var(--sans);cursor:pointer"></select>
     <label>Experiment Budget</label>
     <div style="display:flex;gap:8px;align-items:center">
       <input type="range" id="budget-slider" min="3" max="50" value="6" style="flex:1" oninput="document.getElementById('budget-val').textContent=this.value">
@@ -890,13 +892,32 @@ input[type=file]{display:none}
 // CONFIG
 // ═══════════════════════════════════════════
 const P = {
-  claude:  {label:'Claude',  kl:'Anthropic API Key', ph:'sk-ant-api03-...'},
-  openai:  {label:'OpenAI',  kl:'OpenAI API Key',    ph:'sk-proj-...'},
-  bedrock: {label:'Bedrock', kl:'AWS Access Key ID',  ph:'AKIA...'},
+  claude:  {label:'Claude',  kl:'Anthropic API Key', ph:'sk-ant-api03-...', models:[
+    {id:'claude-sonnet-4-6',    label:'Claude Sonnet 4.6 (default)'},
+    {id:'claude-opus-4-6',      label:'Claude Opus 4.6'},
+    {id:'claude-haiku-4-5-20251001', label:'Claude Haiku 4.5'},
+    {id:'claude-3-5-sonnet-20241022',label:'Claude 3.5 Sonnet'},
+    {id:'claude-3-5-haiku-20241022', label:'Claude 3.5 Haiku'},
+  ]},
+  openai:  {label:'OpenAI',  kl:'OpenAI API Key',    ph:'sk-proj-...', models:[
+    {id:'gpt-4o',          label:'GPT-4o (default)'},
+    {id:'gpt-4o-mini',     label:'GPT-4o mini'},
+    {id:'gpt-4.1',         label:'GPT-4.1'},
+    {id:'gpt-4.1-mini',    label:'GPT-4.1 mini'},
+    {id:'o3-mini',         label:'o3-mini'},
+    {id:'o4-mini',         label:'o4-mini'},
+  ]},
+  bedrock: {label:'Bedrock', kl:'AWS Access Key ID',  ph:'AKIA...', models:[
+    {id:'anthropic.claude-3-5-sonnet-20241022-v2:0', label:'Claude 3.5 Sonnet v2 (default)'},
+    {id:'anthropic.claude-3-5-haiku-20241022-v1:0',  label:'Claude 3.5 Haiku'},
+    {id:'anthropic.claude-3-opus-20240229-v1:0',     label:'Claude 3 Opus'},
+    {id:'us.anthropic.claude-sonnet-4-5-20251001-v1:0', label:'Claude Sonnet 4.5 (us)'},
+  ]},
 };
 function gk(p){return localStorage.getItem(`19labs_api_key_${p}`)||localStorage.getItem('19labs_api_key_last')||localStorage.getItem('19labs_api_key_claude')||''}
-const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',demo:false};
-C.key=gk(C.provider);
+function gm(p){return localStorage.getItem(`19labs_model_${p}`)||''}
+const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',model:'',demo:false};
+C.key=gk(C.provider);C.model=gm(C.provider);
 const _apiMeta=document.querySelector('meta[name="api-base"]');
 const BASE=_apiMeta&&_apiMeta.content?_apiMeta.content.replace(/\/$/,''):(window.location.protocol==='file:'||!window.location.host)?(localStorage.getItem('19labs_server')||'http://localhost:8019'):window.location.origin;
 let ACCESS_TOKEN=localStorage.getItem('19labs_access_token')||'';
@@ -1188,7 +1209,7 @@ function setRM(m,noSave){
   if(!noSave)localStorage.setItem('19labs_rmode',m);
 }
 function setProv(p){
-  C.provider=p;C.key=gk(p);localStorage.setItem('19labs_provider',p);spUI(p);
+  C.provider=p;C.key=gk(p);C.model=gm(p);localStorage.setItem('19labs_provider',p);spUI(p);
   document.getElementById('key-input').value=C.key;
 }
 function spUI(p){
@@ -1196,6 +1217,12 @@ function spUI(p){
   document.getElementById('key-label').textContent=P[p].kl;
   document.getElementById('key-input').placeholder=P[p].ph;
   document.getElementById('tb-prov').textContent=P[p].label;
+  // populate model dropdown
+  const sel=document.getElementById('model-select');
+  if(sel){
+    const saved=gm(p);
+    sel.innerHTML=P[p].models.map(m=>`<option value="${m.id}"${m.id===saved?'selected':''}>${m.label}</option>`).join('');
+  }
 }
 async function saveSettings(){
   const k=document.getElementById('key-input').value.trim();
@@ -1204,6 +1231,9 @@ async function saveSettings(){
   const newBudget=parseInt(document.getElementById('budget-slider').value)||6;
   S.budget=newBudget;localStorage.setItem('19labs_budget',newBudget);
   localStorage.setItem('19labs_rmode',S.rmode);
+  // save selected model
+  const sel=document.getElementById('model-select');
+  if(sel&&sel.value){C.model=sel.value;localStorage.setItem(`19labs_model_${C.provider}`,sel.value);}
   if(k){C.key=k;C.demo=false;localStorage.setItem(`19labs_api_key_${C.provider}`,k);localStorage.setItem('19labs_api_key_last',k)}
   ACCESS_TOKEN=at;localStorage.setItem('19labs_access_token',at);
   if(su){const prev=localStorage.getItem('19labs_server')||'http://localhost:8019';if(su!==prev){localStorage.setItem('19labs_server',su);location.reload();return}}
@@ -1486,7 +1516,7 @@ async function chatWithAI(message){
   const key=C.key||gk(C.provider);
   const ctx={filename:S.file?.name,profile:S.discovery?.profile,best:S.best,objective:S.discovery?.objective||S.discovery?.discovery,history:S.exps};
   try{
-    const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,context:ctx})});
+    const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,model:C.model||undefined,context:ctx})});
     const j=await r.json();typing(false);
     if(!r.ok||!j.ok){chat('err',j.error||'Chat failed');return}
     chat('ai',j.response);
@@ -1560,8 +1590,8 @@ async function runDiscover(hint){
     // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
     const _prevObj = S.discovery?.objective || null;
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider}
-      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
@@ -1652,8 +1682,8 @@ async function launchRun(){
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
   try{
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok)throw new Error(`Server error (${sr.status}): ${await sr.text()}`);
     const{run_id}=await sr.json();S.runId=run_id;updStatus();
@@ -2669,7 +2699,7 @@ async function chatGenerateChart(query){
   const key=C.key||gk(C.provider);
   try{
     const r=await apiFetch(`${BASE}/api/chart`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      query,csv_text:S.csv.slice(0,500000),headers:S.cols||[],api_key:key||undefined,provider:C.provider
+      query,csv_text:S.csv.slice(0,500000),headers:S.cols||[],api_key:key||undefined,provider:C.provider,model:C.model||undefined
     })});
     const j=await r.json();typing(false);
     if(!j.ok){chat('err',j.error||'Chart generation failed');return}

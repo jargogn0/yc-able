@@ -630,6 +630,7 @@ class RunRequest(BaseModel):
     reliability_mode: str = "balanced"
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""        # optional model override (e.g. "gpt-4o-mini", "claude-opus-4-6")
     continuous: bool = False
 
 class ValidateKeyRequest(BaseModel):
@@ -644,11 +645,13 @@ class DiscoverRequest(BaseModel):
     previous_objective: dict | None = None  # what the agent was proposing before the user corrected it
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""        # optional model override
 
 class ChatRequest(BaseModel):
     message: str
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""        # optional model override
     context: dict = {}
 
 class PredictRequest(BaseModel):
@@ -859,6 +862,7 @@ async def start_run(req: RunRequest, request: Request):
                 continuous=req.continuous,
                 cancel_event=cancel_event,
                 provider=req.provider or "claude",
+                model=req.model or None,
             )
             RUNS[run_id]["result"] = result
             if RUNS[run_id]["status"] == "stopping":
@@ -937,7 +941,7 @@ async def discover(req: DiscoverRequest):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude")
+        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None)
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
@@ -1331,7 +1335,7 @@ async def chat_endpoint(req: ChatRequest):
         raise HTTPException(400, "API key required for chat")
     from engine import chat_with_data
     try:
-        response = chat_with_data(req.message, req.context, api_key, req.provider)
+        response = chat_with_data(req.message, req.context, api_key, req.provider, model=req.model or None)
         return {"ok": True, "response": response}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -1344,6 +1348,7 @@ class ChartRequest(BaseModel):
     sample_rows: list[list[str]] = []
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""      # optional model override
 
 @app.post("/api/chart")
 async def generate_chart(req: ChartRequest):
@@ -1374,7 +1379,7 @@ async def generate_chart(req: ChartRequest):
         col_info.append(info)
 
     from engine import ask, _init_client
-    _init_client(api_key, req.provider or "claude")
+    _init_client(api_key, req.provider or "claude", model=req.model or None)
 
     prompt = f"""Given this dataset and query, generate a chart specification.
 
