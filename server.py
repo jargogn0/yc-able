@@ -10,7 +10,7 @@
 import asyncio, glob, json, os, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -232,42 +232,31 @@ def _build_mac_zip() -> bytes:
 # Pre-build mac zip once at startup
 _MAC_ZIP = _build_mac_zip()
 
+_GH_RELEASE = "https://github.com/jargogn0/yc-able/releases/download/v1.0.0"
+_GH_MAC   = f"{_GH_RELEASE}/19Labs-1.0.0.dmg"
+_GH_WIN   = f"{_GH_RELEASE}/19Labs%20Setup%201.0.0.exe"
+_GH_LINUX = f"{_GH_RELEASE}/19Labs-1.0.0.AppImage"
+
 @app.get("/download")
 async def download_auto(request: Request):
-    """Auto-detect platform and serve the right download."""
     ua = request.headers.get("user-agent", "").lower()
     if "windows" in ua or "win64" in ua or "win32" in ua:
-        return _download_windows()
+        return RedirectResponse(_GH_WIN, status_code=302)
     if "mac" in ua or "darwin" in ua:
-        return _download_mac()
-    return _download_linux()
+        return RedirectResponse(_GH_MAC, status_code=302)
+    return RedirectResponse(_GH_LINUX, status_code=302)
 
 @app.get("/download/mac")
 def _download_mac():
-    from fastapi.responses import Response as FR
-    return FR(
-        content=_MAC_ZIP,
-        media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="19Labs.zip"'},
-    )
+    return RedirectResponse(_GH_MAC, status_code=302)
 
 @app.get("/download/win")
 def _download_windows():
-    from fastapi.responses import Response as FR
-    return FR(
-        content=_WIN_SCRIPT.encode(),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="19Labs.bat"'},
-    )
+    return RedirectResponse(_GH_WIN, status_code=302)
 
 @app.get("/download/linux")
 def _download_linux():
-    from fastapi.responses import Response as FR
-    return FR(
-        content=_LINUX_SCRIPT.encode(),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="19labs.sh"'},
-    )
+    return RedirectResponse(_GH_LINUX, status_code=302)
 
 # ── START RUN (JSON body) ──────────────────────────────────────
 class RunRequest(BaseModel):
