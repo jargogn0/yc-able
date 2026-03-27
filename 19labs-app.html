@@ -1381,9 +1381,13 @@ async function runDiscover(hint){
   sbUpdate({status:'Analyzing...',running:true});
   let key=C.key||gk(C.provider);
   try{
+    // Include the current objective so the LLM can interpret corrections in context
+    // e.g. agent proposed "predict shipped_weight", user says "no revenue forecast"
+    // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
+    const _prevObj = S.discovery?.objective || null;
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',api_key:key||undefined,provider:C.provider}
-      :{filename:S.file.name,csv:S.csv,hint:hint||'',api_key:key||undefined,provider:C.provider};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider}
+      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){

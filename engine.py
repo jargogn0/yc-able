@@ -839,18 +839,32 @@ def normalize_reliability_mode(mode: str | None) -> str:
     return resolved if resolved in RELIABILITY_PROFILES else "balanced"
 
 # ── INFER OBJECTIVE ────────────────────────────────────────────
-def infer_objective(profile, hint="", domain_analysis=""):
-    _hint_block = (
-        f"\n⚠️  USER INSTRUCTION (HIGHEST PRIORITY — overrides ALL profile inferences):\n"
-        f"The user explicitly said: \"{hint}\"\n"
-        f"You MUST respect this. If they say 'no X', do not use X as target or task.\n"
-        f"If they say 'predict Y' or 'classify Z', use that as the target/task.\n"
-        f"Their words override what the data profile suggests.\n"
-    ) if hint else ""
+def infer_objective(profile, hint="", domain_analysis="", previous_objective=None):
+    # Build context-aware hint block so the LLM can interpret corrections correctly
+    if hint and previous_objective:
+        _hint_block = (
+            f"\n⚠️  USER CORRECTION — interpret in context:\n"
+            f"The agent was previously proposing: task={previous_objective.get('task','?')}, "
+            f"target={previous_objective.get('target','?')}\n"
+            f"The user responded: \"{hint}\"\n"
+            f"Parse this as a REACTION to the current plan, not in isolation.\n"
+            f"Example: if proposing 'predict shipped_weight' and user says 'no revenue forecast',\n"
+            f"  they mean 'no [to that], I want revenue forecast' → target should be revenue column.\n"
+            f"Example: if proposing 'classify churn' and user says 'no revenue', they want revenue prediction.\n"
+            f"Determine the user's ACTUAL INTENT from context, then use the right target column from the dataset.\n"
+        )
+    elif hint:
+        _hint_block = (
+            f"\n⚠️  USER INSTRUCTION (overrides profile inferences):\n"
+            f"The user said: \"{hint}\"\n"
+            f"Use this to determine the correct target and task.\n"
+        )
+    else:
+        _hint_block = ""
 
     resp = ask(
         "You are 19Labs. Given a deep expert domain analysis, produce precise ML objective parameters. "
-        "When the user gives an explicit instruction, you MUST follow it — it overrides profile inferences.",
+        "When the user gives an instruction, interpret it in context of the current plan to find their true intent.",
         f"""Based on the expert domain analysis below, extract the exact ML objective parameters.
 {_hint_block}
 EXPERT DOMAIN ANALYSIS:
@@ -905,7 +919,7 @@ def _extract_json_blob(txt):
     except Exception:
         return {}
 
-def discover_user_need(csv_path, user_hint="", api_key=None, provider="claude"):
+def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=None, provider="claude"):
     key = api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key:
         raise RuntimeError("No API key.")
@@ -917,21 +931,45 @@ def discover_user_need(csv_path, user_hint="", api_key=None, provider="claude"):
         profile = profile_media_dataset(csv_path)
     else:
         profile = profile_dataset(csv_path)
-    obj = infer_objective(profile, user_hint)
+    obj = infer_objective(profile, user_hint, previous_objective=previous_objective)
 
-    _hint_directive = (
-        f"\n⚠️  USER INSTRUCTION (HIGHEST PRIORITY — must be reflected in your response):\n"
-        f"The user said: \"{user_hint}\"\n"
-        f"Your recommended_objective, recommended_metric, and first_iteration_plan MUST align with this.\n"
-        f"If they said 'no X', exclude X from all recommendations.\n"
-        f"If they said 'predict/classify/cluster Y', make Y the focus.\n"
-    ) if user_hint else ""
+    # Build correction block — shows the agent what it WAS proposing so it can
+    # correctly interpret ambiguous user corrections like "no revenue forecast"
+    # (which means "no [to what you're doing], do revenue forecast")
+    _prev_block = ""
+    if previous_objective:
+        _prev_block = (
+            f"\nWHAT THE AGENT WAS PREVIOUSLY PROPOSING:\n"
+            f"- task: {previous_objective.get('task','?')}\n"
+            f"- target: {previous_objective.get('target','?')}\n"
+            f"- objective: {previous_objective.get('reasoning','?')}\n"
+        )
+
+    _correction_block = ""
+    if user_hint and previous_objective:
+        _correction_block = (
+            f"\n⚠️  USER CORRECTION (interpret in context of what was proposed above):\n"
+            f"The user said: \"{user_hint}\"\n"
+            f"This is a REACTION to the previous plan. Parse it conversationally:\n"
+            f"  - \"no revenue forecast\" when the plan was predicting weight → means \"no [to that], do revenue forecast\"\n"
+            f"  - \"no, churn\" when predicting revenue → means \"predict churn instead\"\n"
+            f"  - \"too complex\" → simplify the approach\n"
+            f"  - \"add X\" → incorporate X into the objective\n"
+            f"Read the user's intent from context, not just the literal words.\n"
+            f"Your recommended_objective MUST reflect what the user actually wants.\n"
+        )
+    elif user_hint:
+        _correction_block = (
+            f"\n⚠️  USER INSTRUCTION:\n"
+            f"The user said: \"{user_hint}\"\n"
+            f"Your recommended_objective and plan MUST align with this.\n"
+        )
 
     advice_raw = ask(
         "You are a product-minded ML research copilot. Help clarify user intent before training. "
-        "When the user gives an explicit instruction, your response MUST honor it above all else.",
+        "You are expert at interpreting ambiguous user corrections in context of what was previously proposed.",
         f"""Given this dataset profile and objective, propose the best next direction.
-{_hint_directive}
+{_prev_block}{_correction_block}
 Return STRICT JSON with keys:
 {{
   "recommended_objective": "short objective sentence",

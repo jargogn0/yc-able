@@ -486,6 +486,7 @@ class DiscoverRequest(BaseModel):
     csv: str = ""
     dataset_id: str = ""   # pre-uploaded media dataset
     hint: str = ""
+    previous_objective: dict = {}  # what the agent was proposing before the user corrected it
     api_key: str = ""
     provider: str = "claude"
 
@@ -774,7 +775,7 @@ async def discover(req: DiscoverRequest):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(data_path, user_hint=req.hint, api_key=resolved_api_key, provider=req.provider or "claude")
+        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude")
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
