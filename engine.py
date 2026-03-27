@@ -1131,6 +1131,27 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
         f"{h.get('metric_name', obj.get('metric', 'metric'))}={h.get('metric_val', 0):.6f}"
         for h in history
     ) if history else "- (none)"
+
+    # Pre-compute media-specific strings (avoids backslash-in-f-string issues on Python < 3.12)
+    _is_media = bool(profile.get('is_media'))
+    if _is_media:
+        _media_line = (
+            f"- Media type: {profile['media_type']} | Files: {profile['total_files']}"
+            f" | Classes: {list(profile['classes'].keys())}"
+        )
+        _data_load_line = (
+            "- DATA_PATH is a DIRECTORY path containing class subfolders of "
+            + profile.get('media_type', '') + " files"
+            " (e.g. DATA_PATH/cats/*.jpg, DATA_PATH/dogs/*.jpg)."
+            " Load with glob/PIL/librosa — NOT pd.read_csv."
+        )
+    else:
+        _media_line = ""
+        _data_load_line = (
+            "- `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)` — this is the ONLY way to load data."
+            " DATA_SEP is already set to the correct delimiter (e.g. ',' or ';' or '\\t')."
+        )
+
     code = ask(
         "You write complete production-grade Python training scripts. "
         "You are a senior ML engineer — you know exactly what approach fits each dataset type and domain. "
@@ -1166,7 +1187,7 @@ DATA PROFILE:
 - Headers: {', '.join(profile['headers'])}
 - Text columns: {', '.join(profile.get('text', [])) or 'none'}
 - Signals: {'; '.join(profile.get('signals', []))}
-{f"- Media type: {profile['media_type']} | Files: {profile['total_files']} | Classes: {list(profile['classes'].keys())}" if profile.get('is_media') else ""}
+{_media_line}
 
 EXECUTION POLICY:
 - Reliability mode: {obj.get('reliability_mode', 'balanced')}
@@ -1175,7 +1196,7 @@ EXECUTION POLICY:
 KARPATHY DISCIPLINE (MANDATORY):
 - DATA_PATH and TIME_BUDGET are Python variables pre-defined BEFORE your code runs (injected at line 1).
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly.
-{"- DATA_PATH is a DIRECTORY path containing class subfolders of " + profile.get('media_type','') + " files (e.g. DATA_PATH/cats/*.jpg, DATA_PATH/dogs/*.jpg). Load with glob/PIL/librosa — NOT pd.read_csv." if profile.get('is_media') else "- `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)` — this is the ONLY way to load data. DATA_SEP is already set to the correct delimiter (e.g. ',' or ';' or '\\t')."}
+{_data_load_line}
 - TIME_BUDGET is also pre-defined. DO NOT redefine it. Your entire training MUST complete within it.
   Add a wall-clock check: `import time; _start = time.time()` at top, and periodically
   check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
