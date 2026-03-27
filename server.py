@@ -486,7 +486,7 @@ class DiscoverRequest(BaseModel):
     csv: str = ""
     dataset_id: str = ""   # pre-uploaded media dataset
     hint: str = ""
-    previous_objective: dict = {}  # what the agent was proposing before the user corrected it
+    previous_objective: dict | None = None  # what the agent was proposing before the user corrected it
     api_key: str = ""
     provider: str = "claude"
 

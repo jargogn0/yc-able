@@ -591,28 +591,57 @@ input[type=file]{display:none}
 </div>
 
 <!-- AUTH MODAL -->
-<div class="auth-overlay" id="auth-overlay">
+<div class="auth-overlay" id="auth-overlay" style="display:none">
   <div class="auth-card">
     <div class="auth-logo"><b>19</b>Labs</div>
-    <div class="auth-tabs">
-      <button class="auth-tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</button>
-      <button class="auth-tab" id="tab-signup" onclick="switchTab('signup')">Sign up</button>
+
+    <!-- Stage 1: API key entry (default) -->
+    <div id="auth-stage-key">
+      <div class="auth-field">
+        <label>Select Provider</label>
+        <select id="auth-provider-sel" style="width:100%;padding:10px 13px;background:#18181b;border:1px solid #27272a;border-radius:8px;color:#fafafa;font-family:'Inter',sans-serif;font-size:14px;outline:none" onchange="document.getElementById('auth-key-hint').textContent=({claude:'sk-ant-…',openai:'sk-…',gemini:'AIza…'})[this.value]||''">
+          <option value="claude">Anthropic (Claude)</option>
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </div>
+      <div class="auth-field">
+        <label>API Key</label>
+        <input type="password" id="auth-apikey-input" placeholder="Paste your API key…" autocomplete="off" onkeydown="if(event.key==='Enter')doApiKeyAuth()">
+        <div id="auth-key-hint" style="font-size:11px;color:#52525b;margin-top:4px">sk-ant-…</div>
+      </div>
+      <div class="auth-err" id="auth-err"></div>
+      <button class="auth-btn" onclick="doApiKeyAuth()">Start</button>
+      <div class="auth-sub" style="margin-top:12px">
+        Key is stored locally in your browser.
+        <a href="#" style="color:#6366f1;text-decoration:none" onclick="showAuthStage('account');return false">Sign in / create account →</a>
+      </div>
     </div>
-    <div id="auth-signup-name" class="auth-field" style="display:none">
-      <label>Name</label>
-      <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+
+    <!-- Stage 2: Account sign-in (optional) -->
+    <div id="auth-stage-account" style="display:none">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</button>
+        <button class="auth-tab" id="tab-signup" onclick="switchTab('signup')">Sign up</button>
+      </div>
+      <div id="auth-signup-name" class="auth-field" style="display:none">
+        <label>Name</label>
+        <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+      </div>
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doAuth()">
+      </div>
+      <div class="auth-field">
+        <label>Password</label>
+        <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
+      </div>
+      <div class="auth-err" id="auth-err-account"></div>
+      <button class="auth-btn" id="auth-btn" onclick="doAuth()">Sign in</button>
+      <div class="auth-sub" style="margin-top:12px">
+        <a href="#" style="color:#6366f1;text-decoration:none" onclick="showAuthStage('key');return false">← Use API key directly</a>
+      </div>
     </div>
-    <div class="auth-field">
-      <label>Email</label>
-      <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doAuth()">
-    </div>
-    <div class="auth-field">
-      <label>Password</label>
-      <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
-    </div>
-    <div class="auth-err" id="auth-err"></div>
-    <button class="auth-btn" id="auth-btn" onclick="doAuth()">Sign in</button>
-    <div class="auth-sub">Your API keys are stored securely in your account.</div>
   </div>
 </div>
 
@@ -851,31 +880,65 @@ let _authTab = 'signin';
 function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
 
 async function initAuth(){
-  if(!_authToken){showAuthModal();return;}
-  try{
-    const r = await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
-    if(r.status===401){
-      // Token is genuinely invalid (expired or wrong secret) — require re-login
-      _authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();return;
+  // Priority 1: valid JWT in localStorage
+  if(_authToken){
+    try{
+      const r=await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
+      if(r.ok){
+        _authUser=await r.json();
+        hideAuthModal();onAuthSuccess();loadSavedKeys();return;
+      }
+      if(r.status===401){
+        // Genuinely expired/invalid — clear it, fall through to API key check
+        _authToken='';localStorage.removeItem('19labs_auth_token');
+      } else {
+        // Server error — trust the token, proceed offline
+        _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+      }
+    }catch(e){
+      // Network unreachable — trust the token, proceed offline
+      _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
     }
-    if(!r.ok){
-      // 5xx or network blip — trust the cached token and proceed
-      _authUser={id:'local',email:'',name:''};onAuthSuccess();return;
-    }
-    _authUser = await r.json();
-    onAuthSuccess();
-    loadSavedKeys();
-  }catch(e){
-    // Fetch failed entirely (server unreachable) — stay logged in with cached token
-    _authUser={id:'local',email:'',name:''};onAuthSuccess();
   }
+  // Priority 2: API key already saved in localStorage — no login needed
+  const existingKey=gk(C.provider)||gk('claude')||gk('openai')||gk('gemini');
+  if(existingKey){
+    _authUser={id:'guest',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+  }
+  // Priority 3: nothing — show prompt
+  showAuthModal();
 }
 
 function showAuthModal(){
   document.getElementById('auth-overlay').style.display='flex';
+  showAuthStage('key');
 }
 function hideAuthModal(){
   document.getElementById('auth-overlay').style.display='none';
+}
+function showAuthStage(stage){
+  document.getElementById('auth-stage-key').style.display=stage==='key'?'block':'none';
+  document.getElementById('auth-stage-account').style.display=stage==='account'?'block':'none';
+}
+
+// API key direct entry (primary path — no account needed)
+async function doApiKeyAuth(){
+  const provider=document.getElementById('auth-provider-sel').value;
+  const key=document.getElementById('auth-apikey-input').value.trim();
+  const err=document.getElementById('auth-err');
+  err.textContent='';
+  if(!key){err.textContent='Paste your API key.';return;}
+  // Validate key format quickly
+  const patterns={claude:/^sk-ant-/,openai:/^sk-/,gemini:/^AIza/};
+  if(patterns[provider]&&!patterns[provider].test(key)){
+    err.textContent='Key format looks wrong for '+provider+'. Double-check it.';
+  }
+  // Save to localStorage and C
+  localStorage.setItem(`19labs_api_key_${provider}`,key);
+  localStorage.setItem('19labs_provider',provider);
+  C.key=key;C.provider=provider;
+  _authUser={id:'guest',email:'',name:''};
+  hideAuthModal();onAuthSuccess();
 }
 
 function switchTab(tab){
@@ -885,7 +948,7 @@ function switchTab(tab){
   document.getElementById('auth-signup-name').style.display=tab==='signup'?'block':'none';
   document.getElementById('auth-btn').textContent=tab==='signin'?'Sign in':'Create account';
   document.getElementById('auth-password').setAttribute('autocomplete',tab==='signin'?'current-password':'new-password');
-  document.getElementById('auth-err').textContent='';
+  document.getElementById('auth-err-account').textContent='';
 }
 
 async function doAuth(){
@@ -893,7 +956,7 @@ async function doAuth(){
   const password=document.getElementById('auth-password').value;
   const name=document.getElementById('auth-name').value.trim();
   const btn=document.getElementById('auth-btn');
-  const err=document.getElementById('auth-err');
+  const err=document.getElementById('auth-err-account');
   err.textContent='';
   if(!email||!password){err.textContent='Please fill in all fields.';return;}
   btn.disabled=true;btn.textContent='…';
@@ -916,10 +979,12 @@ async function doAuth(){
 function onAuthSuccess(){
   const user=_authUser;
   if(!user)return;
-  const initials=(user.name||user.email||'?')[0].toUpperCase();
+  const isGuest=user.id==='guest'||user.id==='local';
+  const label=isGuest?'API Key':'';
+  const initials=isGuest?'⚡':(user.name||user.email||'?')[0].toUpperCase();
   document.getElementById('user-avatar').textContent=initials;
-  document.getElementById('user-email-display').textContent=user.name||user.email;
-  document.getElementById('ump-email-full').textContent=user.email;
+  document.getElementById('user-email-display').textContent=isGuest?'Guest':(user.name||user.email);
+  document.getElementById('ump-email-full').textContent=isGuest?'Using API key from browser':(user.email||'');
   document.getElementById('user-btn').style.display='flex';
 }
 
