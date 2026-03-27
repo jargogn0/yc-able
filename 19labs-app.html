@@ -1381,7 +1381,10 @@ async function runDiscover(hint){
   sbUpdate({status:'Analyzing...',running:true});
   let key=C.key||gk(C.provider);
   try{
-    const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:S.file.name,csv:S.csv,hint:hint||'',api_key:key||undefined,provider:C.provider})});
+    const _discoverBody=S.dataset_id
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',api_key:key||undefined,provider:C.provider}
+      :{filename:S.file.name,csv:S.csv,hint:hint||'',api_key:key||undefined,provider:C.provider};
+    const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){

@@ -483,7 +483,8 @@ class ValidateKeyRequest(BaseModel):
 
 class DiscoverRequest(BaseModel):
     filename: str
-    csv: str
+    csv: str = ""
+    dataset_id: str = ""   # pre-uploaded media dataset
     hint: str = ""
     api_key: str = ""
     provider: str = "claude"
@@ -742,16 +743,29 @@ async def validate_key(req: ValidateKeyRequest):
 
 @app.post("/api/discover")
 async def discover(req: DiscoverRequest):
-    if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
-        raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
     ws = Path(tempfile.mkdtemp(prefix="19labs_discover_"))
-    csv_path = ws / req.filename
-    csv_path.write_text(req.csv)
+    cleanup_ws = True
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent))
-        from engine import discover_user_need, profile_dataset
-        profile = profile_dataset(str(csv_path))
+        from engine import discover_user_need, profile_dataset, profile_media_dataset
+
+        # Resolve data path — media dataset or CSV
+        if req.dataset_id:
+            media = _MEDIA_DATASETS.get(req.dataset_id)
+            if not media:
+                return {"ok": False, "error": "Media dataset not found. Please re-upload."}
+            data_path = media["path"]
+            profile = profile_media_dataset(data_path)
+            cleanup_ws = False  # don't delete the media dataset dir
+        else:
+            if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
+                raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
+            csv_path = ws / req.filename
+            csv_path.write_text(req.csv)
+            data_path = str(csv_path)
+            profile = profile_dataset(data_path)
+
         resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
         if not resolved_api_key:
@@ -760,7 +774,7 @@ async def discover(req: DiscoverRequest):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(str(csv_path), user_hint=req.hint, api_key=resolved_api_key, provider=req.provider or "claude")
+        result = discover_user_need(data_path, user_hint=req.hint, api_key=resolved_api_key, provider=req.provider or "claude")
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
@@ -769,10 +783,8 @@ async def discover(req: DiscoverRequest):
             msg = "API connection error during discovery. Check internet/VPN/firewall/proxy."
         return {"ok": False, "error": msg, "used_fallback": False}
     finally:
-        try:
+        if cleanup_ws:
             shutil.rmtree(ws, ignore_errors=True)
-        except Exception:
-            pass
 
 # ── PUSH CODE TO WORKSPACE ─────────────────────────────────────
 class PushCodeRequest(BaseModel):

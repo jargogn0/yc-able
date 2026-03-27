@@ -408,6 +408,17 @@ def profile_media_dataset(data_dir):
     signals = [task_type, f"{len(media_files)}_files"]
     if classes:
         signals.append(f"{len(classes)}_classes")
+    if not media_files:
+        signals.append("no_media_files_found")
+
+    # Build columns list in the same format as profile_dataset for compatibility
+    # with analyze_domain, infer_objective, write_train_py, etc.
+    columns_list = [
+        {"name": "filepath", "type": "text", "unique": len(rows_data), "null_pct": 0,
+         "avg_len": 50, "text_sample": rows_data[0]["filepath"] if rows_data else ""},
+        {"name": "label", "type": "categorical", "unique": len(classes),
+         "null_pct": 0, "top_values": list(classes.keys())[:5], "majority_pct": 0},
+    ]
 
     return {
         "path": str(data_dir),
@@ -416,12 +427,14 @@ def profile_media_dataset(data_dir):
         "rows": len(rows_data),
         "cols": 2,
         "headers": ["filepath", "label"],
-        "columns": {"filepath": {"type": "text"}, "label": {"type": "categorical"}},
+        "columns": columns_list,
         "numeric": [],
         "categorical": ["label"] if classes else [],
         "text": ["filepath"],
         "datetime": [],
         "target_candidates": ["label"],
+        "class_balance": {k: v for k, v in classes.items()},
+        "top_correlations": [],
         "signals": signals,
         "classes": classes,
         "num_classes": len(classes),
@@ -429,7 +442,7 @@ def profile_media_dataset(data_dir):
         "sample_files": [str(f.relative_to(data_dir)) for f in media_files[:6]],
         "missing": {},
         "outlier_cols": [],
-        "separator": None,
+        "detected_sep": None,
         "is_media": True,
     }
 
@@ -890,7 +903,12 @@ def discover_user_need(csv_path, user_hint="", api_key=None, provider="claude"):
         raise RuntimeError("No API key.")
     _init_client(key, provider)
 
-    profile = profile_dataset(csv_path)
+    # Support media (image/audio) directories in addition to CSV files
+    _path = pathlib.Path(csv_path)
+    if _path.is_dir():
+        profile = profile_media_dataset(csv_path)
+    else:
+        profile = profile_dataset(csv_path)
     obj = infer_objective(profile, user_hint)
 
     advice_raw = ask(
