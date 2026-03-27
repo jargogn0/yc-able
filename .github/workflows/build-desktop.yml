@@ -16,13 +16,10 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-            artifact: "desktop/dist/*.dmg"
           - os: windows-latest
             platform: win
-            artifact: "desktop/dist/*.exe"
           - os: ubuntu-latest
             platform: linux
-            artifact: "desktop/dist/*.AppImage"
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -32,9 +29,17 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install linux deps
+        if: matrix.platform == 'linux'
+        run: sudo apt-get install -y libfuse2
+
       - name: Install dependencies
         working-directory: desktop
         run: npm install
+
+      - name: Show electron version
+        working-directory: desktop
+        run: node_modules/.bin/electron --version || echo 'no electron binary'
 
       - name: Build ${{ matrix.platform }}
         working-directory: desktop
@@ -42,43 +47,44 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           USE_HARD_LINKS: false
-          DEBUG: electron-builder
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist
+        if: always()
+        working-directory: desktop
+        run: ls -la dist/ || echo 'no dist folder'
 
       - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: 19labs-${{ matrix.platform }}
-          path: ${{ matrix.artifact }}
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/*.exe
+            desktop/dist/*.AppImage
           if-no-files-found: warn
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    if: ${{ !failure() }}
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
-
-      - name: List artifacts
-        run: find artifacts -type f
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - run: find artifacts -type f
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
           name: "19Labs v1.0.0"
-          draft: false
-          prerelease: false
+          files: artifacts/*
           body: |
             ## 19Labs - The Cursor for Data Science
-
             | Platform | Download |
             |----------|----------|
-            | macOS | `19Labs-1.0.0.dmg` |
-            | Windows | `19Labs Setup 1.0.0.exe` |
-            | Linux | `19Labs-1.0.0.AppImage` |
-
+            | macOS | 19Labs-1.0.0.dmg |
+            | Windows | 19Labs Setup 1.0.0.exe |
+            | Linux | 19Labs-1.0.0.AppImage |
             **Browser:** https://yc-able-production.up.railway.app/app
-          files: artifacts/*
