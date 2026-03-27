@@ -1,7 +1,7 @@
 {
   "name": "19labs",
   "version": "1.0.0",
-  "description": "19Labs — Autonomous ML Research Platform",
+  "description": "19Labs — The Cursor for Data Science",
   "main": "main.js",
   "author": "19Labs",
   "license": "MIT",
@@ -15,39 +15,18 @@
   "build": {
     "appId": "com.19labs.app",
     "productName": "19Labs",
-    "files": [
-      "main.js",
-      "preload.js",
-      "splash.html",
-      "icon.png"
-    ],
+    "files": ["main.js", "preload.js", "splash.html"],
     "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        }
-      ],
-      "icon": "icon.png",
+      "target": [{"target": "dmg", "arch": ["x64", "arm64"]}],
       "category": "public.app-category.developer-tools"
     },
-    "win": {
-      "target": "nsis",
-      "icon": "icon.png"
-    },
-    "linux": {
-      "target": ["AppImage", "deb"],
-      "icon": "icon.png",
-      "category": "Development"
-    },
-    "nsis": {
-      "oneClick": true,
-      "allowToChangeInstallationDirectory": false
-    },
+    "win": {"target": "nsis"},
+    "linux": {"target": ["AppImage"], "category": "Development"},
+    "nsis": {"oneClick": true},
     "dmg": {
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {"x": 130, "y": 220},
+        {"x": 410, "y": 220, "type": "link", "path": "/Applications"}
       ]
     }
   },
