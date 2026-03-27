@@ -693,6 +693,29 @@ input[type=file]{display:none}
         <button class="keys-save-btn" onclick="saveKey('gemini')">Save</button>
       </div>
     </div>
+    <!-- Amazon Bedrock -->
+    <div class="keys-provider">
+      <div class="keys-provider-h">
+        <span>Amazon Bedrock (Claude)</span>
+        <span class="kp-badge unset" id="badge-bedrock">Not set</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <input type="text" id="key-bedrock-access" placeholder="AWS Access Key ID (AKIA…)" autocomplete="off" style="width:100%;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:12px;outline:none">
+        <input type="password" id="key-bedrock-secret" placeholder="AWS Secret Access Key" autocomplete="off" style="width:100%;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:12px;outline:none">
+        <div style="display:flex;gap:6px">
+          <select id="key-bedrock-region" style="flex:1;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:12px;outline:none">
+            <option value="us-east-1">us-east-1 (N. Virginia)</option>
+            <option value="us-west-2">us-west-2 (Oregon)</option>
+            <option value="eu-west-1">eu-west-1 (Ireland)</option>
+            <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
+            <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+            <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+            <option value="ap-southeast-2">ap-southeast-2 (Sydney)</option>
+          </select>
+          <button class="keys-save-btn" onclick="saveBedrockKey()">Save</button>
+        </div>
+      </div>
+    </div>
     <div class="keys-saved-msg" id="keys-saved-msg">✓ Saved</div>
     <div class="keys-note">Keys are sent over HTTPS and stored encrypted on our servers. You can update or remove them at any time.</div>
   </div>
@@ -1032,7 +1055,7 @@ function onAuthSuccess(){
   document.getElementById('trial-btn').style.display='none';
   _isTrialMode=false;
   // Nudge to add API key if none configured yet
-  const hasKey=gk('claude')||gk('openai')||gk('gemini');
+  const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
   if(!hasKey) setTimeout(()=>openKeys(),700);
   else loadSavedKeys();
 }
@@ -1099,8 +1122,30 @@ async function saveKey(provider){
     _savedKeys[provider]=key.slice(0,8)+'…'+key.slice(-4);
     const badge=document.getElementById(`badge-${provider}`);
     if(badge){badge.textContent='Set';badge.className='kp-badge set';}
-    input.value='';
-    // Clear local key so server uses saved key
+    input.value='';C.key='';
+    // Also cache locally for trial/guest usage
+    localStorage.setItem(`19labs_api_key_${provider}`,key);
+    const msg=document.getElementById('keys-saved-msg');
+    msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
+  }catch(e){toast('Network error','err');}
+}
+
+async function saveBedrockKey(){
+  const accessKey=document.getElementById('key-bedrock-access').value.trim();
+  const secretKey=document.getElementById('key-bedrock-secret').value.trim();
+  const region=document.getElementById('key-bedrock-region').value;
+  if(!accessKey||!secretKey){toast('Enter both AWS Access Key ID and Secret Access Key','err');return;}
+  const creds={access_key:accessKey,secret_key:secretKey,region};
+  try{
+    const r=await fetch(`${BASE}/auth/keys`,{method:'POST',headers:{...{'Content-Type':'application/json'},..._authHeader()},body:JSON.stringify({bedrock:creds})});
+    if(!r.ok){toast('Failed to save Bedrock credentials','err');return;}
+    _savedKeys['bedrock']='set';
+    const badge=document.getElementById('badge-bedrock');
+    if(badge){badge.textContent='Set';badge.className='kp-badge set';}
+    document.getElementById('key-bedrock-access').value='';
+    document.getElementById('key-bedrock-secret').value='';
+    // Cache locally for trial usage
+    localStorage.setItem('19labs_api_key_bedrock',JSON.stringify(creds));
     C.key='';
     const msg=document.getElementById('keys-saved-msg');
     msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);

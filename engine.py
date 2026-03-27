@@ -9,6 +9,10 @@ import os, sys, json, subprocess, tempfile, time, shutil, pathlib, re, ast, thre
 import pandas as pd
 from anthropic import Anthropic
 try:
+    from anthropic import AnthropicBedrock
+except ImportError:
+    AnthropicBedrock = None
+try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
@@ -686,12 +690,29 @@ def reset_token_usage():
 
 # ── LLM (multi-provider) ───────────────────────────────────────
 def _init_client(api_key, provider="claude"):
+    """Initialise the LLM client.
+
+    For Bedrock, api_key is a JSON string:
+      {"access_key": "AKIA...", "secret_key": "...", "region": "us-east-1"}
+    """
     global _client, _provider
     _provider = (provider or "claude").lower()
     if _provider == "openai":
         if OpenAI is None:
             raise RuntimeError("openai package not installed. Run: pip install openai")
         _client = OpenAI(api_key=api_key)
+    elif _provider == "bedrock":
+        if AnthropicBedrock is None:
+            raise RuntimeError("anthropic package too old for Bedrock. Run: pip install 'anthropic>=0.31'")
+        try:
+            creds = json.loads(api_key) if isinstance(api_key, str) and api_key.startswith("{") else {}
+        except Exception:
+            creds = {}
+        _client = AnthropicBedrock(
+            aws_access_key=creds.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID", ""),
+            aws_secret_key=creds.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+            aws_region=creds.get("region") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+        )
     else:
         _client = Anthropic(api_key=api_key)
 
@@ -729,8 +750,13 @@ def ask(system, user, max_tokens=3000):
                     _token_usage["output"] += r.usage.completion_tokens or 0
                 return r.choices[0].message.content.strip()
             else:
+                # Bedrock uses a different model ID format
+                model_id = (
+                    "anthropic.claude-sonnet-4-5" if _provider == "bedrock"
+                    else CLAUDE_MODEL
+                )
                 r = _client.messages.create(
-                    model=CLAUDE_MODEL,
+                    model=model_id,
                     max_tokens=max_tokens,
                     system=system,
                     messages=[{"role": "user", "content": user}],

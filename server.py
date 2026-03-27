@@ -150,6 +150,13 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
     except Exception:
         pass
     # Fallback: env vars (useful when Railway DB is fresh after redeploy)
+    if provider == "bedrock":
+        ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        if ak and sk:
+            return json.dumps({"access_key": ak, "secret_key": sk, "region": region})
+        return ""
     _env_fallbacks = {
         "claude": os.environ.get("ANTHROPIC_API_KEY", ""),
         "openai": os.environ.get("OPENAI_API_KEY", ""),
@@ -598,10 +605,16 @@ async def auth_save_keys(request: Request):
         # normalize: 'anthropic' → 'claude' to match engine provider names
         if provider == "anthropic":
             provider = "claude"
-        if provider in ("claude", "openai", "gemini") and key and key.strip():
+        if provider == "bedrock":
+            # key is a dict with access_key, secret_key, region — serialize to JSON
+            if isinstance(key, dict):
+                key = json.dumps(key)
+            elif not isinstance(key, str):
+                continue
+        if provider in ("claude", "openai", "gemini", "bedrock") and key and (isinstance(key, str) and key.strip()):
             conn.execute(
                 "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?)",
-                (user["id"], provider, key.strip())
+                (user["id"], provider, key.strip() if isinstance(key, str) else key)
             )
     conn.commit()
     conn.close()
@@ -822,7 +835,14 @@ async def start_run(req: RunRequest, request: Request):
             })
 
         try:
-            resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+            _prov = (req.provider or "claude").lower()
+            if not req.api_key and _prov == "bedrock":
+                _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+                _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+                _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+                resolved_api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg}) if _ak and _sk else ""
+            else:
+                resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
             cb("sys", f"API key received: {'YES' if resolved_api_key else 'NO'} (length={len(resolved_api_key)}) | Provider: {req.provider or 'claude'}")
             if not resolved_api_key:
                 raise RuntimeError(
