@@ -791,6 +791,29 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         fixed = fixed.replace("absolute_deviation", "absolute_error")
         notes.append("normalized_invalid_loss_name")
 
+    # Fix: sklearn ≥1.4 removed the `squared` kwarg from mean_squared_error.
+    # Replace mean_squared_error(..., squared=False) → np.sqrt(mean_squared_error(...))
+    # Replace mean_squared_error(..., squared=True)  → mean_squared_error(...)
+    def _fix_mse_squared(m):
+        args = m.group(1)          # everything inside mse(...)
+        # Remove squared=False or squared=True from the arg list
+        cleaned = re.sub(r',?\s*squared\s*=\s*(True|False)\s*', '', args).strip().rstrip(',').strip()
+        is_rmse = 'False' in m.group(0)  # squared=False means RMSE
+        inner = f"mean_squared_error({cleaned})"
+        if is_rmse:
+            # Ensure numpy is available
+            return f"np.sqrt({inner})"
+        return inner
+
+    if 'squared=' in fixed:
+        new_fixed = re.sub(r'mean_squared_error\(([^)]+squared\s*=\s*(?:True|False)[^)]*)\)', _fix_mse_squared, fixed)
+        if new_fixed != fixed:
+            fixed = new_fixed
+            # Make sure numpy is imported
+            if 'import numpy' not in fixed and 'import numpy as np' not in fixed:
+                fixed = 'import numpy as np\n' + fixed
+            notes.append("fixed_mse_squared_kwarg")
+
     # Strip any DATA_PATH or TIME_BUDGET redefinitions — these are injected by execute()
     for var in ("DATA_PATH", "TIME_BUDGET"):
         pattern = rf'^{var}\s*=\s*.+$'
@@ -1156,8 +1179,12 @@ ENVIRONMENT:
 - Auto-install is available. Any pip-installable package can be imported.
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
 - Any missing package is auto-installed on demand via pip. Use whatever you need.
-
 - Use whatever is genuinely best for the task. Do NOT artificially limit yourself.
+
+KNOWN API BREAKAGES — avoid these exactly:
+- sklearn ≥1.4: mean_squared_error() has NO `squared` kwarg. Use np.sqrt(mean_squared_error(y,p)) for RMSE.
+- sklearn ≥1.2: use class_weight='balanced' not balanced_subsample for non-forests.
+- pandas ≥2.0: DataFrame.append() removed — use pd.concat([df, new_row.to_frame().T]).
 
 EXPERT DOMAIN ANALYSIS (written by a senior data scientist — treat as ground truth):
 {domain_analysis or "(not available)"}
@@ -1244,9 +1271,13 @@ ENVIRONMENT:
 - Auto-install available for any pip-installable package.
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
 - Any missing package is auto-installed on demand via pip. Use whatever you need.
-
 - CRITICAL: Use what genuinely fits. For NLP → transformers (HuggingFace). For time series → prophet/statsmodels.
   For imbalanced → SMOTE+class weights. For tabular → gradient boosting + optuna. For images → torch/tensorflow.
+
+KNOWN API BREAKAGES — these will crash, avoid exactly:
+- mean_squared_error(y, p, squared=False) → WRONG. Use: np.sqrt(mean_squared_error(y, p))
+- mean_squared_error(y, p, squared=True)  → WRONG. Use: mean_squared_error(y, p)
+- DataFrame.append() → REMOVED in pandas 2.0. Use pd.concat([df, row.to_frame().T], ignore_index=True)
 
 EXPERT DOMAIN ANALYSIS (source of truth — follow this strategy):
 {domain_analysis[:2000] if domain_analysis else "(not available — use program spec)"}
