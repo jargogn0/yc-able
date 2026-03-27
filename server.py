@@ -1314,29 +1314,55 @@ def get_handoff(run_id: str):
 def get_project_handoff(run_id: str):
     return get_handoff(run_id)
 
-# ── DOWNLOAD DEPLOY ZIP ────────────────────────────────────────
+# ── DOWNLOAD MODEL ZIP (clean: model.pkl + train.py + requirements) ──
 @app.get("/api/run/{run_id}/deploy")
 def download_deploy(run_id: str):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     result = RUNS[run_id].get("result")
-    if not result or not result.get("deploy_path"):
-        raise HTTPException(404, "Deploy package not ready yet")
-    dp = Path(result["deploy_path"])
-    if not dp.exists():
-        raise HTTPException(404, "Deploy directory missing")
+    if not result:
+        raise HTTPException(404, "Run not finished yet")
     ws = Path(RUNS[run_id].get("ws", ""))
-    zip_path = dp.parent / f"deploy_{run_id}.zip"
+    dp = Path(result["deploy_path"]) if result.get("deploy_path") else None
+
+    zip_path = (dp.parent if dp else ws) / f"model_{run_id}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in dp.rglob("*"):
-            if f.is_file():
-                z.write(f, f.relative_to(dp))
-        # If model.pkl missing from deploy dir, inject best_model.pkl or ws/model.pkl
-        if not (dp / "model.pkl").exists():
-            for candidate in [ws / "best_model.pkl", ws / "model.pkl"]:
+        # 1. model.pkl — prefer best_model.pkl (preserved at each new-best event)
+        model_added = False
+        search_dirs = [dp, ws] if dp and dp.exists() else [ws]
+        for candidate_name in ["best_model.pkl", "model.pkl"]:
+            for search_dir in search_dirs:
+                candidate = search_dir / candidate_name
                 if candidate.exists():
                     z.write(candidate, Path("model.pkl"))
+                    model_added = True
                     break
+            if model_added:
+                break
+
+        # 2. train.py (the winning experiment script)
+        for src in ([dp / "train.py", ws / "train.py"] if dp and dp.exists() else [ws / "train.py"]):
+            if src.exists():
+                z.write(src, Path("train.py")); break
+
+        # 3. requirements.txt
+        for src in ([dp / "requirements.txt", ws / "requirements.txt"] if dp and dp.exists() else [ws / "requirements.txt"]):
+            if src.exists():
+                z.write(src, Path("requirements.txt")); break
+
+        # 4. Minimal README
+        best = result.get("best") or {}
+        obj = result.get("objective") or {}
+        readme = (
+            f"# 19Labs Model — {best.get('model','ML Model')}\n\n"
+            f"- Task: {obj.get('task','N/A')}\n"
+            f"- Target: `{obj.get('target','N/A')}`\n"
+            f"- {best.get('metric_name','metric').upper()}: **{best.get('metric_val','N/A')}**\n\n"
+            f"## Load model\n```python\nimport joblib\nmodel = joblib.load('model.pkl')\npredictions = model.predict(X)\n```\n\n"
+            f"## Retrain\n```bash\npip install -r requirements.txt\npython train.py\n```\n"
+        )
+        z.writestr("README.md", readme)
+
     return FileResponse(
         str(zip_path),
         filename=f"19labs_model_{run_id}.zip",

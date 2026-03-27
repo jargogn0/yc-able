@@ -274,7 +274,7 @@ def git_init_workspace(ws, run_tag):
         _git(ws, "init")
         _git(ws, "checkout", "-b", f"autoresearch/{run_tag}")
         gitignore = ws / ".gitignore"
-        gitignore.write_text("__pycache__/\n*.pyc\nmodel.pkl\nrun.log\n*.zip\ndeploy/\n")
+        gitignore.write_text("__pycache__/\n*.pyc\nmodel.pkl\nbest_model.pkl\nrun.log\n*.zip\ndeploy/\n")
         _git(ws, "add", "-A")
         _git(ws, "commit", "-m", "init: workspace setup", "--allow-empty")
         return True
