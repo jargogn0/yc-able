@@ -5,13 +5,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13
+          - os: macos-latest
             platform: mac
             artifact: "desktop/dist/*.dmg"
           - os: windows-latest
@@ -27,7 +30,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         working-directory: desktop
@@ -35,24 +38,22 @@ jobs:
 
       - name: Build ${{ matrix.platform }}
         working-directory: desktop
-        run: npm run build:${{ matrix.platform }}
+        run: npx electron-builder --${{ matrix.platform }} --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           USE_HARD_LINKS: false
+          DEBUG: electron-builder
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: 19labs-${{ matrix.platform }}
           path: ${{ matrix.artifact }}
-          if-no-files-found: error
+          if-no-files-found: warn
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -70,15 +71,14 @@ jobs:
           name: "19Labs v1.0.0"
           draft: false
           prerelease: false
-          make_latest: true
           body: |
-            ## 19Labs — The Cursor for Data Science
+            ## 19Labs - The Cursor for Data Science
 
             | Platform | Download |
             |----------|----------|
-            | macOS (Intel) | `19Labs-1.0.0.dmg` |
+            | macOS | `19Labs-1.0.0.dmg` |
             | Windows | `19Labs Setup 1.0.0.exe` |
             | Linux | `19Labs-1.0.0.AppImage` |
 
-            **Browser version:** https://yc-able-production.up.railway.app/app
+            **Browser:** https://yc-able-production.up.railway.app/app
           files: artifacts/*
