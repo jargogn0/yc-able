@@ -1386,11 +1386,11 @@ KARPATHY DISCIPLINE (MANDATORY):
 - GENERATE PLOTS: After training, save plots using matplotlib (Agg backend).
   Ultra-minimal dark style — apply this rcParams block before any plotting:
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-    plt.rcParams.update({'figure.facecolor':'#09090b','axes.facecolor':'#09090b',
+    plt.rcParams.update({{'figure.facecolor':'#09090b','axes.facecolor':'#09090b',
       'axes.spines.top':False,'axes.spines.right':False,'axes.spines.left':False,
       'axes.edgecolor':'#27272a','text.color':'#fafafa','xtick.color':'#52525b',
       'ytick.color':'#52525b','axes.grid':True,'grid.color':'#18181b','grid.linewidth':1.0,
-      'legend.facecolor':'#09090b','legend.edgecolor':'#27272a'})
+      'legend.facecolor':'#09090b','legend.edgecolor':'#27272a'}})
   1. predictions.png — scatter (s=18, alpha=0.6, color='#3b82f6'), perfect-prediction line (color='#27272a',lw=1),
      title="predictions  ·  test set" (left-aligned), hide y-axis, no axis clutter.
   2. residuals.png — histogram (bins=40, color='#3b82f6', alpha=0.85), vline at 0 (color='#ef4444',lw=1.5),
@@ -1456,10 +1456,10 @@ TRAIN.PY HARD RULES (Karpathy discipline):
 - Final line: print(json.dumps(metrics)) — MUST include "model" key PLUS train_ and test_ prefixed metrics.
   Required keys: "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse" (=test), "r2" (=test), and any other applicable: mape, mae, nse.
 - GENERATE PLOTS (matplotlib, Agg backend). Ultra-minimal dark style:
-    plt.rcParams.update({'figure.facecolor':'#09090b','axes.facecolor':'#09090b',
+    plt.rcParams.update({{'figure.facecolor':'#09090b','axes.facecolor':'#09090b',
       'axes.spines.top':False,'axes.spines.right':False,'axes.spines.left':False,
       'axes.edgecolor':'#27272a','text.color':'#fafafa','xtick.color':'#52525b',
-      'ytick.color':'#52525b','axes.grid':True,'grid.color':'#18181b','grid.linewidth':1.0})
+      'ytick.color':'#52525b','axes.grid':True,'grid.color':'#18181b','grid.linewidth':1.0}})
   1. predictions.png — scatter (s=18,alpha=0.6,color='#3b82f6'), perfect line (color='#27272a',lw=1),
      title="predictions  ·  test set" loc='left', hide y-axis.
   2. residuals.png — histogram (bins=40,color='#3b82f6',alpha=0.85), vline at 0 (color='#ef4444',lw=1.5),
