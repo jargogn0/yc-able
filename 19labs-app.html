@@ -88,6 +88,32 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 .deploy-prompt h4{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}
 .deploy-prompt p{font-size:12px;color:var(--text-2);margin-bottom:12px;line-height:1.5}
 .deploy-prompt-btns{display:flex;gap:8px}
+
+/* Data profile card */
+.eda-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:4px 0;font-size:12px}
+.eda-header{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.eda-title{font-size:13px;font-weight:700;color:var(--text-1)}
+.eda-dim{font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.eda-badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.eda-badge{padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.4px}
+.eda-badge.num{background:rgba(59,130,246,.15);color:#60a5fa}
+.eda-badge.cat{background:rgba(139,92,246,.15);color:#a78bfa}
+.eda-badge.dt{background:rgba(52,211,153,.15);color:#34d399}
+.eda-badge.txt{background:rgba(251,191,36,.15);color:#fbbf24}
+.eda-section{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);margin:12px 0 6px}
+.eda-table{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}
+.eda-table th{text-align:left;color:var(--text-3);font-weight:600;padding:3px 8px 3px 0;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+.eda-table td{padding:4px 8px 4px 0;color:var(--text-2);border-bottom:1px solid rgba(255,255,255,.03);vertical-align:middle}
+.eda-table td:first-child{color:var(--text-1);font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eda-null-bar{display:inline-block;height:6px;border-radius:3px;background:var(--border);width:50px;vertical-align:middle;margin-left:4px;overflow:hidden}
+.eda-null-fill{height:100%;border-radius:3px;background:#ef4444}
+.eda-corr-item{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.eda-corr-item:last-child{border-bottom:none}
+.eda-corr-cols{color:var(--text-2)}
+.eda-corr-val{font-weight:700;font-variant-numeric:tabular-nums;min-width:40px;text-align:right}
+.eda-tag-list{display:flex;flex-wrap:wrap;gap:4px}
+.eda-tag{padding:2px 7px;background:var(--surface-2,#18181b);border-radius:4px;font-size:10px;color:var(--text-3)}
+.eda-warn{display:flex;align-items:flex-start;gap:6px;padding:7px 10px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:6px;color:#fbbf24;font-size:11px;margin-top:8px;line-height:1.4}
 .btn-deploy-api{padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;transition:all var(--t)}
 .btn-deploy-api:hover{background:var(--accent-2)}
 .btn-deploy-skip{padding:8px 12px;background:none;color:var(--text-3);border:1px solid var(--border);border-radius:var(--r);font-size:12px;cursor:pointer;transition:all var(--t)}
@@ -1759,6 +1785,115 @@ async function autoDiscover(){
   await runDiscover(S.hint||'');
 }
 
+// ═══════════════════════════════════════════
+// DATA PROFILE CARD
+// ═══════════════════════════════════════════
+function renderProfileCard(profile){
+  if(!profile||!profile.columns)return;
+  const {rows,cols,columns,numeric,categorical,datetime,text,top_correlations,signals}=profile;
+  const fmt=v=>v==null?'—':typeof v==='number'?(Math.abs(v)>=1000?v.toLocaleString(undefined,{maximumFractionDigits:1}):v.toFixed(3).replace(/\.?0+$/,'')):v;
+  const nullColor=p=>p>50?'#ef4444':p>15?'#f59e0b':'#22c55e';
+
+  // Header badges
+  let badges='';
+  if(numeric?.length)badges+=`<span class="eda-badge num">${numeric.length} numeric</span>`;
+  if(categorical?.length)badges+=`<span class="eda-badge cat">${categorical.length} categorical</span>`;
+  if(datetime?.length)badges+=`<span class="eda-badge dt">${datetime.length} datetime</span>`;
+  if(text?.length)badges+=`<span class="eda-badge txt">${text.length} text</span>`;
+
+  // Numeric stats table
+  let numTable='';
+  const numCols=columns.filter(c=>c.type==='numeric').slice(0,12);
+  if(numCols.length){
+    numTable=`<div class="eda-section">Numeric Columns</div>
+    <table class="eda-table">
+      <tr><th>Column</th><th>Mean</th><th>Std</th><th>Min</th><th>Max</th><th>Skew</th><th>Nulls</th></tr>
+      ${numCols.map(c=>{
+        const np=c.null_pct||0;
+        return`<tr>
+          <td title="${esc(c.name)}">${esc(c.name)}</td>
+          <td>${fmt(c.mean)}</td><td>${fmt(c.std)}</td>
+          <td>${fmt(c.min)}</td><td>${fmt(c.max)}</td>
+          <td style="color:${Math.abs(c.skew||0)>2?'#f59e0b':'var(--text-2)'}">${fmt(c.skew)}</td>
+          <td><span style="color:${nullColor(np)}">${np}%</span>
+            <span class="eda-null-bar"><span class="eda-null-fill" style="width:${Math.min(np,100)}%;background:${nullColor(np)}"></span></span>
+          </td>
+        </tr>`;
+      }).join('')}
+    </table>`;
+  }
+
+  // Categorical columns
+  let catTable='';
+  const catCols=columns.filter(c=>c.type==='categorical'||c.type==='high_cardinality').slice(0,8);
+  if(catCols.length){
+    catTable=`<div class="eda-section">Categorical Columns</div>
+    <table class="eda-table">
+      <tr><th>Column</th><th>Unique</th><th>Top Values</th><th>Nulls</th></tr>
+      ${catCols.map(c=>{
+        const np=c.null_pct||0;
+        const topVals=c.top_values?Object.entries(c.top_values).slice(0,4).map(([k,v])=>`<span class="eda-tag">${esc(String(k))} <span style="color:var(--text-3)">${v}</span></span>`).join(''):'';
+        return`<tr>
+          <td title="${esc(c.name)}">${esc(c.name)}</td>
+          <td>${c.unique}</td>
+          <td><div class="eda-tag-list">${topVals}</div></td>
+          <td><span style="color:${nullColor(np)}">${np}%</span></td>
+        </tr>`;
+      }).join('')}
+    </table>`;
+  }
+
+  // Datetime columns
+  let dtTable='';
+  const dtCols=columns.filter(c=>c.type==='datetime');
+  if(dtCols.length){
+    dtTable=`<div class="eda-section">Date / Time Columns</div>
+    <div class="eda-tag-list" style="margin-bottom:4px">${dtCols.map(c=>`<span class="eda-tag">${esc(c.name)}</span>`).join('')}</div>`;
+  }
+
+  // Correlations
+  let corrHtml='';
+  const corrs=(top_correlations||[]).slice(0,6);
+  if(corrs.length){
+    corrHtml=`<div class="eda-section">Top Correlations</div>`;
+    corrHtml+=corrs.map(c=>{
+      const v=c.corr;const pct=Math.round(v*100);
+      const col=v>0.7?'#3b82f6':v>0.4?'#8b5cf6':'var(--text-3)';
+      return`<div class="eda-corr-item">
+        <span class="eda-corr-cols">${esc(c.cols[0])} <span style="color:var(--text-3)">↔</span> ${esc(c.cols[1])}</span>
+        <span class="eda-corr-val" style="color:${col}">${pct}%</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Signals / warnings
+  let warnHtml='';
+  (signals||[]).slice(0,2).forEach(s=>{
+    if(s.startsWith('WARNING')||s.includes('IMBALANCED')){
+      warnHtml+=`<div class="eda-warn"><span>⚠</span><span>${esc(s.replace(/^WARNING:\s*/,''))}</span></div>`;
+    }
+  });
+
+  const totalNullPct=columns.length?Math.round(columns.reduce((a,c)=>a+(c.null_pct||0),0)/columns.length):0;
+
+  const html=`<div class="eda-card">
+    <div class="eda-header">
+      <span class="eda-title">Dataset Profile</span>
+      <span class="eda-dim">${rows?.toLocaleString()} rows · ${cols} columns · ${totalNullPct}% avg nulls</span>
+    </div>
+    <div class="eda-badges">${badges}</div>
+    ${numTable}${catTable}${dtTable}${corrHtml}${warnHtml}
+  </div>`;
+
+  // Inject as a real DOM node in chat (bypasses safeHtml)
+  const c=document.getElementById('msgs');
+  const wrap=document.createElement('div');wrap.className='cm ai';
+  wrap.innerHTML=html;
+  const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<180;
+  c.appendChild(wrap);
+  if(atBottom)c.scrollTop=c.scrollHeight;
+}
+
 async function runDiscover(hint){
   if(!S.file)return;
   typing(true);setBadge('ANALYZING','run');
@@ -1782,6 +1917,8 @@ async function runDiscover(hint){
       throw new Error(dj.error||'Discovery failed');
     }
     S.discovery=dj;S.analyzed=true;S.confirmed=false;
+    // Render data profile card immediately
+    if(dj.profile)renderProfileCard(dj.profile);
     const d=dj.discovery||{};const obj=dj.objective||{};
 
     const _task=obj.task||'';const _target=obj.target||'';const _metric=obj.metric||'';const _dir=obj.direction||'';
