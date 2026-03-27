@@ -327,22 +327,40 @@ input[type=file]{display:none}
 #monaco-wrap{width:100%;height:100%;min-height:300px}
 
 /* ── AUTH MODAL ── */
-.auth-overlay{position:fixed;inset:0;background:rgba(5,5,10,.92);backdrop-filter:blur(12px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
-.auth-card{background:#111113;border:1px solid #27272a;border-radius:16px;padding:36px 40px;width:100%;max-width:400px;display:flex;flex-direction:column;gap:0}
-.auth-logo{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;letter-spacing:-.5px;margin-bottom:28px;text-align:center}.auth-logo b{color:#6366f1}
-.auth-tabs{display:flex;gap:0;margin-bottom:28px;border:1px solid #27272a;border-radius:8px;overflow:hidden}
-.auth-tab{flex:1;padding:9px;font-size:13px;font-weight:500;background:transparent;border:none;color:#71717a;cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif}
-.auth-tab.active{background:#18181b;color:#fafafa}
+.auth-overlay{position:fixed;inset:0;background:rgba(5,5,10,.95);backdrop-filter:blur(16px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
+.auth-card{background:#111113;border:1px solid #27272a;border-radius:20px;padding:32px 32px 24px;width:100%;max-width:400px}
+.auth-logo{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;letter-spacing:-.5px;margin-bottom:4px;text-align:center}.auth-logo b{color:#6366f1}
+.auth-tagline{font-size:12px;color:#52525b;text-align:center;margin-bottom:24px}
+/* Tabs */
+.auth-tabs{display:flex;gap:0;background:#18181b;border:1px solid #27272a;border-radius:9px;padding:3px;margin-bottom:24px}
+.auth-tab{flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:7px;background:none;color:#71717a;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s}
+.auth-tab.active{background:#27272a;color:#fafafa}
+/* Form fields */
 .auth-field{margin-bottom:14px}
 .auth-field label{display:block;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
-.auth-field input{width:100%;padding:10px 13px;background:#18181b;border:1px solid #27272a;border-radius:8px;color:#fafafa;font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border-color .15s}
+.auth-field input{width:100%;padding:11px 13px;background:#18181b;border:1px solid #27272a;border-radius:8px;color:#fafafa;font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border-color .15s;box-sizing:border-box}
 .auth-field input:focus{border-color:#6366f1}
-.auth-field input::placeholder{color:#3f3f46}
-.auth-err{font-size:12px;color:#ef4444;margin-bottom:12px;min-height:16px;text-align:center}
-.auth-btn{width:100%;padding:11px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;margin-top:4px}
+.auth-field input::placeholder{color:#3f3f46;font-size:13px}
+.auth-err{font-size:12px;color:#ef4444;margin-bottom:10px;min-height:16px}
+.auth-btn{width:100%;padding:12px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;margin-top:2px}
 .auth-btn:hover{background:#5254cc}
 .auth-btn:disabled{opacity:.5;cursor:not-allowed}
-.auth-sub{font-size:12px;color:#52525b;text-align:center;margin-top:16px}
+/* Divider */
+.auth-divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:#3f3f46;font-size:11px}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:#27272a}
+/* Google button */
+.auth-google-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px;background:#fff;border:none;border-radius:9px;color:#111;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif}
+.auth-google-btn:hover{background:#f0f0f0}
+.auth-google-btn:disabled{opacity:.6;cursor:not-allowed}
+.auth-sub{font-size:11px;color:#3f3f46;text-align:center;margin-top:16px;line-height:1.5}
+.auth-switch{font-size:12px;color:#52525b;text-align:center;margin-top:14px}
+.auth-switch a{color:#818cf8;cursor:pointer;text-decoration:none}
+.auth-switch a:hover{color:#a5b4fc}
+/* Trial badge */
+.trial-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#f59e0b;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);border-radius:999px;padding:3px 10px;margin-bottom:18px}
+/* Start Free topbar button */
+.tbtn-start{font-size:12px;padding:5px 14px;border-radius:var(--r);border:1px solid rgba(99,102,241,.5);background:rgba(99,102,241,.12);color:#a5b4fc;cursor:pointer;transition:all var(--t);font-family:var(--sans);font-weight:600}
+.tbtn-start:hover{border-color:#6366f1;background:rgba(99,102,241,.22);color:#c7d2fe}
 
 /* ── USER MENU ── */
 .user-btn{display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);cursor:pointer;transition:all var(--t);font-family:var(--sans)}
@@ -555,6 +573,8 @@ input[type=file]{display:none}
     </div>
     <label id="key-label">Anthropic API Key</label>
     <input type="password" id="key-input" placeholder="sk-ant-api03-..." autocomplete="off">
+    <label>Model</label>
+    <select id="model-select" style="width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;font-family:var(--sans);cursor:pointer"></select>
     <label>Experiment Budget</label>
     <div style="display:flex;gap:8px;align-items:center">
       <input type="range" id="budget-slider" min="3" max="50" value="6" style="flex:1" oninput="document.getElementById('budget-val').textContent=this.value">
@@ -591,28 +611,57 @@ input[type=file]{display:none}
 </div>
 
 <!-- AUTH MODAL -->
-<div class="auth-overlay" id="auth-overlay">
+<div class="auth-overlay" id="auth-overlay" style="display:none">
   <div class="auth-card">
     <div class="auth-logo"><b>19</b>Labs</div>
-    <div class="auth-tabs">
-      <button class="auth-tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</button>
-      <button class="auth-tab" id="tab-signup" onclick="switchTab('signup')">Sign up</button>
+    <div class="auth-tagline">Autonomous ML Research</div>
+
+    <div id="auth-stage-providers">
+      <!-- Tabs: Sign in / Create account -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-signin" onclick="switchAuthTab('signin')">Sign in</button>
+        <button class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">Create account</button>
+      </div>
+
+      <!-- Name field (signup only) -->
+      <div class="auth-field" id="auth-name-field" style="display:none">
+        <label>Name</label>
+        <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+      </div>
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('auth-password').focus()">
+      </div>
+      <div class="auth-field">
+        <label>Password</label>
+        <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
+      </div>
+      <div class="auth-err" id="auth-err-account"></div>
+      <button class="auth-btn" id="auth-btn" onclick="doAuth()">Sign in</button>
+
+      <div class="auth-divider">or</div>
+
+      <button class="auth-google-btn" id="auth-google-btn" onclick="startGoogleAuth()">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Continue with Google
+      </button>
+      <div class="auth-err" id="auth-google-err" style="text-align:center;margin-top:8px"></div>
+
+      <div style="text-align:center;margin-top:18px;padding-top:16px;border-top:1px solid #1e1e22">
+        <span style="font-size:12px;color:#52525b">Just exploring? </span>
+        <a style="font-size:12px;color:#818cf8;cursor:pointer;font-weight:600" onclick="startTrial()">Try free (3 experiments, no account) →</a>
+      </div>
     </div>
-    <div id="auth-signup-name" class="auth-field" style="display:none">
-      <label>Name</label>
-      <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+
+    <!-- Hidden key stage (post-login API key setup) -->
+    <div id="auth-stage-key" style="display:none">
+      <div class="auth-field">
+        <label id="auth-key-label">API Key</label>
+        <input type="password" id="auth-apikey-input" placeholder="sk-ant-api03-…" autocomplete="off" onkeydown="if(event.key==='Enter')doProviderLogin()">
+      </div>
+      <div class="auth-err" id="auth-err"></div>
+      <button class="auth-btn" id="auth-provider-login-btn" onclick="doProviderLogin()">Save & Continue →</button>
     </div>
-    <div class="auth-field">
-      <label>Email</label>
-      <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doAuth()">
-    </div>
-    <div class="auth-field">
-      <label>Password</label>
-      <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()">
-    </div>
-    <div class="auth-err" id="auth-err"></div>
-    <button class="auth-btn" id="auth-btn" onclick="doAuth()">Sign in</button>
-    <div class="auth-sub">Your API keys are stored securely in your account.</div>
   </div>
 </div>
 
@@ -651,6 +700,29 @@ input[type=file]{display:none}
         <button class="keys-save-btn" onclick="saveKey('gemini')">Save</button>
       </div>
     </div>
+    <!-- Amazon Bedrock -->
+    <div class="keys-provider">
+      <div class="keys-provider-h">
+        <span>Amazon Bedrock (Claude)</span>
+        <span class="kp-badge unset" id="badge-bedrock">Not set</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <input type="text" id="key-bedrock-access" placeholder="AWS Access Key ID (AKIA…)" autocomplete="off" style="width:100%;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:12px;outline:none">
+        <input type="password" id="key-bedrock-secret" placeholder="AWS Secret Access Key" autocomplete="off" style="width:100%;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:12px;outline:none">
+        <div style="display:flex;gap:6px">
+          <select id="key-bedrock-region" style="flex:1;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:12px;outline:none">
+            <option value="us-east-1">us-east-1 (N. Virginia)</option>
+            <option value="us-west-2">us-west-2 (Oregon)</option>
+            <option value="eu-west-1">eu-west-1 (Ireland)</option>
+            <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
+            <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+            <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+            <option value="ap-southeast-2">ap-southeast-2 (Sydney)</option>
+          </select>
+          <button class="keys-save-btn" onclick="saveBedrockKey()">Save</button>
+        </div>
+      </div>
+    </div>
     <div class="keys-saved-msg" id="keys-saved-msg">✓ Saved</div>
     <div class="keys-note">Keys are sent over HTTPS and stored encrypted on our servers. You can update or remove them at any time.</div>
   </div>
@@ -666,6 +738,8 @@ input[type=file]{display:none}
     <div class="badge" id="badge">IDLE</div>
     <button class="tbtn" onclick="openCmd()" data-tip="Command Palette (⌘K)">⌘K</button>
     <button class="tbtn" id="tb-prov" onclick="openSettings()" data-tip="Provider settings (⌘,)">Claude</button>
+    <!-- Trial / auth button — shown when not logged in -->
+    <button class="tbtn-start" id="trial-btn" style="display:none" onclick="showAuthModal()">Start Free</button>
     <div style="position:relative">
       <div class="user-btn" id="user-btn" onclick="toggleUserMenu()" style="display:none">
         <div class="user-avatar" id="user-avatar">?</div>
@@ -818,13 +892,32 @@ input[type=file]{display:none}
 // CONFIG
 // ═══════════════════════════════════════════
 const P = {
-  claude:  {label:'Claude',  kl:'Anthropic API Key', ph:'sk-ant-api03-...'},
-  openai:  {label:'OpenAI',  kl:'OpenAI API Key',    ph:'sk-proj-...'},
-  bedrock: {label:'Bedrock', kl:'AWS Access Key ID',  ph:'AKIA...'},
+  claude:  {label:'Claude',  kl:'Anthropic API Key', ph:'sk-ant-api03-...', models:[
+    {id:'claude-sonnet-4-6',    label:'Claude Sonnet 4.6 (default)'},
+    {id:'claude-opus-4-6',      label:'Claude Opus 4.6'},
+    {id:'claude-haiku-4-5-20251001', label:'Claude Haiku 4.5'},
+    {id:'claude-3-5-sonnet-20241022',label:'Claude 3.5 Sonnet'},
+    {id:'claude-3-5-haiku-20241022', label:'Claude 3.5 Haiku'},
+  ]},
+  openai:  {label:'OpenAI',  kl:'OpenAI API Key',    ph:'sk-proj-...', models:[
+    {id:'gpt-4o',          label:'GPT-4o (default)'},
+    {id:'gpt-4o-mini',     label:'GPT-4o mini'},
+    {id:'gpt-4.1',         label:'GPT-4.1'},
+    {id:'gpt-4.1-mini',    label:'GPT-4.1 mini'},
+    {id:'o3-mini',         label:'o3-mini'},
+    {id:'o4-mini',         label:'o4-mini'},
+  ]},
+  bedrock: {label:'Bedrock', kl:'AWS Access Key ID',  ph:'AKIA...', models:[
+    {id:'anthropic.claude-3-5-sonnet-20241022-v2:0', label:'Claude 3.5 Sonnet v2 (default)'},
+    {id:'anthropic.claude-3-5-haiku-20241022-v1:0',  label:'Claude 3.5 Haiku'},
+    {id:'anthropic.claude-3-opus-20240229-v1:0',     label:'Claude 3 Opus'},
+    {id:'us.anthropic.claude-sonnet-4-5-20251001-v1:0', label:'Claude Sonnet 4.5 (us)'},
+  ]},
 };
 function gk(p){return localStorage.getItem(`19labs_api_key_${p}`)||localStorage.getItem('19labs_api_key_last')||localStorage.getItem('19labs_api_key_claude')||''}
-const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',demo:false};
-C.key=gk(C.provider);
+function gm(p){return localStorage.getItem(`19labs_model_${p}`)||''}
+const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',model:'',demo:false};
+C.key=gk(C.provider);C.model=gm(C.provider);
 const _apiMeta=document.querySelector('meta[name="api-base"]');
 const BASE=_apiMeta&&_apiMeta.content?_apiMeta.content.replace(/\/$/,''):(window.location.protocol==='file:'||!window.location.host)?(localStorage.getItem('19labs_server')||'http://localhost:8019'):window.location.origin;
 let ACCESS_TOKEN=localStorage.getItem('19labs_access_token')||'';
@@ -848,69 +941,141 @@ let _authToken = localStorage.getItem('19labs_auth_token') || '';
 let _savedKeys = {};
 let _authTab = 'signin';
 
+// ── TRIAL MODE ───────────────────────────────────────────────
+const TRIAL_LIMIT = 3;
+let _trialCount = parseInt(localStorage.getItem('19labs_trial_count')||'0',10);
+let _isTrialMode = localStorage.getItem('19labs_trial_started')==='1';
+
+function _trialRemaining(){ return Math.max(0, TRIAL_LIMIT - _trialCount); }
+function _useTrialSlot(){
+  _trialCount++;
+  localStorage.setItem('19labs_trial_count', String(_trialCount));
+  _updateTrialBtn();
+}
+function _updateTrialBtn(){
+  const btn=document.getElementById('trial-btn');
+  if(!btn)return;
+  const rem=_trialRemaining();
+  if(_isTrialMode){
+    btn.textContent=rem>0?`Test it (${rem} left)`:'Sign up to continue';
+    btn.style.display='inline-block';
+    btn.onclick=rem>0?null:showAuthModal;
+  } else {
+    btn.style.display='none';
+  }
+}
+function startTrial(){
+  _isTrialMode=true;
+  localStorage.setItem('19labs_trial_started','1');
+  hideAuthModal();
+  _updateTrialBtn();
+}
+
+// ── AUTH ─────────────────────────────────────────────────────
 function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
 
 async function initAuth(){
-  if(!_authToken){showAuthModal();return;}
-  try{
-    const r = await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
-    if(r.status===401){
-      // Token is genuinely invalid (expired or wrong secret) — require re-login
-      _authToken='';localStorage.removeItem('19labs_auth_token');showAuthModal();return;
+  if(_authToken){
+    try{
+      const r=await fetch(`${BASE}/auth/me`,{headers:_authHeader()});
+      if(r.ok){
+        _authUser=await r.json();
+        hideAuthModal();onAuthSuccess();return;
+      }
+      if(r.status===401){
+        _authToken='';localStorage.removeItem('19labs_auth_token');
+      } else {
+        _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+      }
+    }catch(e){
+      _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
     }
-    if(!r.ok){
-      // 5xx or network blip — trust the cached token and proceed
-      _authUser={id:'local',email:'',name:''};onAuthSuccess();return;
-    }
-    _authUser = await r.json();
-    onAuthSuccess();
-    loadSavedKeys();
-  }catch(e){
-    // Fetch failed entirely (server unreachable) — stay logged in with cached token
-    _authUser={id:'local',email:'',name:''};onAuthSuccess();
   }
+  // Already in trial mode with slots left — stay in app
+  if(_isTrialMode&&_trialRemaining()>0){
+    _updateTrialBtn();return;
+  }
+  // No session — show the auth modal
+  showAuthModal();
 }
 
 function showAuthModal(){
   document.getElementById('auth-overlay').style.display='flex';
+  showAuthStage('providers');
+  switchAuthTab('signin');
+  // Handle OAuth redirect errors
+  const params=new URLSearchParams(window.location.search);
+  const authErr=params.get('auth_error');
+  if(authErr){
+    const el=document.getElementById('auth-google-err');
+    if(el)el.textContent=authErr==='cancelled'?'Sign-in was cancelled.':'Sign-in failed. Please try again.';
+    window.history.replaceState({},'',window.location.pathname);
+  }
 }
 function hideAuthModal(){
   document.getElementById('auth-overlay').style.display='none';
 }
-
-function switchTab(tab){
+function showAuthStage(stage){
+  document.getElementById('auth-stage-providers').style.display=stage==='providers'?'block':'none';
+  document.getElementById('auth-stage-key').style.display=stage==='key'?'block':'none';
+}
+function switchAuthTab(tab){
   _authTab=tab;
   document.getElementById('tab-signin').classList.toggle('active',tab==='signin');
   document.getElementById('tab-signup').classList.toggle('active',tab==='signup');
-  document.getElementById('auth-signup-name').style.display=tab==='signup'?'block':'none';
+  document.getElementById('auth-name-field').style.display=tab==='signup'?'block':'none';
   document.getElementById('auth-btn').textContent=tab==='signin'?'Sign in':'Create account';
   document.getElementById('auth-password').setAttribute('autocomplete',tab==='signin'?'current-password':'new-password');
-  document.getElementById('auth-err').textContent='';
+  document.getElementById('auth-err-account').textContent='';
+}
+
+async function startGoogleAuth(){
+  const btn=document.getElementById('auth-google-btn');
+  const err=document.getElementById('auth-google-err');
+  err.textContent='';btn.disabled=true;
+  btn.innerHTML='<span style="opacity:.6">Redirecting…</span>';
+  window.location.href=`${BASE}/auth/google`;
 }
 
 async function doAuth(){
+  const tab=_authTab;
   const email=document.getElementById('auth-email').value.trim();
   const password=document.getElementById('auth-password').value;
   const name=document.getElementById('auth-name').value.trim();
   const btn=document.getElementById('auth-btn');
-  const err=document.getElementById('auth-err');
+  const err=document.getElementById('auth-err-account');
   err.textContent='';
   if(!email||!password){err.textContent='Please fill in all fields.';return;}
+  if(tab==='signup'&&password.length<6){err.textContent='Password must be at least 6 characters.';return;}
   btn.disabled=true;btn.textContent='…';
   try{
-    const url=_authTab==='signin'?`${BASE}/auth/login`:`${BASE}/auth/signup`;
-    const body=_authTab==='signin'?{email,password}:{email,password,name};
+    const url=tab==='signin'?`${BASE}/auth/login`:`${BASE}/auth/signup`;
+    const body=tab==='signin'?{email,password}:{email,password,name};
     const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await r.json();
-    if(!r.ok){err.textContent=data.detail||'Something went wrong.';btn.disabled=false;btn.textContent=_authTab==='signin'?'Sign in':'Create account';return;}
-    _authToken=data.token;
-    _authUser=data.user;
+    if(!r.ok){err.textContent=data.detail||'Something went wrong.';btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';return;}
+    _authToken=data.token;_authUser=data.user;
     localStorage.setItem('19labs_auth_token',_authToken);
-    hideAuthModal();
-    onAuthSuccess();
-    if(_authTab==='signup') setTimeout(()=>openKeys(),500);
+    _isTrialMode=false;
+    hideAuthModal();onAuthSuccess();
+    if(tab==='signup') setTimeout(()=>openKeys(),600);
     else loadSavedKeys();
-  }catch(e){err.textContent='Network error. Try again.';btn.disabled=false;btn.textContent=_authTab==='signin'?'Sign in':'Create account';}
+  }catch(e){err.textContent='Network error. Try again.';btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';}
+}
+
+async function doProviderLogin(){
+  const key=document.getElementById('auth-apikey-input').value.trim();
+  const err=document.getElementById('auth-err');
+  const btn=document.getElementById('auth-provider-login-btn');
+  err.textContent='';
+  if(!key){err.textContent='Paste your API key.';return;}
+  btn.disabled=true;btn.textContent='Saving…';
+  localStorage.setItem('19labs_api_key_claude',key);
+  localStorage.setItem('19labs_provider','claude');
+  C.key=key;C.provider='claude';
+  hideAuthModal();
+  btn.disabled=false;btn.textContent='Save & Continue →';
+  toast('API key saved','ok');
 }
 
 function onAuthSuccess(){
@@ -918,9 +1083,16 @@ function onAuthSuccess(){
   if(!user)return;
   const initials=(user.name||user.email||'?')[0].toUpperCase();
   document.getElementById('user-avatar').textContent=initials;
-  document.getElementById('user-email-display').textContent=user.name||user.email;
-  document.getElementById('ump-email-full').textContent=user.email;
+  document.getElementById('user-email-display').textContent=user.name||user.email||'User';
+  document.getElementById('ump-email-full').textContent=user.email||'';
   document.getElementById('user-btn').style.display='flex';
+  document.getElementById('trial-btn').style.display='none';
+  _isTrialMode=false;
+  localStorage.removeItem('19labs_trial_started');
+  // Nudge to add API key if none configured yet
+  const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
+  if(!hasKey) setTimeout(()=>openKeys(),700);
+  else loadSavedKeys();
 }
 
 async function doLogout(){
@@ -928,9 +1100,10 @@ async function doLogout(){
   await fetch(`${BASE}/auth/logout`,{method:'POST',headers:_authHeader()}).catch(()=>{});
   _authToken='';_authUser=null;_savedKeys={};
   localStorage.removeItem('19labs_auth_token');
+  localStorage.removeItem('19labs_provider');
+  ['claude','openai','gemini'].forEach(p=>localStorage.removeItem(`19labs_api_key_${p}`));
   document.getElementById('user-btn').style.display='none';
   showAuthModal();
-  switchTab('signin');
 }
 
 function toggleUserMenu(){
@@ -984,8 +1157,30 @@ async function saveKey(provider){
     _savedKeys[provider]=key.slice(0,8)+'…'+key.slice(-4);
     const badge=document.getElementById(`badge-${provider}`);
     if(badge){badge.textContent='Set';badge.className='kp-badge set';}
-    input.value='';
-    // Clear local key so server uses saved key
+    input.value='';C.key='';
+    // Also cache locally for trial/guest usage
+    localStorage.setItem(`19labs_api_key_${provider}`,key);
+    const msg=document.getElementById('keys-saved-msg');
+    msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
+  }catch(e){toast('Network error','err');}
+}
+
+async function saveBedrockKey(){
+  const accessKey=document.getElementById('key-bedrock-access').value.trim();
+  const secretKey=document.getElementById('key-bedrock-secret').value.trim();
+  const region=document.getElementById('key-bedrock-region').value;
+  if(!accessKey||!secretKey){toast('Enter both AWS Access Key ID and Secret Access Key','err');return;}
+  const creds={access_key:accessKey,secret_key:secretKey,region};
+  try{
+    const r=await fetch(`${BASE}/auth/keys`,{method:'POST',headers:{...{'Content-Type':'application/json'},..._authHeader()},body:JSON.stringify({bedrock:creds})});
+    if(!r.ok){toast('Failed to save Bedrock credentials','err');return;}
+    _savedKeys['bedrock']='set';
+    const badge=document.getElementById('badge-bedrock');
+    if(badge){badge.textContent='Set';badge.className='kp-badge set';}
+    document.getElementById('key-bedrock-access').value='';
+    document.getElementById('key-bedrock-secret').value='';
+    // Cache locally for trial usage
+    localStorage.setItem('19labs_api_key_bedrock',JSON.stringify(creds));
     C.key='';
     const msg=document.getElementById('keys-saved-msg');
     msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
@@ -1014,7 +1209,7 @@ function setRM(m,noSave){
   if(!noSave)localStorage.setItem('19labs_rmode',m);
 }
 function setProv(p){
-  C.provider=p;C.key=gk(p);localStorage.setItem('19labs_provider',p);spUI(p);
+  C.provider=p;C.key=gk(p);C.model=gm(p);localStorage.setItem('19labs_provider',p);spUI(p);
   document.getElementById('key-input').value=C.key;
 }
 function spUI(p){
@@ -1022,6 +1217,12 @@ function spUI(p){
   document.getElementById('key-label').textContent=P[p].kl;
   document.getElementById('key-input').placeholder=P[p].ph;
   document.getElementById('tb-prov').textContent=P[p].label;
+  // populate model dropdown
+  const sel=document.getElementById('model-select');
+  if(sel){
+    const saved=gm(p);
+    sel.innerHTML=P[p].models.map(m=>`<option value="${m.id}"${m.id===saved?'selected':''}>${m.label}</option>`).join('');
+  }
 }
 async function saveSettings(){
   const k=document.getElementById('key-input').value.trim();
@@ -1030,6 +1231,9 @@ async function saveSettings(){
   const newBudget=parseInt(document.getElementById('budget-slider').value)||6;
   S.budget=newBudget;localStorage.setItem('19labs_budget',newBudget);
   localStorage.setItem('19labs_rmode',S.rmode);
+  // save selected model
+  const sel=document.getElementById('model-select');
+  if(sel&&sel.value){C.model=sel.value;localStorage.setItem(`19labs_model_${C.provider}`,sel.value);}
   if(k){C.key=k;C.demo=false;localStorage.setItem(`19labs_api_key_${C.provider}`,k);localStorage.setItem('19labs_api_key_last',k)}
   ACCESS_TOKEN=at;localStorage.setItem('19labs_access_token',at);
   if(su){const prev=localStorage.getItem('19labs_server')||'http://localhost:8019';if(su!==prev){localStorage.setItem('19labs_server',su);location.reload();return}}
@@ -1312,7 +1516,7 @@ async function chatWithAI(message){
   const key=C.key||gk(C.provider);
   const ctx={filename:S.file?.name,profile:S.discovery?.profile,best:S.best,objective:S.discovery?.objective||S.discovery?.discovery,history:S.exps};
   try{
-    const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,context:ctx})});
+    const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,model:C.model||undefined,context:ctx})});
     const j=await r.json();typing(false);
     if(!r.ok||!j.ok){chat('err',j.error||'Chat failed');return}
     chat('ai',j.response);
@@ -1381,7 +1585,14 @@ async function runDiscover(hint){
   sbUpdate({status:'Analyzing...',running:true});
   let key=C.key||gk(C.provider);
   try{
-    const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:S.file.name,csv:S.csv,hint:hint||'',api_key:key||undefined,provider:C.provider})});
+    // Include the current objective so the LLM can interpret corrections in context
+    // e.g. agent proposed "predict shipped_weight", user says "no revenue forecast"
+    // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
+    const _prevObj = S.discovery?.objective || null;
+    const _discoverBody=S.dataset_id
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
+    const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){
@@ -1393,18 +1604,27 @@ async function runDiscover(hint){
     S.discovery=dj;S.analyzed=true;S.confirmed=false;
     const d=dj.discovery||{};const obj=dj.objective||{};
 
-    let msg=`<strong>Analysis complete.</strong> Here's what I found:<br><br>`;
-    if(dj.used_fallback)msg=`<strong>Analysis complete</strong> (smart inference).<br><br>`;
-    msg+=`<strong>Objective:</strong> ${esc(d.recommended_objective||'Auto-detected')}<br>`;
-    msg+=`<strong>Task:</strong> ${esc(obj.task||'auto')} · <strong>Target:</strong> <code>${esc(obj.target||'auto')}</code><br>`;
-    msg+=`<strong>Metric:</strong> <code>${esc(obj.metric||'auto')}</code> (${esc(obj.direction||'optimize')})<br>`;
-    if(d.first_iteration_plan)msg+=`<br><strong>Plan:</strong> ${esc(d.first_iteration_plan)}<br>`;
-    if(d.risks&&d.risks.length)msg+=`<br><strong>Risks:</strong> ${d.risks.map(r=>esc(r)).join('; ')}<br>`;
-    if(S.mode==='plan')msg+=`<br>Review the plan below, modify if needed, then click <strong>Execute Plan</strong>.`;
-    else msg+=`<br>Say <strong>"go"</strong> to start, or tell me what to change.`;
+    const _task=obj.task||'';const _target=obj.target||'';const _metric=obj.metric||'';const _dir=obj.direction||'';
+    const _taskEmoji={classification:'🎯',regression:'📈',forecasting:'📅',clustering:'🔵',anomaly:'⚠️'}[_task]||'🔬';
+    const _opening=dj.used_fallback
+      ?`Scanned your data — here's my read:`
+      :[
+        `I've mapped out the problem. Here's the plan:`,
+        `Data profiled. I know exactly what to build:`,
+        `Interesting dataset. Here's what I'd do:`,
+        `Got it. Here's my take:`,
+      ][Math.floor(Math.random()*4)];
+
+    let msg=`${_opening}<br><br>`;
+    msg+=`${_taskEmoji} <strong>${esc(d.recommended_objective||'Auto-detected objective')}</strong><br>`;
+    msg+=`<span style="color:var(--text-3);font-size:12px">${esc(_task||'auto')} · target <code>${esc(_target||'auto')}</code> · optimise <code>${esc(_metric||'auto')}</code> (${esc(_dir||'min/max')})</span><br>`;
+    if(d.first_iteration_plan)msg+=`<br>${esc(d.first_iteration_plan)}<br>`;
+    if(d.risks&&d.risks.length)msg+=`<br><span style="color:var(--amber);font-size:12px">⚠ ${d.risks.map(r=>esc(r)).join(' · ')}</span><br>`;
+    if(S.mode==='plan')msg+=`<br>Review the plan below, tweak anything, then hit <strong>Execute Plan</strong>.`;
+    else msg+=`<br>Type <strong>"go"</strong> to start, or tell me what to change.`;
     chat('ai',msg);setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
-    toast('Analysis complete — plan ready','ok');
+    toast('Plan ready','ok');
   }catch(e){
     typing(false);chat('err',`Analysis failed: ${esc(e.message)}`);setBadge('ERROR','err');
     sbUpdate({status:'Analysis failed',running:false,error:true});
@@ -1434,6 +1654,15 @@ async function launchRun(){
   if(S.running||!S.file)return;
   if(!S.analyzed){chat('ai','Let me analyze first...');await runDiscover(S.hint||'');return}
   if(C.demo){await runPreview();return}
+  // Trial mode gate
+  if(_isTrialMode){
+    if(_trialRemaining()<=0){
+      chat('ai','You\'ve used all 3 free experiments. Sign up to keep going — it\'s free!');
+      showAuthModal();return;
+    }
+    _useTrialSlot();
+    if(_trialRemaining()===0) chat('sys','Last free experiment. Sign up to run unlimited experiments.');
+  }
   if(!C.key)C.key=gk(C.provider);
   if(!C.key){
     try{const pr=await apiFetch(`${BASE}/api/provider-status`);if(pr.ok){const pj=await pr.json();if(!pj.server_key_available&&!pj.cached_key_available){chat('ai','Need an API key for real experiments.');showKeyPrompt();return}}}catch(_){}
@@ -1453,8 +1682,8 @@ async function launchRun(){
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
   try{
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok)throw new Error(`Server error (${sr.status}): ${await sr.text()}`);
     const{run_id}=await sr.json();S.runId=run_id;updStatus();
@@ -1464,18 +1693,58 @@ async function launchRun(){
 
     let es;
     activeAbort=new AbortController();
-    await new Promise((resolve)=>{
-      es=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
-      S._es=es;
-      es.onmessage=e=>{
-        const d=JSON.parse(e.data);
-        if(d.msg==='__DONE__'){es.close();resolve();return}
-        S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
-      };
-      es.onerror=()=>{es.close();chat('sys','Stream disconnected, polling...');
-        const poll=setInterval(async()=>{try{const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);if(!pr.ok)return;const ps=await pr.json();if(ps.status==='done'||ps.status==='error'){clearInterval(poll);resolve()}}catch(_){}},3000);
-      };
-      activeAbort.signal.addEventListener('abort',()=>{es.close();resolve()});
+    await new Promise((resolve,reject)=>{
+      let _resolved=false;
+      function done(err){if(_resolved)return;_resolved=true;if(es){try{es.close()}catch(_){}}err?reject(err):resolve();}
+
+      function startPolling(){
+        const deadline=Date.now()+20*60*1000; // 20-min hard limit
+        const poll=setInterval(async()=>{
+          try{
+            const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);
+            if(pr.status===404){clearInterval(poll);done(new Error('Run lost — server may have restarted. Please try again.'));return;}
+            if(!pr.ok)return;
+            const ps=await pr.json();
+            if(ps.status==='done'||ps.status==='error'){clearInterval(poll);done();return;}
+            if(Date.now()>deadline){clearInterval(poll);done(new Error('Run timed out after 20 minutes.'));return;}
+          }catch(_){}
+        },3000);
+        activeAbort.signal.addEventListener('abort',()=>{clearInterval(poll);done();});
+      }
+
+      function connect(){
+        es=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
+        S._es=es;
+        let gotMessage=false;
+        es.onmessage=e=>{
+          gotMessage=true;
+          const d=JSON.parse(e.data);
+          if(d.msg==='__DONE__'){done();return;}
+          S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
+        };
+        es.onerror=()=>{
+          es.close();
+          if(gotMessage){
+            // Had real data — just switch to polling
+            startPolling();
+          } else {
+            // Never got a message — retry SSE once after 1.5s, then poll
+            setTimeout(()=>{
+              if(_resolved)return;
+              const es2=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
+              S._es=es2;
+              es2.onmessage=e=>{
+                const d=JSON.parse(e.data);
+                if(d.msg==='__DONE__'){es2.close();done();return;}
+                S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
+              };
+              es2.onerror=()=>{es2.close();startPolling();};
+            },1500);
+          }
+        };
+        activeAbort.signal.addEventListener('abort',()=>{es.close();done();});
+      }
+      connect();
     });
 
     setProg(92);
@@ -2430,7 +2699,7 @@ async function chatGenerateChart(query){
   const key=C.key||gk(C.provider);
   try{
     const r=await apiFetch(`${BASE}/api/chart`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      query,csv_text:S.csv.slice(0,500000),headers:S.cols||[],api_key:key||undefined,provider:C.provider
+      query,csv_text:S.csv.slice(0,500000),headers:S.cols||[],api_key:key||undefined,provider:C.provider,model:C.model||undefined
     })});
     const j=await r.json();typing(false);
     if(!j.ok){chat('err',j.error||'Chart generation failed');return}

@@ -8,6 +8,7 @@
 - GET  /                 → serves 19labs-app.html
 """
 import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
+import urllib.request, urllib.parse, urllib.error
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, RedirectResponse
@@ -149,6 +150,13 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
     except Exception:
         pass
     # Fallback: env vars (useful when Railway DB is fresh after redeploy)
+    if provider == "bedrock":
+        ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        if ak and sk:
+            return json.dumps({"access_key": ak, "secret_key": sk, "region": region})
+        return ""
     _env_fallbacks = {
         "claude": os.environ.get("ANTHROPIC_API_KEY", ""),
         "openai": os.environ.get("OPENAI_API_KEY", ""),
@@ -372,9 +380,153 @@ def _download_linux():
     return RedirectResponse(_GH_LINUX, status_code=302)
 
 # ── AUTH ENDPOINTS ────────────────────────────────────────────
+# In-memory CSRF state store for Google OAuth (short-lived)
+_OAUTH_STATES: dict[str, float] = {}
+
+def _validate_provider_key(provider: str, api_key: str) -> tuple[bool, str]:
+    """Validate an API key by calling the provider. Returns (valid, display_name)."""
+    try:
+        if provider in ("claude", "anthropic"):
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/models",
+                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as r:
+                return r.status == 200, "Anthropic"
+        elif provider == "openai":
+            req = urllib.request.Request(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as r:
+                return r.status == 200, "OpenAI"
+        elif provider == "gemini":
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            with urllib.request.urlopen(url, timeout=8) as r:
+                return r.status == 200, "Google Gemini"
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return False, ""
+        # Other HTTP errors (rate limit, etc.) — assume key format is okay
+        return True, provider.title()
+    except Exception:
+        # Network issues — optimistically accept; will fail at run time if truly invalid
+        return True, provider.title()
+    return False, ""
+
+def _upsert_provider_user(user_id: str, email: str, name: str, provider: str, api_key: str):
+    """Create or update a user record and save their API key."""
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.execute(
+        "INSERT OR REPLACE INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+        (user_id, email, name, "", time.time())
+    )
+    norm = "claude" if provider == "anthropic" else provider
+    conn.execute(
+        "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?)",
+        (user_id, norm, api_key)
+    )
+    conn.commit()
+    conn.close()
+
+@app.post("/auth/provider-login")
+async def provider_login(request: Request):
+    """Sign in / sign up using an AI provider API key. The key is the credential."""
+    data = await request.json()
+    provider = (data.get("provider") or "").strip().lower()
+    api_key = (data.get("api_key") or "").strip()
+    if provider not in ("claude", "anthropic", "openai", "gemini"):
+        raise HTTPException(400, "provider must be claude, openai, or gemini")
+    if not api_key:
+        raise HTTPException(400, "api_key is required")
+
+    valid, display = _validate_provider_key(provider, api_key)
+    if not valid:
+        raise HTTPException(401, "API key rejected by the provider. Check it and try again.")
+
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:20]
+    norm = "claude" if provider == "anthropic" else provider
+    user_id = f"{norm}:{key_hash}"
+    email = f"{key_hash[:10]}@{norm}.key"
+    name = display or norm.title()
+
+    _upsert_provider_user(user_id, email, name, norm, api_key)
+    token = _make_jwt(user_id, email, name)
+    return {"token": token, "user": {"id": user_id, "email": email, "name": name, "provider": norm}}
+
+@app.get("/auth/google")
+async def google_auth_start(request: Request):
+    """Redirect to Google OAuth. Requires GOOGLE_CLIENT_ID env var."""
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    if not client_id:
+        raise HTTPException(501, "Google sign-in is not configured on this server.")
+    state = _secrets.token_hex(16)
+    _OAUTH_STATES[state] = time.time()
+    # Clean up old states (>10 min)
+    old = [k for k, t in _OAUTH_STATES.items() if time.time() - t > 600]
+    for k in old:
+        del _OAUTH_STATES[k]
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = urllib.parse.quote(f"{base}/auth/google/callback", safe="")
+    scope = urllib.parse.quote("openid email profile", safe="")
+    url = (f"https://accounts.google.com/o/oauth2/v2/auth"
+           f"?client_id={client_id}&redirect_uri={redirect_uri}"
+           f"&response_type=code&scope={scope}&state={state}&prompt=select_account")
+    return RedirectResponse(url, status_code=302)
+
+@app.get("/auth/google/callback")
+async def google_auth_callback(code: str = "", state: str = "", error: str = "", request: Request = None):
+    """Handle Google OAuth callback."""
+    if error or not code:
+        return HTMLResponse("<script>window.location='/app?auth_error=cancelled'</script>")
+    if state not in _OAUTH_STATES:
+        return HTMLResponse("<script>window.location='/app?auth_error=invalid_state'</script>")
+    del _OAUTH_STATES[state]
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/auth/google/callback"
+
+    try:
+        # Exchange code → tokens
+        token_data = urllib.parse.urlencode({
+            "code": code, "client_id": client_id, "client_secret": client_secret,
+            "redirect_uri": redirect_uri, "grant_type": "authorization_code"
+        }).encode()
+        req = urllib.request.Request("https://oauth2.googleapis.com/token", data=token_data,
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            tokens = json.loads(r.read())
+
+        # Fetch user info
+        ui_req = urllib.request.Request("https://www.googleapis.com/oauth2/v3/userinfo",
+                                        headers={"Authorization": f"Bearer {tokens['access_token']}"})
+        with urllib.request.urlopen(ui_req, timeout=10) as r:
+            info = json.loads(r.read())
+
+        email = info.get("email", "")
+        name = info.get("name", email.split("@")[0])
+        user_id = f"google:{info.get('sub', hashlib.sha256(email.encode()).hexdigest()[:16])}"
+
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("INSERT OR REPLACE INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+                     (user_id, email, name, "", time.time()))
+        conn.commit()
+        conn.close()
+
+        token = _make_jwt(user_id, email, name)
+        safe_token = token.replace("'", "")
+        return HTMLResponse(
+            f"<script>localStorage.setItem('19labs_auth_token','{safe_token}');"
+            f"window.location.href='/app';</script>"
+        )
+    except Exception as e:
+        return HTMLResponse(f"<script>window.location='/app?auth_error={urllib.parse.quote(str(e))}'</script>")
 
 @app.post("/auth/signup")
 async def auth_signup(request: Request):
+    """Legacy email/password signup — kept for backward compatibility."""
     data = await request.json()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
@@ -386,10 +538,8 @@ async def auth_signup(request: Request):
     user_id = str(uuid.uuid4())
     conn = sqlite3.connect(str(DB_PATH))
     try:
-        conn.execute(
-            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
-            (user_id, email, name, _hash_pw(password), time.time())
-        )
+        conn.execute("INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+                     (user_id, email, name, _hash_pw(password), time.time()))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -400,13 +550,12 @@ async def auth_signup(request: Request):
 
 @app.post("/auth/login")
 async def auth_login(request: Request):
+    """Legacy email/password login — kept for backward compatibility."""
     data = await request.json()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
     conn = sqlite3.connect(str(DB_PATH))
-    row = conn.execute(
-        "SELECT id, email, name, password_hash FROM users WHERE email=?", (email,)
-    ).fetchone()
+    row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE email=?", (email,)).fetchone()
     conn.close()
     if not row or not _verify_pw(password, row[3]):
         raise HTTPException(401, "Invalid email or password")
@@ -456,10 +605,16 @@ async def auth_save_keys(request: Request):
         # normalize: 'anthropic' → 'claude' to match engine provider names
         if provider == "anthropic":
             provider = "claude"
-        if provider in ("claude", "openai", "gemini") and key and key.strip():
+        if provider == "bedrock":
+            # key is a dict with access_key, secret_key, region — serialize to JSON
+            if isinstance(key, dict):
+                key = json.dumps(key)
+            elif not isinstance(key, str):
+                continue
+        if provider in ("claude", "openai", "gemini", "bedrock") and key and (isinstance(key, str) and key.strip()):
             conn.execute(
                 "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?)",
-                (user["id"], provider, key.strip())
+                (user["id"], provider, key.strip() if isinstance(key, str) else key)
             )
     conn.commit()
     conn.close()
@@ -475,6 +630,7 @@ class RunRequest(BaseModel):
     reliability_mode: str = "balanced"
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""        # optional model override (e.g. "gpt-4o-mini", "claude-opus-4-6")
     continuous: bool = False
 
 class ValidateKeyRequest(BaseModel):
@@ -483,15 +639,19 @@ class ValidateKeyRequest(BaseModel):
 
 class DiscoverRequest(BaseModel):
     filename: str
-    csv: str
+    csv: str = ""
+    dataset_id: str = ""   # pre-uploaded media dataset
     hint: str = ""
+    previous_objective: dict | None = None  # what the agent was proposing before the user corrected it
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""        # optional model override
 
 class ChatRequest(BaseModel):
     message: str
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""        # optional model override
     context: dict = {}
 
 class PredictRequest(BaseModel):
@@ -678,7 +838,14 @@ async def start_run(req: RunRequest, request: Request):
             })
 
         try:
-            resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+            _prov = (req.provider or "claude").lower()
+            if not req.api_key and _prov == "bedrock":
+                _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+                _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+                _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+                resolved_api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg}) if _ak and _sk else ""
+            else:
+                resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
             cb("sys", f"API key received: {'YES' if resolved_api_key else 'NO'} (length={len(resolved_api_key)}) | Provider: {req.provider or 'claude'}")
             if not resolved_api_key:
                 raise RuntimeError(
@@ -695,6 +862,7 @@ async def start_run(req: RunRequest, request: Request):
                 continuous=req.continuous,
                 cancel_event=cancel_event,
                 provider=req.provider or "claude",
+                model=req.model or None,
             )
             RUNS[run_id]["result"] = result
             if RUNS[run_id]["status"] == "stopping":
@@ -742,16 +910,29 @@ async def validate_key(req: ValidateKeyRequest):
 
 @app.post("/api/discover")
 async def discover(req: DiscoverRequest):
-    if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
-        raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
     ws = Path(tempfile.mkdtemp(prefix="19labs_discover_"))
-    csv_path = ws / req.filename
-    csv_path.write_text(req.csv)
+    cleanup_ws = True
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent))
-        from engine import discover_user_need, profile_dataset
-        profile = profile_dataset(str(csv_path))
+        from engine import discover_user_need, profile_dataset, profile_media_dataset
+
+        # Resolve data path — media dataset or CSV
+        if req.dataset_id:
+            media = _MEDIA_DATASETS.get(req.dataset_id)
+            if not media:
+                return {"ok": False, "error": "Media dataset not found. Please re-upload."}
+            data_path = media["path"]
+            profile = profile_media_dataset(data_path)
+            cleanup_ws = False  # don't delete the media dataset dir
+        else:
+            if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
+                raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
+            csv_path = ws / req.filename
+            csv_path.write_text(req.csv)
+            data_path = str(csv_path)
+            profile = profile_dataset(data_path)
+
         resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
         if not resolved_api_key:
@@ -760,7 +941,7 @@ async def discover(req: DiscoverRequest):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(str(csv_path), user_hint=req.hint, api_key=resolved_api_key, provider=req.provider or "claude")
+        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None)
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
@@ -769,10 +950,8 @@ async def discover(req: DiscoverRequest):
             msg = "API connection error during discovery. Check internet/VPN/firewall/proxy."
         return {"ok": False, "error": msg, "used_fallback": False}
     finally:
-        try:
+        if cleanup_ws:
             shutil.rmtree(ws, ignore_errors=True)
-        except Exception:
-            pass
 
 # ── PUSH CODE TO WORKSPACE ─────────────────────────────────────
 class PushCodeRequest(BaseModel):
@@ -1156,7 +1335,7 @@ async def chat_endpoint(req: ChatRequest):
         raise HTTPException(400, "API key required for chat")
     from engine import chat_with_data
     try:
-        response = chat_with_data(req.message, req.context, api_key, req.provider)
+        response = chat_with_data(req.message, req.context, api_key, req.provider, model=req.model or None)
         return {"ok": True, "response": response}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -1169,6 +1348,7 @@ class ChartRequest(BaseModel):
     sample_rows: list[list[str]] = []
     api_key: str = ""
     provider: str = "claude"
+    model: str = ""      # optional model override
 
 @app.post("/api/chart")
 async def generate_chart(req: ChartRequest):
@@ -1199,7 +1379,7 @@ async def generate_chart(req: ChartRequest):
         col_info.append(info)
 
     from engine import ask, _init_client
-    _init_client(api_key, req.provider or "claude")
+    _init_client(api_key, req.provider or "claude", model=req.model or None)
 
     prompt = f"""Given this dataset and query, generate a chart specification.
 
