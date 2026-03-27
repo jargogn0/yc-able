@@ -573,6 +573,21 @@ input[type=file]{display:none}
     </div>
     <label id="key-label">Anthropic API Key</label>
     <input type="password" id="key-input" placeholder="sk-ant-api03-..." autocomplete="off">
+    <!-- Bedrock-specific credential fields (shown only when Bedrock selected) -->
+    <div id="bedrock-creds" style="display:none;flex-direction:column;gap:6px">
+      <label>AWS Access Key ID</label>
+      <input type="text" id="bedrock-access" placeholder="AKIA..." autocomplete="off" style="font-family:var(--mono);font-size:12px">
+      <label>AWS Secret Access Key</label>
+      <input type="password" id="bedrock-secret" placeholder="Secret access key" autocomplete="off" style="font-family:var(--mono);font-size:12px">
+      <label>Region</label>
+      <select id="bedrock-region" style="width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;font-family:var(--sans)">
+        <option value="us-east-1">us-east-1 (N. Virginia)</option>
+        <option value="us-west-2">us-west-2 (Oregon)</option>
+        <option value="eu-west-1">eu-west-1 (Ireland)</option>
+        <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+        <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+      </select>
+    </div>
     <label>Model</label>
     <select id="model-select" style="width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;font-family:var(--sans);cursor:pointer"></select>
     <label>Experiment Budget</label>
@@ -1193,13 +1208,25 @@ const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,
 // SETTINGS
 // ═══════════════════════════════════════════
 function openSettings(){
-  document.getElementById('key-input').value=C.key;
+  document.getElementById('key-input').value=C.provider==='bedrock'?'':C.key;
   document.getElementById('access-token-input').value=ACCESS_TOKEN;
   document.getElementById('server-url').value=localStorage.getItem('19labs_server')||'http://localhost:8019';
   document.getElementById('budget-slider').value=S.budget;
   document.getElementById('budget-val').textContent=S.budget;
   setRM(S.rmode,true);
   spUI(C.provider);
+  // Pre-fill Bedrock fields from saved creds
+  if(C.provider==='bedrock'){
+    const saved=gk('bedrock');
+    let creds={};
+    try{if(saved&&saved.startsWith('{'))creds=JSON.parse(saved);}catch(_){}
+    const a=document.getElementById('bedrock-access');
+    const s=document.getElementById('bedrock-secret');
+    const r=document.getElementById('bedrock-region');
+    if(a)a.value=creds.access_key||'';
+    if(s)s.value=''; // never pre-fill secret for security
+    if(r&&creds.region)r.value=creds.region;
+  }
   document.getElementById('settings').style.display='flex';
 }
 function closeSettings(){document.getElementById('settings').style.display='none'}
@@ -1214,9 +1241,18 @@ function setProv(p){
 }
 function spUI(p){
   ['claude','openai','bedrock'].forEach(x=>{const e=document.getElementById('prov-'+x);if(e)e.classList.toggle('on',x===p)});
-  document.getElementById('key-label').textContent=P[p].kl;
-  document.getElementById('key-input').placeholder=P[p].ph;
   document.getElementById('tb-prov').textContent=P[p].label;
+  const isBedrock=p==='bedrock';
+  const keyWrap=document.getElementById('key-input');
+  const keyLabel=document.getElementById('key-label');
+  const bedrockCreds=document.getElementById('bedrock-creds');
+  if(keyWrap)keyWrap.style.display=isBedrock?'none':'';
+  if(keyLabel)keyLabel.style.display=isBedrock?'none':'';
+  if(bedrockCreds)bedrockCreds.style.display=isBedrock?'flex':'none';
+  if(!isBedrock){
+    if(keyLabel)keyLabel.textContent=P[p].kl;
+    if(keyWrap)keyWrap.placeholder=P[p].ph;
+  }
   // populate model dropdown
   const sel=document.getElementById('model-select');
   if(sel){
@@ -1234,7 +1270,23 @@ async function saveSettings(){
   // save selected model
   const sel=document.getElementById('model-select');
   if(sel&&sel.value){C.model=sel.value;localStorage.setItem(`19labs_model_${C.provider}`,sel.value);}
-  if(k){C.key=k;C.demo=false;localStorage.setItem(`19labs_api_key_${C.provider}`,k);localStorage.setItem('19labs_api_key_last',k)}
+  // Bedrock: build JSON from separate fields
+  if(C.provider==='bedrock'){
+    const accessKey=(document.getElementById('bedrock-access')?.value||'').trim();
+    const secretKey=(document.getElementById('bedrock-secret')?.value||'').trim();
+    const region=document.getElementById('bedrock-region')?.value||'us-east-1';
+    if(accessKey&&secretKey){
+      const bedrockJson=JSON.stringify({access_key:accessKey,secret_key:secretKey,region});
+      C.key=bedrockJson;C.demo=false;
+      localStorage.setItem('19labs_api_key_bedrock',bedrockJson);
+      // Also sync to server
+      apiFetch(`${BASE}/auth/keys`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bedrock:{access_key:accessKey,secret_key:secretKey,region}})}).catch(()=>{});
+    } else if(accessKey&&!secretKey){
+      // Only access key entered — don't override if we already have full creds
+      const existing=gk('bedrock');
+      if(!existing||!existing.startsWith('{')){toast('Enter both Access Key ID and Secret Access Key','err');return;}
+    }
+  } else if(k){C.key=k;C.demo=false;localStorage.setItem(`19labs_api_key_${C.provider}`,k);localStorage.setItem('19labs_api_key_last',k)}
   ACCESS_TOKEN=at;localStorage.setItem('19labs_access_token',at);
   if(su){const prev=localStorage.getItem('19labs_server')||'http://localhost:8019';if(su!==prev){localStorage.setItem('19labs_server',su);location.reload();return}}
   closeSettings();

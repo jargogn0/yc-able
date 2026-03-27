@@ -727,10 +727,17 @@ def _init_client(api_key, provider="claude", model=None):
             creds = json.loads(api_key) if isinstance(api_key, str) and api_key.startswith("{") else {}
         except Exception:
             creds = {}
+        ak = creds.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID", "")
+        sk = creds.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+        rg = creds.get("region") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        if not ak or not sk:
+            raise RuntimeError(
+                "Bedrock credentials missing. Go to Settings → select Bedrock → enter your AWS Access Key ID and Secret Access Key."
+            )
         _client = AnthropicBedrock(
-            aws_access_key=creds.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID", ""),
-            aws_secret_key=creds.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-            aws_region=creds.get("region") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            aws_access_key=ak,
+            aws_secret_key=sk,
+            aws_region=rg,
         )
     else:
         _client = Anthropic(api_key=api_key)
