@@ -842,22 +842,32 @@ def normalize_reliability_mode(mode: str | None) -> str:
 def infer_objective(profile, hint="", domain_analysis="", previous_objective=None):
     # Build context-aware hint block so the LLM can interpret corrections correctly
     if hint and previous_objective:
+        _prev_summary = (
+            f"task={previous_objective.get('task','?')}, "
+            f"target={previous_objective.get('target','?')}, "
+            f"metric={previous_objective.get('metric','?')}, "
+            f"direction={previous_objective.get('direction','?')}"
+        )
         _hint_block = (
-            f"\n⚠️  USER CORRECTION — interpret in context:\n"
-            f"The agent was previously proposing: task={previous_objective.get('task','?')}, "
-            f"target={previous_objective.get('target','?')}\n"
-            f"The user responded: \"{hint}\"\n"
-            f"Parse this as a REACTION to the current plan, not in isolation.\n"
-            f"Example: if proposing 'predict shipped_weight' and user says 'no revenue forecast',\n"
-            f"  they mean 'no [to that], I want revenue forecast' → target should be revenue column.\n"
-            f"Example: if proposing 'classify churn' and user says 'no revenue', they want revenue prediction.\n"
-            f"Determine the user's ACTUAL INTENT from context, then use the right target column from the dataset.\n"
+            f"\n⚠️  USER CORRECTION — you MUST interpret this in context of what was just proposed:\n"
+            f"CURRENT PROPOSAL: {_prev_summary}\n"
+            f"USER SAID: \"{hint}\"\n\n"
+            f"This is a conversational reaction. Parse intent from context — do NOT take it literally:\n"
+            f"  • 'no revenue forecast' when proposing predict_weight  → user wants revenue forecast instead\n"
+            f"  • 'no, use NSE' when metric=rmse                       → change metric to NSE\n"
+            f"  • 'no use MAE' when metric=rmse                        → change metric to MAE\n"
+            f"  • 'no, churn' when target=revenue                      → change target to churn column\n"
+            f"  • 'classification not regression' when task=Regression → change task to Classification\n"
+            f"  • 'weekly not daily'                                    → adjust time granularity\n"
+            f"  • 'add X as feature'                                    → note X as important feature\n"
+            f"Apply the correction to the right field (task / target / metric / direction) and "
+            f"keep everything else from the current proposal unchanged.\n"
         )
     elif hint:
         _hint_block = (
             f"\n⚠️  USER INSTRUCTION (overrides profile inferences):\n"
             f"The user said: \"{hint}\"\n"
-            f"Use this to determine the correct target and task.\n"
+            f"Use this to determine the correct target, task, and metric.\n"
         )
     else:
         _hint_block = ""
@@ -942,27 +952,30 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
             f"\nWHAT THE AGENT WAS PREVIOUSLY PROPOSING:\n"
             f"- task: {previous_objective.get('task','?')}\n"
             f"- target: {previous_objective.get('target','?')}\n"
-            f"- objective: {previous_objective.get('reasoning','?')}\n"
+            f"- metric: {previous_objective.get('metric','?')} ({previous_objective.get('direction','?')})\n"
+            f"- reasoning: {previous_objective.get('reasoning','?')}\n"
         )
 
     _correction_block = ""
     if user_hint and previous_objective:
         _correction_block = (
-            f"\n⚠️  USER CORRECTION (interpret in context of what was proposed above):\n"
-            f"The user said: \"{user_hint}\"\n"
-            f"This is a REACTION to the previous plan. Parse it conversationally:\n"
-            f"  - \"no revenue forecast\" when the plan was predicting weight → means \"no [to that], do revenue forecast\"\n"
-            f"  - \"no, churn\" when predicting revenue → means \"predict churn instead\"\n"
-            f"  - \"too complex\" → simplify the approach\n"
-            f"  - \"add X\" → incorporate X into the objective\n"
-            f"Read the user's intent from context, not just the literal words.\n"
-            f"Your recommended_objective MUST reflect what the user actually wants.\n"
+            f"\n⚠️  USER CORRECTION — interpret as a reaction to the proposal above, not in isolation:\n"
+            f"USER SAID: \"{user_hint}\"\n\n"
+            f"Conversational interpretation guide:\n"
+            f"  • 'no revenue forecast' when proposing predict_weight  → user wants revenue forecast\n"
+            f"  • 'no use NSE' / 'use NSE instead' when metric=rmse    → change metric to NSE\n"
+            f"  • 'no use MAE' when metric=rmse                        → change metric to MAE\n"
+            f"  • 'no, churn' when target=revenue                      → change target to churn\n"
+            f"  • 'classification not regression'                      → change task type\n"
+            f"  • 'too complex' / 'simpler'                            → simplify approach\n"
+            f"Apply ONLY what the user changed. Keep everything else from the current proposal.\n"
+            f"Your recommended_objective and recommended_metric MUST reflect the correction.\n"
         )
     elif user_hint:
         _correction_block = (
             f"\n⚠️  USER INSTRUCTION:\n"
             f"The user said: \"{user_hint}\"\n"
-            f"Your recommended_objective and plan MUST align with this.\n"
+            f"Your recommended_objective, recommended_metric, and plan MUST align with this.\n"
         )
 
     advice_raw = ask(
