@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>19Labs — Auto-ML Research</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2318181b'/%3E%3Crect x='6' y='4' width='3' height='3' fill='%236366f1'/%3E%3Crect x='2' y='8' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='8' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='12' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='16' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='20' width='3' height='3' fill='%236366f1'/%3E%3Crect x='2' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='10' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='22' y='4' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='4' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='18' y='8' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='8' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='22' y='12' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='12' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='16' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='20' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='22' y='24' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='24' width='3' height='3' fill='%23a78bfa'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -38,8 +38,8 @@
   --rl:12px;
   --t:150ms cubic-bezier(.4,0,.2,1);
 }
-html,body{height:100%}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+html{height:100%;height:-webkit-fill-available}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased;height:100%;min-height:-webkit-fill-available}
 ::selection{background:var(--accent);color:#fff}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
@@ -145,7 +145,10 @@ body.desktop-mac .topbar{padding-left:84px}
 }
 
 /* ── MOBILE NAV (≤767px) ── */
-.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:54px;background:var(--surface);border-top:1px solid var(--border);z-index:600;flex-direction:row;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:54px;padding-bottom:0;background:var(--surface);border-top:1px solid var(--border);z-index:600;flex-direction:row;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+@supports(padding-bottom:env(safe-area-inset-bottom)){
+  .mob-nav{height:calc(54px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
+}
 .mn-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:600;font-family:var(--sans);letter-spacing:.3px;transition:color var(--t);padding:6px 0;-webkit-tap-highlight-color:transparent}
 .mn-tab svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7}
 .mn-tab.active{color:var(--accent)}
@@ -173,7 +176,8 @@ body.desktop-mac .topbar{padding-left:84px}
   .side,.ws,.chat{
     position:fixed!important;
     /* topbar 44px + border 1px + prog 2px = 47px */
-    top:47px;left:0;right:0;bottom:54px;
+    top:47px;left:0;right:0;
+    bottom:calc(54px + env(safe-area-inset-bottom, 0px));
     z-index:300;
     display:none!important;
     flex-direction:column;
@@ -197,14 +201,20 @@ body.desktop-mac .topbar{padding-left:84px}
   .tabs{flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:0;padding:0 4px;height:40px}
   .tabs::-webkit-scrollbar{display:none}
   .tab{flex-shrink:0;padding:6px 12px;font-size:12px}
-  .ws-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+  .ws-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;max-width:100vw}
+  /* All direct ws-body children: constrain width */
+  .ws-body>*{max-width:100%;box-sizing:border-box}
 
   /* ── Chat internals ── */
   .chat-h{flex-shrink:0}
-  .chat-msgs{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .chat-msgs{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
   .comp{flex-shrink:0}
-  .comp-send{width:44px;height:44px}
+  .comp-send{width:44px;height:44px;min-width:44px}
   .comp-in{font-size:16px}/* prevent iOS auto-zoom */
+  /* Chat welcome area: smaller padding on mobile */
+  .cw{padding:16px 12px}
+  .cw-hints{max-width:100%;width:100%}
+  .cw-hint{font-size:13px;padding:10px 12px;-webkit-tap-highlight-color:transparent}
 
   /* ── Dropzone: compact ── */
   .dz{padding:14px 10px;margin:8px 8px 4px}
@@ -800,13 +810,18 @@ input[type=file]{display:none}
 
 /* ── MOBILE RESPONSIVE ── */
 @media(max-width:500px){
+  /* Best hero card */
+  .best-hero{margin:10px}
   .best-hero-top{padding:14px 14px 0;gap:10px}
   .best-hero-model{font-size:15px;word-break:break-word}
-  .best-hero-metrics{grid-template-columns:1fr;padding:10px 14px}
-  .best-hero-actions{padding:10px 14px;gap:6px}
+  .best-hero-metrics{grid-template-columns:1fr 1fr;padding:10px 14px;gap:6px}
+  .best-hero-metric-val{font-size:16px}
+  .best-hero-actions{padding:10px 14px;gap:6px;flex-wrap:wrap}
   .best-hero-actions .abtn,.best-hero-actions .share-btn{font-size:11px;padding:7px 10px}
   .best-hero-actions .abtn.p{flex:1 1 100%}
   .best-hero-context{padding:0 14px 8px}
+  /* Experiment feed */
+  .exp-feed{padding:8px}
   /* Experiment table: hide delta column on mobile */
   .exp-table-hdr{grid-template-columns:28px 1fr 90px 50px;padding:5px 10px}
   .exp-table-hdr span:nth-child(4){display:none}
@@ -815,10 +830,11 @@ input[type=file]{display:none}
   .exp-row-model{font-size:11px}
   .exp-row-metric{font-size:11px}
   .exp-row-detail{padding:6px 10px 10px 36px}
-  /* Charts */
-  .mc2{padding:10px}
-  .cmp2{padding:10px}
-  .cmp2-name{width:90px}
+  /* Charts: full width, no horizontal overflow */
+  .mc2{padding:10px;margin:8px}
+  .cmp2{padding:10px;margin:8px}
+  .cmp2-name{width:80px;font-size:11px}
+  .cmp2-bar-row{min-width:0}
   /* Deploy card */
   .deploy-rich-stats{flex-wrap:wrap}
   .deploy-rich-stat{flex:1 1 45%;min-width:0}
@@ -826,6 +842,20 @@ input[type=file]{display:none}
   .deploy-rich-btns .btn-deploy-api,.deploy-rich-btns .abtn{font-size:11px}
   /* Grade badge */
   .grade-badge{width:30px;height:30px;font-size:12px}
+  /* Data preview table: horizontal scroll */
+  .dp{padding:10px 8px}
+  /* Plan modal on mobile */
+  .plan-grid{grid-template-columns:1fr}
+  .plan-card{padding:20px 16px;border-radius:16px}
+}
+/* Very small screens ≤360px */
+@media(max-width:360px){
+  .best-hero-metrics{grid-template-columns:1fr}
+  .exp-table-hdr{grid-template-columns:26px 1fr 80px;padding:5px 8px}
+  .exp-table-hdr span:nth-child(4),.exp-table-hdr span:nth-child(5){display:none}
+  .exp-row{grid-template-columns:26px 1fr 80px;padding:6px 8px}
+  .exp-row>span:nth-child(4),.exp-row>span:nth-child(5){display:none}
+  .topbar-r{gap:6px}
 }
 </style>
 </head>
@@ -1433,10 +1463,9 @@ async function initAuth(){
   if(_isTrialMode&&_trialRemaining()>0){
     _updateTrialBtn();return;
   }
-  // No session — just show topbar buttons, let user decide
+  // No session — clear any stored run so anonymous users start fresh on reload
   _updateTrialBtn();
-  // Still try to restore last run for trial/anonymous users
-  _restoreRunHistory();
+  localStorage.removeItem('19labs_last_run_id');
 }
 
 async function _refreshTokenSilently(){
@@ -1455,7 +1484,7 @@ function showTrialLimitModal(){
   const ex=document.getElementById('trial-limit-modal');if(ex)ex.remove();
   const el=document.createElement('div');
   el.id='trial-limit-modal';
-  el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px';
+  el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   el.innerHTML=`
   <div style="position:relative;width:100%;max-width:580px">
     <button onclick="document.getElementById('trial-limit-modal').remove()" style="position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.08);border:none;color:rgba(255,255,255,.5);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1">✕</button>
@@ -1463,14 +1492,14 @@ function showTrialLimitModal(){
       <div style="font-size:17px;font-weight:600;color:#fff;margin-bottom:4px">Trial complete 🎉</div>
       <div style="font-size:12.5px;color:rgba(255,255,255,.4)">You've used your free trial. Create an account to keep going.</div>
     </div>
-    <div style="display:flex;gap:12px">
-      <div onclick="document.getElementById('trial-limit-modal').remove();showAuthModal()" style="flex:1;border-radius:14px;padding:22px 20px;background:linear-gradient(145deg,#0f0f1a,#13132a);border:1px solid rgba(99,102,241,.35);cursor:pointer;transition:transform .18s,box-shadow .18s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div onclick="document.getElementById('trial-limit-modal').remove();showAuthModal()" style="flex:1;min-width:240px;border-radius:14px;padding:22px 20px;background:linear-gradient(145deg,#0f0f1a,#13132a);border:1px solid rgba(99,102,241,.35);cursor:pointer;transition:transform .18s,box-shadow .18s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
         <div style="width:38px;height:38px;border-radius:9px;background:rgba(99,102,241,.15);display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:14px">🔑</div>
         <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:6px">Create free account</div>
         <div style="font-size:12px;color:rgba(255,255,255,.4);line-height:1.6;margin-bottom:18px">Unlimited runs, saved models, deploy to production. Use your own API key or ours.</div>
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:500;padding:9px 16px;border-radius:8px;background:rgba(99,102,241,.9);color:#fff">Sign up free →</div>
       </div>
-      <div onclick="document.getElementById('trial-limit-modal').remove();showAuthModal()" style="flex:1;border-radius:14px;padding:22px 20px;background:linear-gradient(145deg,#0e1410,#0f1a14);border:1px solid rgba(52,211,153,.25);cursor:pointer;transition:transform .18s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+      <div onclick="document.getElementById('trial-limit-modal').remove();showAuthModal()" style="flex:1;min-width:240px;border-radius:14px;padding:22px 20px;background:linear-gradient(145deg,#0e1410,#0f1a14);border:1px solid rgba(52,211,153,.25);cursor:pointer;transition:transform .18s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
         <div style="width:38px;height:38px;border-radius:9px;background:rgba(52,211,153,.12);display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:14px">⚡</div>
         <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:6px">Already have an account?</div>
         <div style="font-size:12px;color:rgba(255,255,255,.4);line-height:1.6;margin-bottom:18px">Sign in to restore your sessions, models and run history instantly.</div>
