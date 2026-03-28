@@ -1247,19 +1247,30 @@ function _useTrialSlot(){
 function _updateTrialBtn(){
   const btn=document.getElementById('trial-btn');
   if(!btn)return;
-  if(!_authUser){
-    btn.textContent='Sign In';
+  if(_authUser){btn.style.display='none';return;}
+  const rem=_trialRemaining();
+  if(_isTrialMode){
+    btn.textContent=rem>0?`${rem} left`:'Sign Up';
+    btn.style.display='inline-block';
+    btn.onclick=rem>0?null:showAuthModal;
+  } else {
+    btn.textContent='Start Free';
     btn.style.display='inline-block';
     btn.onclick=showAuthModal;
-  } else {
-    btn.style.display='none';
   }
 }
 function startTrial(){
   _isTrialMode=true;
   localStorage.setItem('19labs_trial_started','1');
+  if(_serverConfig.has_bedrock){
+    C.provider='bedrock';
+    localStorage.setItem('19labs_provider','bedrock');
+    spUI('bedrock');
+  }
   hideAuthModal();
   _updateTrialBtn();
+  // Show onboarding with Titanic prompt if no dataset loaded yet
+  if(!S.csv&&!S.runId)setTimeout(showOnboarding,200);
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -2282,13 +2293,17 @@ async function launchRun(){
   if(S.running||!S.file)return;
   if(!S.analyzed){chat('ai','Let me analyze first...');await runDiscover(S.hint||'');return}
   if(C.demo){await runPreview();return}
-  // Auth gate — require login or own API key
-  if(!_authUser){
-    if(!C.key)C.key=gk(C.provider);
-    if(!C.key){
-      chat('ai','Sign in to run experiments — or add your own API key in Settings.');
+  // Trial gate
+  if(_isTrialMode&&!_authUser){
+    if(_trialRemaining()<=0){
+      chat('ai','You\'ve used all free experiments. Sign up to keep going — it\'s free!');
       showAuthModal();return;
     }
+    _useTrialSlot();
+    if(_trialRemaining()===0)chat('sys','Last free experiment. Sign up to run unlimited experiments.');
+  } else if(!_authUser){
+    if(!C.key)C.key=gk(C.provider);
+    if(!C.key){chat('ai','Click Start Free to try it — or sign in.');showAuthModal();return;}
   }
   if(!C.key)C.key=gk(C.provider);
 

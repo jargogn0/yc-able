@@ -1142,8 +1142,18 @@ async def start_run(req: RunRequest, request: Request):
         if saved:
             req.api_key = saved
 
-    # Require auth — anonymous users cannot use server credentials
-    if not req.api_key and not user:
+    # Trial user (no auth, no key) — use server's Bedrock if available, rate-limited by IP
+    if not req.api_key and not user and _server_has_bedrock():
+        ip = _trial_ip(request)
+        allowed, used = _trial_check_and_increment(ip)
+        if not allowed:
+            raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} free runs per day). Create a free account to continue.")
+        req.provider = "bedrock"
+        _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+        _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        req.api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg})
+    elif not req.api_key and not user:
         raise HTTPException(401, "Sign in to run experiments. Create a free account at yc-able.com.")
 
     run_id = str(uuid.uuid4())[:12]
