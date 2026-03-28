@@ -2253,15 +2253,34 @@ async def explain_model(run_id: str):
             if hasattr(model, "predict"):
                 explainer = shap.Explainer(model, sample, feature_names=feature_names)
                 shap_vals = explainer(sample)
+                raw = shap_vals.values
+                # Handle multi-output (classification): use class 1 or average
+                if len(raw.shape) == 3:
+                    raw = raw[:, :, 1] if raw.shape[2] == 2 else raw.mean(axis=2)
                 # Mean absolute SHAP values per feature
-                mean_shap = np.abs(shap_vals.values).mean(axis=0)
-                if len(mean_shap.shape) > 1:
-                    mean_shap = mean_shap.mean(axis=1)
+                mean_shap = np.abs(raw).mean(axis=0)
                 importance = {feature_names[i]: float(mean_shap[i]) for i in range(min(len(feature_names), len(mean_shap)))}
-                # Top feature interactions
+                # Sort by importance to find top features for beeswarm
+                top_idx = np.argsort(mean_shap)[::-1][:15]
+                top_feats = [feature_names[i] for i in top_idx]
+                # Build per-sample data for beeswarm (top 15 features × up to 100 samples)
+                beeswarm = {
+                    "features": top_feats,
+                    "shap_values": [],   # list of lists: shap_values[sample_i][feat_j]
+                    "feature_values": [], # normalized 0-1 feature value for coloring
+                }
+                feat_vals_arr = sample.values  # shape (n_samples, n_features)
+                for fi in top_idx:
+                    feat_col = feat_vals_arr[:, fi].astype(float)
+                    col_min, col_max = feat_col.min(), feat_col.max()
+                    col_range = col_max - col_min if col_max != col_min else 1
+                    normed = ((feat_col - col_min) / col_range).tolist()
+                    beeswarm["shap_values"].append([float(v) for v in raw[:, fi]])
+                    beeswarm["feature_values"].append(normed)
                 shap_values_data = {
                     "sample_size": len(sample),
-                    "method": "shap"
+                    "method": "shap",
+                    "beeswarm": beeswarm,
                 }
         except Exception:
             pass  # SHAP not available or failed
@@ -2304,6 +2323,7 @@ async def explain_model(run_id: str):
             "ok": True,
             "feature_importance": [{"feature": k, "importance": v} for k, v in top_features],
             "partial_dependence": pdp_data,
+            "shap_beeswarm": shap_values_data.get("beeswarm") if shap_values_data else None,
             "method": shap_values_data.get("method", "builtin") if shap_values_data else "builtin",
             "model_type": type(model).__name__,
             "n_features": len(feature_names),
