@@ -3066,43 +3066,101 @@ Output ONLY a complete ```python block.""", 4200)
 # ── CHAT WITH DATA ─────────────────────────────────────────────
 def chat_with_data(message: str, context: dict, api_key: str, provider: str = "claude", model: str = None) -> str:
     """Free-form conversational AI about the current dataset/model."""
-    ctx_parts = []
+    # ── Build rich context block ──────────────────────────────────
+    ctx_lines = []
     if context.get("filename"):
-        ctx_parts.append(f"Dataset: {context['filename']}")
+        ctx_lines.append(f"**Dataset:** {context['filename']}")
+
     profile = context.get("profile") or {}
     if profile.get("n_rows"):
-        ctx_parts.append(f"Rows: {profile['n_rows']}, Columns: {profile.get('n_cols', '?')}")
+        ctx_lines.append(f"**Shape:** {profile['n_rows']:,} rows × {profile.get('n_cols', '?')} columns")
     if profile.get("headers"):
-        ctx_parts.append(f"Columns: {', '.join(profile['headers'][:25])}")
+        cols = profile["headers"][:30]
+        ctx_lines.append(f"**Columns:** {', '.join(cols)}" + (f" (+{len(profile['headers'])-30} more)" if len(profile['headers']) > 30 else ""))
+
+    # Column type info
+    if profile.get("types"):
+        num_cols = [c for c,t in profile["types"].items() if t == "numeric"]
+        cat_cols = [c for c,t in profile["types"].items() if t != "numeric"]
+        if num_cols:
+            ctx_lines.append(f"**Numeric cols:** {', '.join(num_cols[:15])}")
+        if cat_cols:
+            ctx_lines.append(f"**Categorical cols:** {', '.join(cat_cols[:15])}")
+
+    # Missing values
+    if profile.get("nulls"):
+        high_null = [(c, v) for c, v in profile["nulls"].items() if isinstance(v, (int, float)) and v > 0]
+        if high_null:
+            null_str = ", ".join(f"{c}: {v}" for c, v in sorted(high_null, key=lambda x: -x[1])[:8])
+            ctx_lines.append(f"**Missing values:** {null_str}")
+
+    obj = context.get("objective") or {}
+    if obj.get("task"):
+        ctx_lines.append(f"**ML Task:** {obj.get('task')} | **Target:** {obj.get('target','?')} | **Metric:** {obj.get('metric','?')}")
+
     if context.get("best"):
         b = context["best"]
-        ctx_parts.append(f"Best model: {b.get('model','?')} — {b.get('metric_name','metric')}: {b.get('metric_val','?')}")
-    if context.get("objective"):
-        o = context["objective"]
-        ctx_parts.append(f"Task: {o.get('task','?')} | Target: {o.get('target','?')} | Metric: {o.get('metric','?')}")
-    if context.get("history"):
-        kept = sum(1 for e in context["history"] if e.get("success"))
-        ctx_parts.append(f"Experiments: {len(context['history'])} total, {kept} kept")
+        bam = b.get("all_metrics") or {}
+        pk = b.get("metric_name", "metric")
+        pv = b.get("metric_val")
+        metric_str = f"{pk}={pv:.4f}" if isinstance(pv, (int, float)) else f"{pk}={pv}"
+        extra = [f"{k}={v:.4f}" for k, v in bam.items() if k != pk and k not in (f"train_{pk}", f"test_{pk}") and isinstance(v, (int, float))][:4]
+        extra_str = " | " + " | ".join(extra) if extra else ""
+        ctx_lines.append(f"**Best model:** {b.get('model','?')} — {metric_str}{extra_str}")
 
-    system = "You are 19Labs, an expert AI data scientist. Answer questions about the dataset, model, results, and data science in general. Be concise, practical, and specific. Use markdown when helpful."
-    if ctx_parts:
-        system += "\n\nSession context:\n" + "\n".join(f"- {c}" for c in ctx_parts)
+    if context.get("history"):
+        h = context["history"]
+        kept = [e for e in h if e.get("success") and e.get("status") != "discard"]
+        models_tried = list({e.get("model","?") for e in h if e.get("model")})[:8]
+        ctx_lines.append(f"**Experiments:** {len(h)} run, {len(kept)} kept — models tried: {', '.join(models_tried)}")
+
+    if context.get("report"):
+        report_snip = str(context["report"])[:600]
+        ctx_lines.append(f"**Final report summary:** {report_snip}")
+
+    # ── System prompt ──────────────────────────────────────────────
+    system = """You are 19, an expert AI data scientist built into 19Labs — an autonomous ML research platform.
+You are sharp, direct, and genuinely helpful. You know statistics, machine learning, feature engineering, model selection, and data analysis deeply.
+
+BEHAVIOR:
+- Answer specifically using the session context below — reference actual column names, metric values, and model names when relevant
+- If the user asks about their data, explain patterns, correlations, or potential issues concretely
+- If asked about model results, explain what the metrics mean in plain terms and whether the performance is good for the task
+- If asked what to do next, give a concrete, actionable recommendation
+- Never be vague. Never say "it depends" without following up with specifics
+- Keep responses concise but complete. Use markdown for structure when helpful
+- If no dataset is loaded yet, guide the user to upload one and explain what 19Labs can do"""
+
+    if ctx_lines:
+        system += "\n\n## Current Session\n" + "\n".join(ctx_lines)
+    else:
+        system += "\n\n## Current Session\nNo dataset loaded yet."
+
+    # ── Build message history for multi-turn conversation ─────────
+    history = context.get("chat_history") or []
+    messages = []
+    for turn in history[-10:]:  # last 10 turns for context window efficiency
+        role = turn.get("role")
+        content = turn.get("content", "")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": message})
 
     try:
         if provider == "openai" and OpenAI:
             client = OpenAI(api_key=api_key)
             resp = client.chat.completions.create(
-                model=model or "gpt-4o-mini",
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": message}],
-                max_tokens=800
+                model=model or "gpt-4o",
+                messages=[{"role": "system", "content": system}] + messages,
+                max_tokens=1000
             )
             return resp.choices[0].message.content
         else:
             client = Anthropic(api_key=api_key)
             resp = client.messages.create(
-                model=model or CLAUDE_MODEL, max_tokens=800,
+                model=model or CLAUDE_MODEL, max_tokens=1000,
                 system=system,
-                messages=[{"role": "user", "content": message}]
+                messages=messages
             )
             return resp.content[0].text
     except Exception as e:

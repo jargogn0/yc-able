@@ -1805,7 +1805,7 @@ async function saveBedrockKey(){
   }catch(e){toast('Network error','err');}
 }
 
-const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent'};
+const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent',_seenNarrations:new Set(),_chatHistory:[]};
 
 // ═══════════════════════════════════════════
 // SETTINGS
@@ -1991,7 +1991,7 @@ function chat(role,text){
   const e=document.createElement('div');
   const cls=role==='ai'?'ai':role==='user'?'user':role==='err'?'err':'sys';
   e.className=`cm ${cls}`;
-  const labels={ai:'19 Agent',sys:'System',err:'Error'};
+  const labels={ai:`<img src="/ghost.svg" alt="">19 Agent`,sys:'System',err:'Error'};
   const lab=labels[role]||'';
   const body=role==='user'?esc(text):safeHtml(text);
   const ts=`<div class="cm-time">${chatTime()}</div>`;
@@ -2186,11 +2186,31 @@ async function chatWithAI(message){
   }
   typing(true);
   const key=C.key||gk(C.provider);
-  const ctx={filename:S.file?.name,profile:S.discovery?.profile,best:S.best,objective:S.discovery?.objective||S.discovery?.discovery,history:S.exps};
+  // Build rich profile context including types/nulls for smarter answers
+  const prof=S.discovery?.profile||{};
+  const ctx={
+    filename:S.file?.name,
+    profile:{
+      n_rows:prof.rows||prof.n_rows,
+      n_cols:prof.cols||prof.n_cols,
+      headers:prof.headers||S.cols,
+      types:prof.types,
+      nulls:prof.nulls
+    },
+    best:S.best,
+    objective:S.discovery?.objective||S.discovery?.discovery,
+    history:S.exps.slice(-20),// last 20 experiments
+    report:S.report,
+    chat_history:S._chatHistory.slice(-10)// last 10 turns
+  };
   try{
     const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,model:C.model||undefined,context:ctx})});
     const j=await r.json();typing(false);
     if(!r.ok||!j.ok){chat('err',j.error||'Chat failed');return}
+    // Track conversation history for multi-turn context
+    S._chatHistory.push({role:'user',content:message});
+    S._chatHistory.push({role:'assistant',content:j.response});
+    if(S._chatHistory.length>40)S._chatHistory=S._chatHistory.slice(-40);
     chat('ai',j.response);
   }catch(e){typing(false);chat('err',`Chat error: ${esc(e.message)}`)}
 }
@@ -2468,7 +2488,7 @@ async function launchRun(){
   }
   if(!C.key)C.key=gk(C.provider);
 
-  S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
+  S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._seenNarrations=new Set();
   setBadge('RUNNING','run');setProg(5);
   document.getElementById('cdot').className='chat-dot on';
   document.getElementById('p-exp').innerHTML='';
@@ -2523,15 +2543,20 @@ async function launchRun(){
         activeAbort.signal.addEventListener('abort',()=>{clearInterval(poll);done();});
       }
 
+      // Track how many SSE messages we've already processed (for dedup on retry)
+      let _sseProcessed=0;
+
       function connect(){
         es=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
         S._es=es;
         let gotMessage=false;
+        let _localIdx=0;
         es.onmessage=e=>{
           gotMessage=true;
           const d=JSON.parse(e.data);
           if(d.msg==='__DONE__'){done();return;}
           S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
+          _sseProcessed++;_localIdx++;
         };
         es.onerror=()=>{
           es.close();
@@ -2540,14 +2565,20 @@ async function launchRun(){
             startPolling();
           } else {
             // Never got a message — retry SSE once after 1.5s, then poll
+            // The server replays all logs from the beginning, so skip already-processed entries
+            const skipCount=_sseProcessed;
             setTimeout(()=>{
               if(_resolved)return;
               const es2=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
               S._es=es2;
+              let _es2Idx=0;
               es2.onmessage=e=>{
                 const d=JSON.parse(e.data);
                 if(d.msg==='__DONE__'){es2.close();done();return;}
+                // Skip messages we already processed before the retry
+                if(_es2Idx<skipCount){_es2Idx++;return;}
                 S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
+                _es2Idx++;_sseProcessed++;
               };
               es2.onerror=()=>{es2.close();startPolling();};
             },1500);
@@ -2649,8 +2680,10 @@ async function launchRun(){
 function procMsg(d){
   const msg=d.msg,tag=d.tag;
 
-  // Narration messages → show as special chat bubbles
+  // Narration messages → show as special chat bubbles (dedup by content)
   if(tag==='narrate'){
+    if(S._seenNarrations.has(msg))return;
+    S._seenNarrations.add(msg);
     const el=document.createElement('div');el.className='cm narrate';
     el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
     const c=document.getElementById('msgs');
@@ -4119,7 +4152,7 @@ async function handleFile(f,preloadedText){
     chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset. Click <strong>Join All Datasets</strong> in the sidebar to merge them.`);
     return;
   }
-  S.file=f;S.dataset_id=null;S.media_info=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
+  S.file=f;S.dataset_id=null;S.media_info=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
   document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
   document.getElementById('dz-title').textContent=f.name;
   document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
