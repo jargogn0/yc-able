@@ -44,8 +44,11 @@ function startServer(callback) {
                     url.startsWith('/download/') || url.startsWith('/ws');
     if (isProxy) { proxyRequest(req, res); return; }
 
-    const file = url === '/' ? 'app.html' : url.replace(/^\//, '');
-    const filePath = path.join(__dirname, file);
+    const file = url === '/' ? 'landing.html' : (url === '/app' ? 'app.html' : url.replace(/^\//, ''));
+    // Look in desktop dir first, fall back to repo root (parent dir)
+    const localPath = path.join(__dirname, file);
+    const parentPath = path.join(__dirname, '..', file === 'app.html' ? '19labs-app.html' : file);
+    const filePath = fs.existsSync(localPath) ? localPath : parentPath;
     fs.readFile(filePath, (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
       const ext = path.extname(filePath).slice(1).toLowerCase();
@@ -79,7 +82,7 @@ function createWindow(port) {
     },
   });
 
-  mainWindow.loadURL(`http://127.0.0.1:${port}/app.html`);
+  mainWindow.loadURL(`http://127.0.0.1:${port}/`);
   mainWindow.once('ready-to-show', () => { mainWindow.show(); });
   setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();

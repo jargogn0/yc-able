@@ -36,6 +36,9 @@ jobs:
         working-directory: desktop
         run: ./node_modules/.bin/electron-builder --version
 
+      - name: Copy landing page into desktop bundle
+        run: cp landing.html desktop/landing.html
+
       - name: Build macOS DMG (Intel + Apple Silicon)
         working-directory: desktop
         env:

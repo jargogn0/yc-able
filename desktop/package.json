@@ -19,7 +19,7 @@
     "appId": "com.19labs.app",
     "productName": "19Labs",
     "copyright": "Copyright © 2025 19Labs",
-    "files": ["main.js", "preload.js", "app.html", "loader.html"],
+    "files": ["main.js", "preload.js", "app.html", "loader.html", "landing.html"],
     "mac": {
       "target": [
         {"target": "dmg", "arch": ["x64", "arm64"]},
