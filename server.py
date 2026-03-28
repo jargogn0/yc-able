@@ -33,8 +33,84 @@ DB_PATH = _resolve_db_path()
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists before SQLite opens it
 print(f"[db] Using database at {DB_PATH}", flush=True)
 
+# ── DB ABSTRACTION (sqlite3 locally, psycopg2/Supabase in prod) ──────────────
+def _pg_url() -> str:
+    url = os.environ.get("DATABASE_URL", "").strip()
+    # Supabase/Railway give postgres:// but psycopg2 needs postgresql://
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
+
+class _Row(dict):
+    """Dict row that also supports positional integer indexing for backward compat."""
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+class DBConn:
+    """Unified DB wrapper: sqlite3 when DATABASE_URL is unset, psycopg2 (Supabase/Postgres) otherwise."""
+    def __init__(self):
+        url = _pg_url()
+        if url:
+            try:
+                import psycopg2
+                self._conn = psycopg2.connect(url)
+                self._conn.autocommit = False
+                self._cur = self._conn.cursor()
+                self._pg = True
+            except Exception as e:
+                print(f"[db] psycopg2 connect failed ({e}), falling back to SQLite", flush=True)
+                self._conn = sqlite3.connect(str(DB_PATH))
+                self._conn.row_factory = sqlite3.Row
+                self._cur = self._conn.cursor()
+                self._pg = False
+        else:
+            self._conn = sqlite3.connect(str(DB_PATH))
+            self._conn.row_factory = sqlite3.Row
+            self._cur = self._conn.cursor()
+            self._pg = False
+
+    def execute(self, sql, params=()):
+        if self._pg:
+            sql = sql.replace('?', '%s')
+        self._cur.execute(sql, params if params else ())
+        return self
+
+    def fetchone(self) -> "_Row | None":
+        row = self._cur.fetchone()
+        if row is None:
+            return None
+        if self._pg:
+            cols = [d[0] for d in (self._cur.description or [])]
+            return _Row(zip(cols, row))
+        return _Row(zip(row.keys(), tuple(row)))
+
+    def fetchall(self) -> "list[_Row]":
+        rows = self._cur.fetchall()
+        if self._pg:
+            cols = [d[0] for d in (self._cur.description or [])]
+            return [_Row(zip(cols, r)) for r in rows]
+        return [_Row(zip(r.keys(), tuple(r))) for r in rows]
+
+    def commit(self):
+        self._conn.commit()
+        return self
+
+    def close(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
 def _init_db():
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = DBConn()
     conn.execute("""CREATE TABLE IF NOT EXISTS app_config (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -101,16 +177,18 @@ def _get_or_create_jwt_secret() -> str:
             secret = hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
             print(f"[auth] JWT secret derived from {var}", file=_sys.stderr, flush=True)
             return secret
-    # Try to load/persist in DB (works when /data volume is mounted)
+    # Try to load/persist in DB
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = DBConn()
         row = conn.execute("SELECT value FROM app_config WHERE key='jwt_secret'").fetchone()
         if row and row[0]:
             conn.close()
             print("[auth] JWT secret loaded from database", file=_sys.stderr, flush=True)
             return row[0]
         secret = _secrets.token_hex(32)
-        conn.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('jwt_secret', ?)", (secret,))
+        conn.execute(
+            "INSERT INTO app_config (key, value) VALUES ('jwt_secret', ?) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (secret,))
         conn.commit()
         conn.close()
         print("[auth] JWT secret generated and stored in database", file=_sys.stderr, flush=True)
@@ -165,7 +243,7 @@ def _get_user(token: str) -> dict | None:
         return {"id": data["sub"], "email": data["email"], "name": data.get("name", "")}
     # Fallback: DB session (for old tokens)
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = DBConn()
         row = conn.execute(
             "SELECT u.id, u.email, u.name FROM users u "
             "JOIN user_sessions s ON u.id=s.user_id "
@@ -183,7 +261,7 @@ def _token_from_request(request: Request) -> str:
 
 def _get_user_api_key(user_id: str, provider: str) -> str:
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = DBConn()
         row = conn.execute(
             "SELECT api_key FROM user_api_keys WHERE user_id=? AND provider=?",
             (user_id, provider)
@@ -211,18 +289,25 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
 _init_db()
 
 def _save_run_to_db(run_id: str, run: dict):
-    """Persist run summary to SQLite."""
+    """Persist run summary to DB."""
     try:
         result = run.get("result") or {}
         best = result.get("best") or {}
         tu = result.get("token_usage") or {}
         diag = result.get("diagnostics") or {}
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("""INSERT OR REPLACE INTO runs
+        conn = DBConn()
+        conn.execute("""INSERT INTO runs
             (id, status, filename, provider, started, finished, hint, budget,
              best_model, best_metric_name, best_metric_val, total_experiments,
              token_input, token_output, token_calls, yc_score, error, result_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              status=EXCLUDED.status, finished=EXCLUDED.finished,
+              best_model=EXCLUDED.best_model, best_metric_name=EXCLUDED.best_metric_name,
+              best_metric_val=EXCLUDED.best_metric_val, total_experiments=EXCLUDED.total_experiments,
+              token_input=EXCLUDED.token_input, token_output=EXCLUDED.token_output,
+              token_calls=EXCLUDED.token_calls, yc_score=EXCLUDED.yc_score,
+              error=EXCLUDED.error""",
             (run_id, run.get("status", "done"),
              Path(run.get("csv", "")).name if run.get("csv") else "",
              run.get("provider", "claude"),
@@ -246,15 +331,14 @@ def _save_run_to_db(run_id: str, run: dict):
         pass  # Non-critical -- don't block the run
 
 def _load_run_history_from_db():
-    """Load recent runs from SQLite for the /api/runs endpoint."""
+    """Load recent runs from DB for the /api/runs endpoint."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = DBConn()
         rows = conn.execute(
             "SELECT * FROM runs ORDER BY started DESC LIMIT 100"
         ).fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        return list(rows)
     except Exception:
         return []
 
@@ -279,7 +363,7 @@ def _trial_check_and_increment(ip: str) -> tuple[bool, int]:
     """Returns (allowed, runs_used_today). Increments counter if allowed."""
     day = time.strftime("%Y-%m-%d")
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = DBConn()
         row = conn.execute("SELECT count FROM trial_usage WHERE ip=? AND day=?", (ip, day)).fetchone()
         used = row[0] if row else 0
         if used >= TRIAL_RUN_LIMIT:
@@ -509,14 +593,16 @@ def _validate_provider_key(provider: str, api_key: str) -> tuple[bool, str]:
 
 def _upsert_provider_user(user_id: str, email: str, name: str, provider: str, api_key: str):
     """Create or update a user record and save their API key."""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = DBConn()
     conn.execute(
-        "INSERT OR REPLACE INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+        "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+        "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
         (user_id, email, name, "", time.time())
     )
     norm = "claude" if provider == "anthropic" else provider
     conn.execute(
-        "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?)",
+        "INSERT INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?) "
+        "ON CONFLICT (user_id, provider) DO UPDATE SET api_key=EXCLUDED.api_key",
         (user_id, norm, api_key)
     )
     conn.commit()
@@ -636,9 +722,11 @@ async def github_auth_callback(code: str = "", state: str = "", error: str = "",
         name = info.get("name") or info.get("login") or email.split("@")[0]
         user_id = f"github:{info['id']}"
 
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("INSERT OR REPLACE INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
-                     (user_id, email, name, "", time.time()))
+        conn = DBConn()
+        conn.execute(
+            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+            "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
+            (user_id, email, name, "", time.time()))
         conn.commit()
         conn.close()
 
@@ -686,9 +774,11 @@ async def google_auth_callback(code: str = "", state: str = "", error: str = "",
         name = info.get("name", email.split("@")[0])
         user_id = f"google:{info.get('sub', hashlib.sha256(email.encode()).hexdigest()[:16])}"
 
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("INSERT OR REPLACE INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
-                     (user_id, email, name, "", time.time()))
+        conn = DBConn()
+        conn.execute(
+            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+            "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
+            (user_id, email, name, "", time.time()))
         conn.commit()
         conn.close()
 
@@ -717,7 +807,7 @@ async def auth_signup(request: Request):
         raise HTTPException(400, "Password must be at least 6 characters")
     # Deterministic user_id — same email always maps to the same ID even after DB wipe
     user_id = _email_user_id(email)
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = DBConn()
     row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
     if row:
         # Account exists — treat signup as login attempt (idempotent)
@@ -742,7 +832,7 @@ async def auth_login(request: Request):
     if not email or not password:
         raise HTTPException(400, "Email and password required")
     user_id = _email_user_id(email)
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = DBConn()
     row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
     conn.close()
     if not row:
@@ -772,7 +862,7 @@ async def auth_refresh(request: Request):
 async def auth_logout(request: Request):
     token = _token_from_request(request)
     if token:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = DBConn()
         conn.execute("DELETE FROM user_sessions WHERE token=?", (token,))
         conn.commit()
         conn.close()
@@ -783,14 +873,15 @@ async def auth_get_keys(request: Request):
     user = _get_user(_token_from_request(request))
     if not user:
         raise HTTPException(401, "Not authenticated")
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = DBConn()
     rows = conn.execute(
         "SELECT provider, api_key FROM user_api_keys WHERE user_id=?", (user["id"],)
     ).fetchall()
     conn.close()
     result = {}
-    for provider, key in rows:
-        result[provider] = (key[:8] + "…" + key[-4:]) if len(key) > 12 else "****"
+    for row in rows:
+        p, k = row['provider'], row['api_key']
+        result[p] = (k[:8] + "…" + k[-4:]) if len(k) > 12 else "****"
     return result
 
 @app.post("/auth/keys")
@@ -799,20 +890,20 @@ async def auth_save_keys(request: Request):
     if not user:
         raise HTTPException(401, "Not authenticated")
     data = await request.json()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = DBConn()
     for provider, key in data.items():
         # normalize: 'anthropic' → 'claude' to match engine provider names
         if provider == "anthropic":
             provider = "claude"
         if provider == "bedrock":
-            # key is a dict with access_key, secret_key, region — serialize to JSON
             if isinstance(key, dict):
                 key = json.dumps(key)
             elif not isinstance(key, str):
                 continue
         if provider in ("claude", "openai", "gemini", "bedrock") and key and (isinstance(key, str) and key.strip()):
             conn.execute(
-                "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?)",
+                "INSERT INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?) "
+                "ON CONFLICT (user_id, provider) DO UPDATE SET api_key=EXCLUDED.api_key",
                 (user["id"], provider, key.strip() if isinstance(key, str) else key)
             )
     conn.commit()
@@ -1290,7 +1381,7 @@ def list_runs():
 def get_stats():
     """Dashboard stats -- total runs, models trained, best scores."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = DBConn()
         total = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
         successful = conn.execute("SELECT COUNT(*) FROM runs WHERE status='done' AND best_model IS NOT NULL").fetchone()[0]
         total_experiments = conn.execute("SELECT COALESCE(SUM(total_experiments), 0) FROM runs").fetchone()[0]
