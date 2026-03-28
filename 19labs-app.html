@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>19Labs — Autonomous ML Research</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Ctext x='16' y='22' font-family='Inter,system-ui,sans-serif' font-size='13' font-weight='600' fill='white' text-anchor='middle' letter-spacing='-0.5'%3E19%3C/text%3E%3C/svg%3E">
+<title>19Labs — Auto-ML Research</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2318181b'/%3E%3Crect x='6' y='4' width='3' height='3' fill='%236366f1'/%3E%3Crect x='2' y='8' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='8' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='12' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='16' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='20' width='3' height='3' fill='%236366f1'/%3E%3Crect x='2' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='10' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='22' y='4' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='4' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='18' y='8' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='8' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='22' y='12' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='12' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='16' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='20' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='22' y='24' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='24' width='3' height='3' fill='%23a78bfa'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
@@ -45,7 +45,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 
 /* ── TOPBAR ── */
 .topbar{height:46px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;gap:12px}
-.logo{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:-.3px}.logo b{color:var(--accent);font-weight:800}
+.logo{display:flex;align-items:center;gap:7px;text-decoration:none;cursor:default}
+.logo-mark{display:block;flex-shrink:0;image-rendering:pixelated}
+.logo-text{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
 .topbar-sep{width:1px;height:18px;background:var(--border)}
 .topbar-tag{font-size:12px;color:var(--text-3)}
 .topbar-r{margin-left:auto;display:flex;align-items:center;gap:8px}
@@ -436,7 +438,8 @@ input[type=file]{display:none}
 /* ── ONBOARDING MODAL ── */
 .onboard-overlay{position:fixed;inset:0;background:rgba(5,5,10,.88);backdrop-filter:blur(12px);z-index:8500;display:flex;align-items:center;justify-content:center;padding:20px}
 .onboard-card{background:#111113;border:1px solid #3f3f46;border-radius:20px;padding:36px 32px 28px;width:100%;max-width:460px;position:relative}
-.onboard-logo{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:6px}.onboard-logo b{color:#6366f1}
+.onboard-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.onboard-logo-text{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:800;letter-spacing:-.5px}
 .onboard-tagline{font-size:13px;color:#a1a1aa;margin-bottom:24px;line-height:1.5}
 .onboard-features{display:flex;flex-direction:column;gap:10px;margin-bottom:28px}
 .onboard-feat{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:#18181b;border:1px solid #27272a;border-radius:10px}
@@ -450,7 +453,8 @@ input[type=file]{display:none}
 /* ── AUTH MODAL ── */
 .auth-overlay{position:fixed;inset:0;background:rgba(5,5,10,.95);backdrop-filter:blur(16px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
 .auth-card{background:#111113;border:1px solid #27272a;border-radius:20px;padding:32px 32px 24px;width:100%;max-width:400px}
-.auth-logo{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;letter-spacing:-.5px;margin-bottom:4px;text-align:center}.auth-logo b{color:#6366f1}
+.auth-logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:4px}
+.auth-logo-text{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;letter-spacing:-.5px}
 .auth-tagline{font-size:12px;color:#52525b;text-align:center;margin-bottom:24px}
 /* Tabs */
 .auth-tabs{display:flex;gap:0;background:#18181b;border:1px solid #27272a;border-radius:9px;padding:3px;margin-bottom:24px}
@@ -761,7 +765,24 @@ input[type=file]{display:none}
 <!-- ONBOARDING MODAL -->
 <div class="onboard-overlay" id="onboard-overlay" style="display:none">
   <div class="onboard-card">
-    <div class="onboard-logo"><b>19</b>Labs</div>
+    <div class="onboard-logo">
+      <svg width="36" height="36" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated;flex-shrink:0">
+        <rect width="32" height="32" rx="6" fill="#18181b"/>
+        <rect x="6" y="4" width="3" height="3" fill="#6366f1"/>
+        <rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="12" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="16" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="20" width="3" height="3" fill="#6366f1"/>
+        <rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
+        <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/>
+        <rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/>
+        <rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/>
+        <rect x="26" y="16" width="3" height="3" fill="#a78bfa"/>
+        <rect x="26" y="20" width="3" height="3" fill="#a78bfa"/>
+        <rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
+      </svg>
+      <span class="onboard-logo-text">Labs</span>
+    </div>
     <div class="onboard-tagline">Drop a dataset — the AI handles everything: profiling, model selection, training, evaluation, and deployment.</div>
     <div class="onboard-features">
       <div class="onboard-feat"><div class="onboard-feat-icon">⚡</div><div class="onboard-feat-text"><b>Autonomous Experiments</b>Runs dozens of models & hyperparameter configs automatically, picks the best one.</div></div>
@@ -778,8 +799,25 @@ input[type=file]{display:none}
 <!-- AUTH MODAL -->
 <div class="auth-overlay" id="auth-overlay" style="display:none">
   <div class="auth-card">
-    <div class="auth-logo"><b>19</b>Labs</div>
-    <div class="auth-tagline">Autonomous ML Research</div>
+    <div class="auth-logo">
+      <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated;flex-shrink:0">
+        <rect width="32" height="32" rx="6" fill="#18181b"/>
+        <rect x="6" y="4" width="3" height="3" fill="#6366f1"/>
+        <rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="12" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="16" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="20" width="3" height="3" fill="#6366f1"/>
+        <rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
+        <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/>
+        <rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/>
+        <rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/>
+        <rect x="26" y="16" width="3" height="3" fill="#a78bfa"/>
+        <rect x="26" y="20" width="3" height="3" fill="#a78bfa"/>
+        <rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
+      </svg>
+      <span class="auth-logo-text">Labs</span>
+    </div>
+    <div class="auth-tagline">Auto-ML Research</div>
 
     <div id="auth-stage-providers">
       <!-- Primary: OAuth buttons -->
@@ -902,9 +940,28 @@ input[type=file]{display:none}
 
 <!-- TOPBAR -->
 <div class="topbar" style="position:relative">
-  <div class="logo"><b>19</b>Labs</div>
+  <div class="logo">
+    <svg class="logo-mark" width="26" height="26" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="6" fill="#18181b"/>
+      <!-- "1": indigo -->
+      <rect x="6" y="4" width="3" height="3" fill="#6366f1"/>
+      <rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/>
+      <rect x="6" y="12" width="3" height="3" fill="#6366f1"/>
+      <rect x="6" y="16" width="3" height="3" fill="#6366f1"/>
+      <rect x="6" y="20" width="3" height="3" fill="#6366f1"/>
+      <rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
+      <!-- "9": purple -->
+      <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/>
+      <rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/>
+      <rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/>
+      <rect x="26" y="16" width="3" height="3" fill="#a78bfa"/>
+      <rect x="26" y="20" width="3" height="3" fill="#a78bfa"/>
+      <rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
+    </svg>
+    <span class="logo-text">Labs</span>
+  </div>
   <div class="topbar-sep"></div>
-  <div class="topbar-tag">Autonomous ML Research</div>
+  <div class="topbar-tag">Auto-ML Research</div>
   <div class="topbar-r">
     <button class="stop-btn" id="stop-btn" style="display:none" onclick="cancelRun()" data-tip="Stop current run">Stop</button>
     <div class="badge" id="badge">IDLE</div>
