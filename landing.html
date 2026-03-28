@@ -381,7 +381,7 @@ let nodes=[],edges=[],pulses=[],tick=0;
 function build(){
   nodes=[];edges=[];pulses=[];
   const nL=ARCH.length;
-  const nW=Math.min(W*.62,680),nH=Math.min(H*.52,380);
+  const nW=Math.min(W*.32,340),nH=Math.min(H*.3,220);
   const ox=(W-nW)/2,oy=(H-nH)/2+16;
   ARCH.forEach((cnt,li)=>{
     const lx=ox+(li/(nL-1))*nW;
