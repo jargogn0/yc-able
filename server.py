@@ -271,16 +271,13 @@ CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 TRIAL_RUN_LIMIT = int(os.environ.get("TRIAL_RUN_LIMIT", "3"))
 
 def _server_has_bedrock() -> bool:
-    return bool(
-        (os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID"))
-        and (os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY"))
-    )
+    return bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
 
 def _bedrock_creds() -> dict:
     return {
-        "access_key": os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID", ""),
-        "secret_key": os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-        "region": os.environ.get("BEDROCK_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+        "access_key": os.environ.get("AWS_ACCESS_KEY_ID", ""),
+        "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+        "region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
     }
 
 def _trial_ip(request: Request) -> str:
