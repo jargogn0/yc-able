@@ -2451,11 +2451,9 @@ function procMsg(d){
   // Narration messages → single updating bubble (no spam)
   if(tag==='narrate'){
     const c=document.getElementById('msgs');
-    let el=c.querySelector('.cm.narrate:last-child');
-    if(!el){
-      el=document.createElement('div');el.className='cm narrate';
-      c.appendChild(el);
-    }
+    const last=c.lastElementChild;
+    let el=(last&&last.classList.contains('narrate'))?last:null;
+    if(!el){el=document.createElement('div');el.className='cm narrate';c.appendChild(el);}
     el.innerHTML=`<div class="cl">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
     const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
     if(atBottom)c.scrollTop=c.scrollHeight;

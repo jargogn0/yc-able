@@ -2236,6 +2236,25 @@ def favicon():
 def health():
     return {"status": "ok", "runs": len(RUNS)}
 
+@app.get("/api/test-bedrock")
+async def test_bedrock():
+    """Debug endpoint — tests server Bedrock credentials."""
+    creds = _bedrock_creds()
+    masked = {"access_key": creds["access_key"][:6]+"…" if creds["access_key"] else "MISSING",
+              "secret_key": "SET" if creds["secret_key"] else "MISSING",
+              "region": creds["region"] or "MISSING"}
+    if not _server_has_bedrock():
+        return {"ok": False, "error": "Bedrock creds not detected in env vars", "creds": masked}
+    try:
+        import sys; sys.path.insert(0, str(Path(__file__).parent))
+        from engine import _init_client, ask
+        import asyncio
+        _init_client(json.dumps(creds), provider="bedrock")
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: ask("Say OK.", "OK", max_tokens=5))
+        return {"ok": True, "response": result, "creds": masked}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "error_type": type(e).__name__, "creds": masked}
+
 @app.get("/api/provider-status")
 def provider_status():
     has_server_key = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
