@@ -72,6 +72,91 @@ nav{
 }
 .btn-solid:hover{background:#5558e8;box-shadow:0 0 0 1px rgba(99,102,241,.7),0 4px 20px rgba(99,102,241,.35)}
 
+/* ── Start modal ── */
+.modal-bg{
+  position:fixed;inset:0;z-index:100;
+  background:rgba(0,0,0,.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.modal-bg.open{display:flex}
+.modal-cards{
+  display:flex;gap:12px;width:100%;max-width:640px;
+}
+.mcard{
+  flex:1;border-radius:16px;padding:28px 24px 24px;
+  display:flex;flex-direction:column;gap:0;
+  position:relative;overflow:hidden;cursor:pointer;
+  transition:transform .18s,box-shadow .18s;
+  text-decoration:none;
+}
+.mcard:hover{transform:translateY(-2px)}
+.mcard-signin{
+  background:linear-gradient(145deg,#0f0f1a,#13132a);
+  border:1px solid rgba(99,102,241,.35);
+  box-shadow:0 0 0 1px rgba(99,102,241,.12),0 8px 40px rgba(99,102,241,.12);
+}
+.mcard-signin:hover{box-shadow:0 0 0 1px rgba(99,102,241,.4),0 12px 50px rgba(99,102,241,.22)}
+.mcard-trial{
+  background:linear-gradient(145deg,#0e1410,#0f1a14);
+  border:1px solid rgba(52,211,153,.25);
+  box-shadow:0 0 0 1px rgba(52,211,153,.08),0 8px 40px rgba(52,211,153,.08);
+}
+.mcard-trial:hover{box-shadow:0 0 0 1px rgba(52,211,153,.35),0 12px 50px rgba(52,211,153,.18)}
+.mcard-icon{
+  width:40px;height:40px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;margin-bottom:16px;
+}
+.mcard-signin .mcard-icon{background:rgba(99,102,241,.15)}
+.mcard-trial .mcard-icon{background:rgba(52,211,153,.12)}
+.mcard-title{
+  font-size:16px;font-weight:600;color:#fff;
+  margin-bottom:6px;line-height:1.3;
+}
+.mcard-desc{
+  font-size:12.5px;color:rgba(255,255,255,.45);
+  line-height:1.6;margin-bottom:20px;flex:1;
+}
+.mcard-cta{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12.5px;font-weight:500;
+  padding:9px 16px;border-radius:8px;
+  border:none;cursor:pointer;transition:all .15s;
+  width:100%;justify-content:center;
+}
+.mcard-signin .mcard-cta{
+  background:rgba(99,102,241,.9);color:#fff;
+}
+.mcard-signin .mcard-cta:hover{background:#6366f1}
+.mcard-trial .mcard-cta{
+  background:rgba(52,211,153,.15);color:#34d399;
+  border:1px solid rgba(52,211,153,.25);
+}
+.mcard-trial .mcard-cta:hover{background:rgba(52,211,153,.22);border-color:rgba(52,211,153,.4)}
+.mcard-badge{
+  position:absolute;top:12px;right:12px;
+  font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+  padding:2px 7px;border-radius:99px;
+}
+.mcard-signin .mcard-badge{background:rgba(99,102,241,.15);color:rgba(99,102,241,.8)}
+.mcard-trial .mcard-badge{background:rgba(52,211,153,.1);color:rgba(52,211,153,.7)}
+.modal-close{
+  position:absolute;top:16px;right:16px;
+  width:28px;height:28px;border-radius:50%;
+  background:rgba(255,255,255,.07);border:none;color:rgba(255,255,255,.5);
+  font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .15s;z-index:10;
+}
+.modal-close:hover{background:rgba(255,255,255,.12);color:#fff}
+.modal-wrap{position:relative;width:100%;max-width:640px}
+.modal-head{text-align:center;margin-bottom:20px}
+.modal-head-title{font-size:18px;font-weight:600;color:#fff;margin-bottom:4px}
+.modal-head-sub{font-size:12.5px;color:rgba(255,255,255,.4)}
+
+@media(max-width:520px){
+  .modal-cards{flex-direction:column;max-width:340px}
+}
+
 /* ── Hero ── */
 .hero{
   position:fixed;inset:0;
@@ -162,17 +247,40 @@ nav{
     <div class="logo-icon">19</div>
     Labs
   </a>
-  <div class="nav-links">
-    <a href="/app">Product</a>
-    <a href="#">Pricing</a>
-    <a href="https://github.com/jargogn0/yc-able" target="_blank">GitHub</a>
-    <a href="#">Docs</a>
-  </div>
   <div class="nav-r">
-    <a href="/app" class="btn-ghost">Sign in</a>
-    <a href="/app" class="btn-solid" id="nav-dl">Start Free</a>
+    <button class="btn-ghost" onclick="openStartModal()">Sign in</button>
+    <button class="btn-solid" onclick="openStartModal()">Start Free</button>
   </div>
 </nav>
+
+<!-- Start modal -->
+<div class="modal-bg" id="start-modal" onclick="if(event.target===this)closeStartModal()">
+  <div class="modal-wrap">
+    <button class="modal-close" onclick="closeStartModal()">✕</button>
+    <div class="modal-head">
+      <div class="modal-head-title">Get started</div>
+      <div class="modal-head-sub">Choose how you'd like to begin</div>
+    </div>
+    <div class="modal-cards">
+      <!-- Sign in card -->
+      <div class="mcard mcard-signin" onclick="window.location.href='/app'">
+        <span class="mcard-badge">Recommended</span>
+        <div class="mcard-icon">🔑</div>
+        <div class="mcard-title">Sign in or create account</div>
+        <div class="mcard-desc">Full access — use your own API key or let us handle it. Your runs and models are saved permanently.</div>
+        <button class="mcard-cta">Sign in / Sign up →</button>
+      </div>
+      <!-- Trial card -->
+      <div class="mcard mcard-trial" onclick="startTrial()">
+        <span class="mcard-badge">Free trial</span>
+        <div class="mcard-icon">🚀</div>
+        <div class="mcard-title">Try with Titanic dataset</div>
+        <div class="mcard-desc">See a full ML run in action — no sign up needed. Predict passenger survival in one click.</div>
+        <button class="mcard-cta">Try free demo →</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="hero">
   <div class="pill"><span class="pill-dot"></span>Early Access</div>
@@ -192,9 +300,9 @@ nav{
         <svg width="14" height="14" viewBox="0 0 814 1000" fill="currentColor" style="opacity:.75"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.8 135.7-317.9 269-317.9 50.4 0 92.5 33.1 124.4 33.1 30.6 0 79.4-35.2 136.1-35.2 21.8 0 108.2 2 159.6 75.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"/></svg>
         Download for Mac
       </a>
-      <a class="dl-web" href="/app">
+      <button class="dl-web" onclick="openStartModal()">
         Use in browser →
-      </a>
+      </button>
     </div>
     <div class="platforms" id="dl-meta">
       <span id="dl-version" style="color:#52525b">macOS · Intel &amp; Apple Silicon · Free</span>
@@ -338,6 +446,19 @@ addEventListener('touchmove',e=>{if(e.touches[0]){mouse.x=e.touches[0].clientX;m
 addEventListener('touchend',()=>{mouse.x=-9e9;mouse.y=-9e9});
 resize();frame();
 
+// ── Start modal ──────────────────────────────────────
+function openStartModal(){
+  document.getElementById('start-modal').classList.add('open');
+}
+function closeStartModal(){
+  document.getElementById('start-modal').classList.remove('open');
+}
+function startTrial(){
+  // Navigate to app with trial+titanic auto-start flag
+  window.location.href='/app?start=titanic';
+}
+// Keyboard close
+addEventListener('keydown',e=>{if(e.key==='Escape')closeStartModal()});
 </script>
 </body>
 </html>
