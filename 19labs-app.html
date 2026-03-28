@@ -698,6 +698,103 @@ input[type=file]{display:none}
 .prov-btn{flex:1;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);color:var(--text-2);font-size:12px;font-weight:500;cursor:pointer;text-align:center;transition:all var(--t);font-family:var(--sans)}
 .prov-btn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .prov-btn:hover{border-color:var(--border-2);color:var(--text)}
+
+/* ── GRADE BADGES ── */
+.grade-badge{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;font-family:var(--mono);font-size:14px;font-weight:900;flex-shrink:0;letter-spacing:-.5px}
+.grade-badge.A{background:rgba(52,211,153,.15);color:#34d399;border:1px solid rgba(52,211,153,.3)}
+.grade-badge.B{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
+.grade-badge.C{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.25)}
+.grade-badge.D{background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.2)}
+.grade-badge.F{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+/* ── HERO BEST CARD ── */
+.best-hero{margin:16px;border-radius:14px;background:linear-gradient(135deg,rgba(59,130,246,.07),rgba(167,139,250,.04));border:1px solid rgba(59,130,246,.22);animation:si .4s ease;overflow:hidden}
+.best-hero-top{padding:20px 20px 0;display:flex;align-items:flex-start;gap:14px}
+.best-hero-grade-col{display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0}
+.best-hero-grade-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3)}
+.best-hero-main{flex:1;min-width:0}
+.best-hero-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-3);margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.best-hero-model{font-size:20px;font-weight:800;color:var(--text);line-height:1.2;margin-bottom:6px}
+.best-hero-business{font-size:12px;color:var(--text-2);line-height:1.6;margin-bottom:0;font-style:italic}
+.best-hero-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 20px}
+.best-hero-metric-tile{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.best-hero-metric-name{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-bottom:4px}
+.best-hero-metric-val{font-size:20px;font-weight:800;font-family:var(--mono);color:var(--text);line-height:1}
+.best-hero-metric-sub{font-size:10px;color:var(--text-3);font-family:var(--mono);margin-top:3px}
+.best-hero-metric-bar{height:3px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden}
+.best-hero-metric-bar-fill{height:100%;border-radius:2px;transition:width .8s ease}
+.best-hero-context{padding:0 20px 12px;font-size:11px;color:var(--text-3);font-family:var(--mono)}
+.best-hero-actions{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;background:rgba(0,0,0,.15)}
+/* ── EXPERIMENT TABLE ── */
+.exp-table-hdr{display:grid;grid-template-columns:36px 1fr 160px 80px 60px;gap:0;padding:6px 16px;align-items:center;border-bottom:1px solid var(--border)}
+.exp-table-hdr span{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3)}
+.exp-row{display:grid;grid-template-columns:36px 1fr 160px 80px 60px;gap:0;padding:7px 16px;align-items:center;border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;transition:background var(--t)}
+.exp-row:hover{background:rgba(255,255,255,.025)}
+.exp-row.is-best{background:rgba(59,130,246,.04)}
+.exp-row.is-best:hover{background:rgba(59,130,246,.07)}
+.exp-row.is-fail{background:rgba(239,68,68,.025)}
+.exp-rank{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text-3)}
+.exp-rank.top{color:var(--accent)}
+.exp-row-model{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
+.exp-row-metric{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text)}
+.exp-row-delta{font-family:var(--mono);font-size:10px;font-weight:600}
+.exp-row-delta.pos{color:#34d399}
+.exp-row-delta.neg{color:var(--red)}
+.exp-row-delta.neu{color:var(--text-3)}
+.exp-row-status{text-align:right}
+.exp-row-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:999px;letter-spacing:.3px}
+.exp-row-tag.best{color:var(--accent);background:var(--accent-soft);border:1px solid rgba(59,130,246,.25)}
+.exp-row-tag.keep{color:var(--text-3);background:var(--surface-2);border:1px solid var(--border)}
+.exp-row-tag.fail{color:var(--red);background:var(--red-soft,rgba(239,68,68,.1));border:1px solid rgba(239,68,68,.15)}
+.exp-row-detail{display:none;padding:8px 16px 12px 52px;background:rgba(0,0,0,.12);border-bottom:1px solid rgba(255,255,255,.03);font-size:11px;color:var(--text-3);font-family:var(--mono);line-height:1.7}
+.exp-row-detail.open{display:block}
+.exp-plots-inline{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+/* ── METRIC CHART v2 ── */
+.mc2{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;animation:si .3s ease}
+.mc2-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
+.mc2-title{font-size:13px;font-weight:700;color:var(--text)}
+.mc2-sub{font-size:10px;color:var(--text-3);font-family:var(--mono)}
+.mc2-annotation{font-size:10px;color:var(--text-3);margin-top:6px;padding:6px 8px;background:rgba(59,130,246,.05);border-left:2px solid var(--accent);border-radius:0 4px 4px 0}
+.mc2-legend{display:flex;gap:16px;margin-top:8px}
+.mc2-legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-3)}
+.mc2-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mc2-legend-line{width:16px;height:2px;border-radius:1px;flex-shrink:0}
+/* ── COMPARISON v2 ── */
+.cmp2{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;animation:si .3s ease}
+.cmp2-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.cmp2-rank{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text-3);width:18px;flex-shrink:0;text-align:right}
+.cmp2-name{font-size:11px;font-weight:600;color:var(--text-2);width:130px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp2-track{flex:1;height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+.cmp2-fill{height:100%;border-radius:4px;transition:width .7s ease}
+.cmp2-val{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);width:60px;text-align:right;flex-shrink:0}
+.cmp2-badge{font-size:9px;font-weight:700;width:20px;text-align:center;flex-shrink:0}
+/* ── MARKDOWN REPORT ── */
+.rpt2{padding:16px}
+.rpt2-body{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:20px 24px;max-height:600px;overflow-y:auto;line-height:1.75;color:var(--text-2);font-size:13px}
+.rpt2-body h1{font-size:18px;font-weight:800;color:var(--text);margin:0 0 16px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.rpt2-body h2{font-size:15px;font-weight:700;color:var(--text);margin:20px 0 8px}
+.rpt2-body h3{font-size:13px;font-weight:700;color:var(--text);margin:14px 0 6px}
+.rpt2-body p{margin:0 0 10px}
+.rpt2-body ul,.rpt2-body ol{margin:0 0 10px;padding-left:20px}
+.rpt2-body li{margin-bottom:4px}
+.rpt2-body strong{color:var(--text);font-weight:700}
+.rpt2-body em{color:var(--text-2);font-style:italic}
+.rpt2-body code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px;color:var(--purple,#a78bfa)}
+.rpt2-body pre{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;overflow-x:auto;margin:10px 0}
+.rpt2-body pre code{background:none;padding:0;color:var(--text-2)}
+.rpt2-body hr{border:none;border-top:1px solid var(--border);margin:16px 0}
+.rpt2-body blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--text-3);margin:0 0 10px;font-style:italic}
+/* ── DEPLOY RICH CARD ── */
+.deploy-rich{border-radius:12px;margin-top:12px;overflow:hidden;border:1px solid rgba(59,130,246,.25);background:linear-gradient(135deg,rgba(59,130,246,.06),rgba(167,139,250,.04))}
+.deploy-rich-header{display:flex;align-items:center;gap:10px;padding:14px 16px 10px}
+.deploy-rich-info{flex:1;min-width:0}
+.deploy-rich-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px}
+.deploy-rich-sub{font-size:11px;color:var(--text-3);line-height:1.4}
+.deploy-rich-stats{display:flex;gap:0;border-top:1px solid rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.05)}
+.deploy-rich-stat{flex:1;padding:9px 12px;border-right:1px solid rgba(255,255,255,.05)}
+.deploy-rich-stat:last-child{border-right:none}
+.deploy-rich-stat-l{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-3);margin-bottom:3px}
+.deploy-rich-stat-v{font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text)}
+.deploy-rich-btns{display:flex;gap:8px;padding:12px 16px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -2438,9 +2535,15 @@ async function launchRun(){
     // Append deploy card as real DOM (bypasses safeHtml stripping)
     if(S.best){
       const card=document.createElement('div');
-      card.className='deploy-prompt';
-      card.style.marginTop='12px';
-      card.innerHTML=`<h4>🚀 Deploy your model</h4><p>Create a live <strong>FastAPI inference server</strong> — ready to deploy on Railway, Docker, or any cloud in one command.</p><div class="deploy-prompt-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div>`;
+      card.className='deploy-rich';
+      const bam2=S.best.all_metrics||{};
+      const dpk=S.best.metric_name||'';
+      const dpv=bam2['test_'+dpk]!=null?bam2['test_'+dpk]:S.best.metric_val;
+      const dDir=S.discovery?.objective?.direction||'lower_is_better';
+      const dInterp=dpk?interpretMetric(dpk,dpv??0,dDir):{grade:'B',color:'#60a5fa',business:'Model ready for deployment.'};
+      const dTask=S.discovery?.objective?.task||S.discovery?.discovery?.task||'ML model';
+      const dExps=S.exps.filter(e=>e.success).length;
+      card.innerHTML=`<div class="deploy-rich-header"><div class="deploy-rich-grade"><div class="grade-badge ${dInterp.grade}" style="width:42px;height:42px;font-size:16px">${dInterp.grade}</div></div><div class="deploy-rich-info"><div class="deploy-rich-title">Model ready to deploy</div><div class="deploy-rich-sub">${esc(dInterp.business)}</div></div></div><div class="deploy-rich-stats"><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Model</div><div class="deploy-rich-stat-v" style="font-size:11px">${esc(S.best.model)}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">${esc(dpk.toUpperCase())}</div><div class="deploy-rich-stat-v" style="color:${dInterp.color}">${dpv!=null?Number(dpv).toFixed(4):'—'}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Experiments</div><div class="deploy-rich-stat-v">${dExps}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Task</div><div class="deploy-rich-stat-v" style="font-size:10px">${esc(dTask)}</div></div></div><div class="deploy-rich-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div>`;
       const msgs=document.getElementById('msgs');
       if(msgs.lastElementChild)msgs.lastElementChild.appendChild(card);
     }
@@ -2553,47 +2656,115 @@ function fmtTrainTest(am,key){
   if(te!=null)return Number(te).toFixed(4);
   return null;
 }
+// ═══════════════════════════════════════════
+// METRIC INTERPRETER
+// ═══════════════════════════════════════════
+function interpretMetric(name,value,direction){
+  const lower=direction==='lower_is_better';
+  const n=name.toLowerCase();
+  const thresholds={
+    rmse:{lower:true,A:.05,B:.15,C:.30,D:.50},
+    mae:{lower:true,A:.05,B:.12,C:.25,D:.40},
+    mape:{lower:true,A:5,B:12,C:20,D:35},
+    r2:{lower:false,A:.92,B:.80,C:.65,D:.50},
+    nse:{lower:false,A:.90,B:.75,C:.60,D:.40},
+    accuracy:{lower:false,A:.95,B:.88,C:.78,D:.65},
+    auc:{lower:false,A:.95,B:.88,C:.78,D:.65},
+    roc_auc:{lower:false,A:.95,B:.88,C:.78,D:.65},
+    f1:{lower:false,A:.92,B:.82,C:.70,D:.55},
+    logloss:{lower:true,A:.15,B:.35,C:.55,D:.75},
+    precision:{lower:false,A:.92,B:.82,C:.70,D:.55},
+    recall:{lower:false,A:.92,B:.82,C:.70,D:.55},
+  };
+  const gradeColorMap={A:'#34d399',B:'#60a5fa',C:'#fbbf24',D:'#f87171',F:'#ef4444'};
+  const bizText={
+    rmse:{A:'Excellent predictive precision — production-ready accuracy.',B:'Good accuracy for most business decisions.',C:'Acceptable but worth further tuning.',D:'High error margin — review feature engineering.',F:'Predictions unreliable — do not deploy.'},
+    r2:{A:'Model explains >92% of variance — strong signal.',B:'Solid explanatory power for business forecasting.',C:'Moderate fit — consider adding features.',D:'Weak fit — model may be underfitting.',F:'Model performs near baseline.'},
+    accuracy:{A:'Top-tier classification — exceeds most production thresholds.',B:'Strong classifier, suitable for most use cases.',C:'Acceptable — review class imbalance.',D:'Below typical deployment threshold.',F:'Near-random performance.'},
+    auc:{A:'Excellent discrimination — robust to class imbalance.',B:'Good separation between classes.',C:'Moderate — consider threshold tuning.',D:'Weak discrimination.',F:'Near-random ranking.'},
+    roc_auc:{A:'Excellent discrimination — robust to class imbalance.',B:'Good separation between classes.',C:'Moderate — consider threshold tuning.',D:'Weak discrimination.',F:'Near-random ranking.'},
+    mape:{A:'Forecast error under 5% — enterprise-grade.',B:'Reasonable forecast for planning decisions.',C:'Double-digit error — acceptable for rough estimates.',D:'High forecast error — use with caution.',F:'Forecasts unreliable.'},
+    f1:{A:'Near-perfect precision and recall balance.',B:'Strong F1 — good for imbalanced datasets.',C:'Moderate balance — review recall/precision trade-off.',D:'Low F1 — consider rebalancing classes.',F:'Poor classification balance.'},
+  };
+  const t=thresholds[n]||{lower,A:null,B:null,C:null,D:null};
+  let grade='F';
+  if(t.A!==null){
+    if(t.lower){
+      if(value<=t.A)grade='A';else if(value<=t.B)grade='B';else if(value<=t.C)grade='C';else if(value<=t.D)grade='D';
+    }else{
+      if(value>=t.A)grade='A';else if(value>=t.B)grade='B';else if(value>=t.C)grade='C';else if(value>=t.D)grade='D';
+    }
+  }else{grade='B';}
+  let barPct=60;
+  if(t.A!==null){
+    if(t.lower){const clamp=Math.max(0,Math.min(t.D*1.5,value));barPct=Math.round((1-clamp/(t.D*1.5))*100);}
+    else{barPct=Math.round(Math.max(0,Math.min(1,value))*100);}
+  }
+  const color=gradeColorMap[grade];
+  const biz=(bizText[n]||{})[grade]||`${n.toUpperCase()} ${grade==='A'?'is excellent':grade==='B'?'looks good':grade==='C'?'is moderate':'needs improvement'} for this task.`;
+  return{grade,color,bar:barPct,business:biz};
+}
+
 function addExpCard(exp){
   clearEmpty('p-exp');
   const c=document.getElementById('p-exp');
-  const e=document.createElement('div');
-  e.className=`exp-card ${exp.is_best?'best':(!exp.success?'fail':'')}`;
-  e.onclick=function(){toggleExpCard(this)};
-  const tl=exp.is_best?'BEST':(!exp.success?'FAIL':'OK');
-  const tc=exp.is_best?'best':(!exp.success?'fail':'ok');
-  let detail='';
-  let extraDetail='';
-  if(exp.success){
-    const am=exp.all_metrics||{};
-    const pk=exp.metric_name||'metric';
-    const ttPrimary=fmtTrainTest(am,pk);
-    detail=`<strong>${esc(pk).toUpperCase()}</strong>: ${ttPrimary||Number(exp.metric_val).toFixed(4)}`;
-    const extraKeys=['rmse','mape','mae','r2','nse','auc','f1','accuracy','precision','recall','logloss'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null));
-    if(extraKeys.length){
-      const secs=extraKeys.map(k=>{const tt=fmtTrainTest(am,k);return tt?`${k.toUpperCase()}: ${tt}`:null}).filter(Boolean).join(' · ');
-      if(secs)detail+=`<br><span style="font-size:11px;color:var(--text-3)">${secs}</span>`;
-    }
-    // Extra detail for expanded view
-    const allKeys=Object.keys(am).sort();
-    if(allKeys.length)extraDetail=`<strong>All metrics:</strong><br>`+allKeys.map(k=>`  ${k}: ${typeof am[k]==='number'?am[k].toFixed(6):am[k]}`).join('<br>');
-    if(exp.what_worked)detail+=`<br><span style="font-size:11px;color:var(--text-3)">${esc(exp.what_worked.slice(0,60))}</span>`;
-  }else{detail=esc(classifyFail(exp));extraDetail=exp.error?`<strong>Error:</strong> ${esc(String(exp.error).slice(0,200))}`:''}
-  // Build plot thumbnails if run has artifacts
+  // Create wrapper + header row on first card
+  let wrap=document.getElementById('exp-table-wrap');
+  if(!wrap){
+    wrap=document.createElement('div');wrap.id='exp-table-wrap';
+    wrap.innerHTML=`<div class="exp-table-hdr"><span>#</span><span>Model</span><span>Metric (test)</span><span>Delta</span><span>Status</span></div>`;
+    c.appendChild(wrap);
+  }
+  // Compute delta vs previous successful
+  const dir=S.discovery?.objective?.direction||'lower_is_better';
+  const lower=dir==='lower_is_better';
+  const prev=[...S.exps].filter(e=>e.success&&e.metric_val!=null&&e.num<exp.num);
+  let deltaHtml='<span class="exp-row-delta neu">—</span>';
+  if(prev.length&&exp.success&&exp.metric_val!=null){
+    const prevVal=prev[prev.length-1].metric_val;
+    const rawDelta=exp.metric_val-prevVal;
+    const better=lower?rawDelta<0:rawDelta>0;
+    const sign=rawDelta>=0?'+':'';
+    const cls=rawDelta===0?'neu':(better?'pos':'neg');
+    deltaHtml=`<span class="exp-row-delta ${cls}">${sign}${rawDelta.toFixed(4)}</span>`;
+  }
+  const tagCls=exp.is_best?'best':(!exp.success?'fail':'keep');
+  const tagTxt=exp.is_best?'BEST':(!exp.success?'FAIL':'OK');
+  const rankCls=exp.is_best?'top':'';
+  const rowCls=exp.is_best?'is-best':(!exp.success?'is-fail':'');
+  // Primary metric
+  let metricHtml='—';
+  if(exp.success&&exp.metric_val!=null){
+    const am=exp.all_metrics||{};const pk=exp.metric_name||'metric';
+    const tv=am['test_'+pk]!=null?am['test_'+pk]:exp.metric_val;
+    const interp=interpretMetric(pk,tv,dir);
+    metricHtml=`<span style="color:${interp.color}">${Number(tv).toFixed(4)}</span>`;
+  }else if(!exp.success){metricHtml=`<span style="color:var(--text-3);font-size:10px">${esc(classifyFail(exp))}</span>`;}
+  // Expanded detail
+  const am=exp.all_metrics||{};const pk=exp.metric_name||'metric';
+  const allMetricLines=Object.entries(am).filter(([,v])=>typeof v==='number').map(([k,v])=>`${k}: ${v.toFixed(6)}`).join('  ·  ');
+  const whatWorked=exp.what_worked?`<div style="margin-top:4px;color:var(--text-2)">${esc(exp.what_worked.slice(0,120))}</div>`:'';
+  const errorLine=!exp.success&&exp.error?`<div style="color:var(--red);margin-top:4px">${esc(String(exp.error).slice(0,200))}</div>`:'';
+  // Plot thumbnails
   let plotsHtml='';
   if(S.runId&&exp.success){
     const plotKeys=[`exp_${String(exp.num).padStart(2,'0')}_timeseries_png`,`exp_${String(exp.num).padStart(2,'0')}_predictions_png`,`exp_${String(exp.num).padStart(2,'0')}_residuals_png`,`exp_${String(exp.num).padStart(2,'0')}_shap_png`];
-    const thumbs=plotKeys.map(k=>{
-      const url=`${BASE}/api/run/${S.runId}/artifact/${k}`;
-      return`<div class="exp-plot-thumb" onclick="event.stopPropagation();showPlotModal('${url}')"><img src="${url}" onerror="this.parentElement.style.display='none'" loading="lazy"></div>`;
-    }).join('');
-    if(thumbs)plotsHtml=`<div class="exp-plots">${thumbs}</div>`;
+    const thumbs=plotKeys.map(k=>{const url=`${BASE}/api/run/${S.runId}/artifact/${k}`;return`<div class="exp-plot-thumb" onclick="event.stopPropagation();showPlotModal('${url}')"><img src="${url}" onerror="this.parentElement.style.display='none'" loading="lazy"></div>`;}).join('');
+    if(thumbs)plotsHtml=`<div class="exp-plots-inline">${thumbs}</div>`;
   }
-
-  e.innerHTML=`<div class="exp-n">#${exp.num}</div><div class="exp-info"><div class="exp-model">${esc(exp.model||'Failed')}</div><div class="exp-detail">${detail}</div>${plotsHtml}<div class="exp-extra">${extraDetail}</div></div><div class="exp-tag ${tc}">${tl}</div>`;
-  c.appendChild(e);c.scrollTop=c.scrollHeight;
-  // Update charts
-  renderMetricChart();
-  renderComparison();
+  const row=document.createElement('div');
+  row.className=`exp-row ${rowCls}`;row.id=`exp-row-${exp.num}`;
+  row.setAttribute('onclick',`toggleExpRow(${exp.num})`);
+  row.innerHTML=`<span class="exp-rank ${rankCls}">#${exp.num}</span><span class="exp-row-model" title="${esc(exp.model||'Failed')}">${esc(exp.model||'Failed')}</span><span class="exp-row-metric">${metricHtml}</span><span>${deltaHtml}</span><span class="exp-row-status"><span class="exp-row-tag ${tagCls}">${tagTxt}</span></span>`;
+  const detail=document.createElement('div');
+  detail.className='exp-row-detail';detail.id=`exp-detail-${exp.num}`;
+  detail.innerHTML=(allMetricLines?`<div>${allMetricLines}</div>`:'')+whatWorked+errorLine+plotsHtml;
+  wrap.appendChild(row);wrap.appendChild(detail);
+  c.scrollTop=c.scrollHeight;
+  renderMetricChart();renderComparison();
+}
+function toggleExpRow(num){
+  const d=document.getElementById(`exp-detail-${num}`);if(d)d.classList.toggle('open');
 }
 function classifyFail(exp){
   const e=String(exp.error||exp.failure_reason||'').toLowerCase();
@@ -2605,21 +2776,89 @@ function classifyFail(exp){
 // ═══════════════════════════════════════════
 function showBest(best,obj,runId){
   const ex=document.getElementById('bb-el');if(ex)ex.remove();
-  const c=document.getElementById('p-exp');const e=document.createElement('div');e.className='bb';e.id='bb-el';
+  const c=document.getElementById('p-exp');
+  const e=document.createElement('div');e.className='best-hero';e.id='bb-el';
   const am=best.all_metrics||{};
   const pk=best.metric_name||'metric';
-  const ttPrimary=fmtTrainTest(am,pk);
-  const primaryLine=`<strong>${esc(pk.toUpperCase())}</strong>: ${ttPrimary||Number(best.metric_val).toFixed(4)}`;
-  const extraKeys=['rmse','mape','mae','r2','nse'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null));
-  const secLines=extraKeys.map(k=>{const tt=fmtTrainTest(am,k);return tt?`${k.toUpperCase()}: ${tt}`:null}).filter(Boolean);
-  const secHtml=secLines.length?`<div class="bb-s" style="font-size:12px;color:var(--text-2);margin-top:4px">${secLines.join(' · ')}</div>`:'';
-  const summary=`${best.model} — ${pk.toUpperCase()} = ${Number(best.metric_val).toFixed(4)}`;
-  e.innerHTML=`<div class="bb-l">Best Model <button class="cp-btn" onclick="copyText(\`${esc(summary)}\`,this)">Copy</button></div><div class="bb-m">${esc(best.model)}</div><div class="bb-s">${primaryLine}</div>${secHtml}<div class="bb-d">${esc((obj?.domain||'')+' · '+(obj?.task||'')+' · target: '+(obj?.target||''))}</div><div class="bb-a"><button class="abtn p" onclick="dlDeploy('${runId}')">Download Model</button><button class="abtn" onclick="dlPack('${runId}')">Project Pack</button><button class="abtn" onclick="genHandoff('${runId}')">Handoff</button><button class="share-btn" onclick="shareResults('${runId}')">Share</button></div><div id="share-url-container"></div>`;
+  const dir=S.discovery?.objective?.direction||'lower_is_better';
+  const pv=am['test_'+pk]!=null?am['test_'+pk]:best.metric_val;
+  const tv=am['train_'+pk];
+  const interp=interpretMetric(pk,pv!=null?pv:0,dir);
+  // Secondary metric tile
+  const secKeys=['rmse','mape','mae','r2','nse','auc','roc_auc','f1','accuracy'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null));
+  let secTile='';
+  if(secKeys.length){
+    const sk=secKeys[0];const sv=am['test_'+sk]!=null?am['test_'+sk]:am[sk];
+    const si=interpretMetric(sk,sv,dir);
+    secTile=`<div class="best-hero-metric-tile"><div class="best-hero-metric-name">${esc(sk.toUpperCase())}</div><div class="best-hero-metric-val" style="color:${si.color};font-size:16px">${Number(sv).toFixed(4)}</div><div class="best-hero-metric-sub">Grade ${si.grade}</div><div class="best-hero-metric-bar"><div class="best-hero-metric-bar-fill" style="width:${si.bar}%;background:${si.color}"></div></div></div>`;
+  }
+  const trainTestLine=tv!=null?`<span style="color:var(--text-3)">train</span> ${Number(tv).toFixed(4)} → <span style="color:var(--text)">test</span> ${pv!=null?Number(pv).toFixed(4):'—'}`:pv!=null?Number(pv).toFixed(4):'—';
+  let overfitNote='';
+  if(tv!=null&&pv!=null){const gap=Math.abs(tv-pv);const rel=gap/(Math.abs(tv)||1);overfitNote=rel>0.15?'<span style="color:var(--amber,#fbbf24);font-size:10px"> ⚠ gap >15%</span>':'<span style="color:#34d399;font-size:10px"> ✓ train/test close</span>';}
+  const ctx=[obj?.domain,obj?.task,obj?.target?`target: ${obj.target}`:''].filter(Boolean).join(' · ');
+  const summary=`${best.model} — ${pk.toUpperCase()} = ${pv!=null?Number(pv).toFixed(4):'N/A'}`;
+  e.innerHTML=`
+  <div class="best-hero-top">
+    <div class="best-hero-grade-col">
+      <div class="grade-badge ${interp.grade}">${interp.grade}</div>
+      <div class="best-hero-grade-label">Score</div>
+    </div>
+    <div class="best-hero-main">
+      <div class="best-hero-label">Best Model <button class="cp-btn" onclick="copyText(\`${esc(summary)}\`,this)">Copy</button></div>
+      <div class="best-hero-model">${esc(best.model)}</div>
+      <div class="best-hero-business">${esc(interp.business)}</div>
+    </div>
+  </div>
+  <div class="best-hero-metrics">
+    <div class="best-hero-metric-tile">
+      <div class="best-hero-metric-name">${esc(pk.toUpperCase())} (primary)</div>
+      <div class="best-hero-metric-val" style="color:${interp.color}">${pv!=null?Number(pv).toFixed(4):'—'}</div>
+      <div class="best-hero-metric-sub">${trainTestLine}${overfitNote}</div>
+      <div class="best-hero-metric-bar"><div class="best-hero-metric-bar-fill" style="width:${interp.bar}%;background:${interp.color}"></div></div>
+    </div>
+    ${secTile}
+  </div>
+  ${ctx?`<div class="best-hero-context">${esc(ctx)}</div>`:''}
+  <div class="best-hero-actions">
+    <button class="abtn p" onclick="deployAsAPI('${runId}')">Deploy as API</button>
+    <button class="abtn" onclick="dlDeploy('${runId}')">Download Model</button>
+    <button class="abtn" onclick="dlPack('${runId}')">Project Pack</button>
+    <button class="abtn" onclick="genHandoff('${runId}')">Handoff</button>
+    <button class="share-btn" onclick="shareResults('${runId}')">Share</button>
+  </div>
+  <div id="share-url-container"></div>`;
   c.insertBefore(e,c.firstChild);
+}
+function markdownToHtml(md){
+  if(!md)return'';
+  let s=md;
+  s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s=s.replace(/```(\w*)\n([\s\S]*?)```/gm,(_,lang,code)=>`<pre><code class="lang-${lang}">${code.trim()}</code></pre>`);
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  s=s.replace(/^---+$/gm,'<hr>');
+  s=s.replace(/\*\*\*([^*]+)\*\*\*/g,'<strong><em>$1</em></strong>');
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/\*([^*]+)\*/g,'<em>$1</em>');
+  s=s.replace(/((?:^[ \t]*[-*] .+\n?)+)/gm,match=>{const items=match.trim().split('\n').map(l=>`<li>${l.replace(/^[ \t]*[-*] /,'').trim()}</li>`).join('');return`<ul>${items}</ul>`;});
+  s=s.replace(/((?:^\d+\. .+\n?)+)/gm,match=>{const items=match.trim().split('\n').map(l=>`<li>${l.replace(/^\d+\. /,'').trim()}</li>`).join('');return`<ol>${items}</ol>`;});
+  s=s.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+  s=s.replace(/\n\n(?!<[uo]l|<h[1-6]|<pre|<hr|<blockquote)/g,'</p><p>');
+  s=`<p>${s}</p>`;
+  s=s.replace(/<p>(<(?:h[1-6]|ul|ol|pre|hr|blockquote)[^>]*>)/g,'$1');
+  s=s.replace(/(<\/(?:h[1-6]|ul|ol|pre|hr|blockquote)>)<\/p>/g,'$1');
+  s=s.replace(/<p><\/p>/g,'');
+  s=s.replace(/([^>])\n([^<])/g,'$1<br>$2');
+  return s;
 }
 function showRpt(rpt){
   clearEmpty('p-rpt');
-  document.getElementById('p-rpt').innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="cp-btn" onclick="copyText(document.querySelector('.rpt-body').textContent,this)">Copy</button></div><div class="rpt-body">${esc(rpt)}</div>`;
+  const el=document.getElementById('p-rpt');
+  el.className='rpt2';
+  const html=markdownToHtml(rpt);
+  el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:11px;color:var(--text-3)">Final Research Report</div><button class="cp-btn" onclick="copyText(document.querySelector('.rpt2-body').innerText,this)">Copy</button></div><div class="rpt2-body">${html}</div>`;
   const t=document.querySelector('.tab[data-t="rpt"]');if(t&&!t.querySelector('.tab-badge'))t.innerHTML='Report <span class="tab-badge">1</span>';
 }
 function showArts(runId,arts){
@@ -3083,73 +3322,64 @@ function playDone(){
 function renderMetricChart(){
   const successful=S.exps.filter(e=>e.success&&e.metric_val!=null);
   if(successful.length<1)return;
-  const existing=document.getElementById('metric-chart-el');
-  if(!existing){
+  let el=document.getElementById('metric-chart-el');
+  if(!el){
     const c=document.getElementById('p-exp');
-    const div=document.createElement('div');div.className='metric-chart';div.id='metric-chart-el';
-    c.insertBefore(div,c.querySelector('.bb')?c.querySelector('.bb').nextSibling:c.firstChild);
+    const div=document.createElement('div');div.className='mc2';div.id='metric-chart-el';
+    const wrap=document.getElementById('exp-table-wrap');
+    if(wrap)c.insertBefore(div,wrap);else c.insertBefore(div,c.firstChild);
   }
-  const el=document.getElementById('metric-chart-el');
+  el=document.getElementById('metric-chart-el');
   const pk=successful[0]?.metric_name||'metric';
   const dir=S.discovery?.objective?.direction||'lower_is_better';
   const lower=dir==='lower_is_better';
-
-  // Compute running best
-  const vals=successful.map(e=>e.metric_val);
+  const vals=successful.map(e=>{const tv=(e.all_metrics||{})['test_'+pk];return tv!=null?tv:e.metric_val;});
   let runBest=[];let cur=lower?Infinity:-Infinity;
-  for(const v of vals){cur=lower?Math.min(cur,v):Math.max(cur,v);runBest.push(cur)}
-
-  const W=520,H=160,P={l:50,r:20,t:20,b:28};
+  for(const v of vals){cur=lower?Math.min(cur,v):Math.max(cur,v);runBest.push(cur);}
+  const W=520,H=170,P={l:52,r:24,t:22,b:30};
   const cW=W-P.l-P.r,cH=H-P.t-P.b;
   const n=successful.length;
   const allV=[...vals,...runBest];
   let minV=Math.min(...allV),maxV=Math.max(...allV);
-  if(minV===maxV){minV-=0.01;maxV+=0.01}
-  const range=maxV-minV;
-  minV-=range*0.08;maxV+=range*0.08;
-
-  const x=i=>P.l+(i/(Math.max(n-1,1)))*cW;
-  const y=v=>P.t+cH-(((v-minV)/(maxV-minV))*cH);
-
-  // Build SVG
+  if(minV===maxV){minV-=0.01;maxV+=0.01;}
+  const range2=maxV-minV;minV-=range2*.10;maxV+=range2*.10;
+  const xf=i=>P.l+(i/(Math.max(n-1,1)))*cW;
+  const yf=v=>P.t+cH-((v-minV)/(maxV-minV))*cH;
+  const accentBlue='#3b82f6',gridColor='#27272a',labelColor='#52525b';
   let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-  // Grid lines
+  svg+=`<defs><linearGradient id="bestFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${accentBlue}" stop-opacity="0.12"/><stop offset="100%" stop-color="${accentBlue}" stop-opacity="0"/></linearGradient></defs>`;
   const gridN=4;
   for(let i=0;i<=gridN;i++){
-    const gv=minV+((maxV-minV)*i/gridN);
-    const gy=y(gv);
-    svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="#27272a" stroke-width="0.5"/>`;
-    svg+=`<text x="${P.l-6}" y="${gy+3}" font-size="8" fill="#71717a" text-anchor="end" font-family="JetBrains Mono,monospace">${gv.toFixed(gv<1?4:1)}</text>`;
+    const gv=minV+((maxV-minV)*i/gridN);const gy=yf(gv);
+    const fmt=Math.abs(gv)<.001?gv.toExponential(1):(gv<1?gv.toFixed(3):gv.toFixed(1));
+    svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="${gridColor}" stroke-width="${i===0?1:.5}"/>`;
+    svg+=`<text x="${P.l-5}" y="${gy+3.5}" font-size="8" fill="${labelColor}" text-anchor="end" font-family="JetBrains Mono,monospace">${fmt}</text>`;
   }
-  // X axis labels
   successful.forEach((e,i)=>{
-    if(n<=12||i%(Math.ceil(n/10))===0||i===n-1)
-      svg+=`<text x="${x(i)}" y="${H-4}" font-size="8" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace">#${e.num}</text>`;
+    if(n<=10||i%Math.ceil(n/8)===0||i===n-1)
+      svg+=`<text x="${xf(i)}" y="${H-5}" font-size="8" fill="${labelColor}" text-anchor="middle" font-family="JetBrains Mono,monospace">#${e.num}</text>`;
   });
-
-  // Running best line (blue, thick)
-  let bestPath=`M ${x(0)} ${y(runBest[0])}`;
-  for(let i=1;i<n;i++) bestPath+=` L ${x(i)} ${y(runBest[i])}`;
-  svg+=`<path d="${bestPath}" stroke="#3b82f6" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.7"/>`;
-
-  // Individual experiment dots + line
-  let dotPath=`M ${x(0)} ${y(vals[0])}`;
-  for(let i=1;i<n;i++) dotPath+=` L ${x(i)} ${y(vals[i])}`;
-  svg+=`<path d="${dotPath}" stroke="#a1a1aa" stroke-width="1" fill="none" stroke-dasharray="3,3" opacity="0.5"/>`;
-
-  // Dots
+  let fillPath=`M ${xf(0)} ${yf(runBest[0])}`;
+  for(let i=1;i<n;i++)fillPath+=` L ${xf(i)} ${yf(runBest[i])}`;
+  fillPath+=` L ${xf(n-1)} ${P.t+cH} L ${P.l} ${P.t+cH} Z`;
+  svg+=`<path d="${fillPath}" fill="url(#bestFill)"/>`;
+  let bestPath=`M ${xf(0)} ${yf(runBest[0])}`;
+  for(let i=1;i<n;i++)bestPath+=` L ${xf(i)} ${yf(runBest[i])}`;
+  svg+=`<path d="${bestPath}" stroke="${accentBlue}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+  let dotPath=`M ${xf(0)} ${yf(vals[0])}`;
+  for(let i=1;i<n;i++)dotPath+=` L ${xf(i)} ${yf(vals[i])}`;
+  svg+=`<path d="${dotPath}" stroke="#3f3f46" stroke-width="1" fill="none" stroke-dasharray="3 3"/>`;
   successful.forEach((e,i)=>{
-    const cx=x(i),cy=y(vals[i]);
-    const isBest=e.is_best;
-    const col=isBest?'#3b82f6':'#71717a';
-    const r=isBest?4:2.5;
-    svg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${col}" stroke="${isBest?'#2563eb':'none'}" stroke-width="${isBest?1.5:0}">`;
-    svg+=`<title>#${e.num} ${e.model}: ${pk}=${vals[i].toFixed(4)}</title></circle>`;
-    if(isBest)svg+=`<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="#3b82f6" stroke-width="0.5" opacity="0.4"/>`;
+    const cx=xf(i),cy=yf(vals[i]);const isBest=e.is_best;
+    const col=isBest?accentBlue:'#52525b';const r=isBest?4.5:2.5;
+    svg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${col}"><title>#${e.num} ${e.model}: ${vals[i].toFixed(4)}</title></circle>`;
+    if(isBest)svg+=`<circle cx="${cx}" cy="${cy}" r="8" fill="none" stroke="${accentBlue}" stroke-width="1" opacity="0.35"/>`;
   });
-
   svg+=`</svg>`;
-  el.innerHTML=`<div class="metric-chart-h"><div class="metric-chart-title">${esc(pk.toUpperCase())} Progress</div><div class="metric-chart-subtitle">${n} experiments · ${lower?'lower':'higher'} is better</div></div>${svg}<div class="metric-chart-legend"><div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Running best</div><div class="legend-item"><div class="legend-dot" style="background:#71717a"></div>Each experiment</div></div>`;
+  let annotText='';
+  if(n>=2){const first=runBest[0],last=runBest[n-1];if(first!==0){const imp=lower?((first-last)/Math.abs(first)*100).toFixed(1):((last-first)/Math.abs(first)*100).toFixed(1);const dir2=parseFloat(imp)>=0?'improvement':'regression';annotText=`${parseFloat(imp)>=0?'+':''}${imp}% ${dir2} from experiment #1 to best`;}}
+  el.innerHTML=`<div class="mc2-head"><div><div class="mc2-title">${esc(pk.toUpperCase())} Progress</div><div class="mc2-sub">${n} experiment${n!==1?'s':''} · ${lower?'lower is better':'higher is better'}</div></div></div>${svg}${annotText?`<div class="mc2-annotation">${annotText}</div>`:''}
+  <div class="mc2-legend"><div class="mc2-legend-item"><div class="mc2-legend-line" style="background:${accentBlue}"></div>Running best</div><div class="mc2-legend-item"><div class="mc2-legend-dot" style="background:#52525b"></div>Each experiment</div></div>`;
 }
 
 // ═══════════════════════════════════════════
@@ -3158,30 +3388,31 @@ function renderMetricChart(){
 function renderComparison(){
   const successful=S.exps.filter(e=>e.success&&e.metric_val!=null);
   if(successful.length<2)return;
-  const existing=document.getElementById('comparison-el');
-  if(!existing){
+  let el=document.getElementById('comparison-el');
+  if(!el){
     const c=document.getElementById('p-exp');
     const chart=document.getElementById('metric-chart-el');
-    const div=document.createElement('div');div.className='metric-chart';div.id='comparison-el';
+    const div=document.createElement('div');div.className='cmp2';div.id='comparison-el';
     if(chart)chart.after(div);else c.insertBefore(div,c.firstChild);
   }
-  const el=document.getElementById('comparison-el');
+  el=document.getElementById('comparison-el');
   const pk=successful[0]?.metric_name||'metric';
   const dir=S.discovery?.objective?.direction||'lower_is_better';
   const lower=dir==='lower_is_better';
-
-  // Sort by metric — best first
   const sorted=[...successful].sort((a,b)=>lower?(a.metric_val-b.metric_val):(b.metric_val-a.metric_val));
   const top=sorted.slice(0,8);
-  const bestVal=top[0].metric_val;
-  const worstVal=top[top.length-1].metric_val;
-  const range=Math.abs(bestVal-worstVal)||1;
-
-  let h=`<div class="metric-chart-h"><div class="metric-chart-title">Model Comparison</div><div class="metric-chart-subtitle">Top ${top.length} models · sorted by ${pk}</div></div>`;
+  const best=top[0].metric_val;
+  const worst=top[top.length-1].metric_val;
+  const span=Math.abs(best-worst)||1e-9;
+  const gradeToFill={A:'rgba(52,211,153,.8)',B:'rgba(59,130,246,.8)',C:'rgba(245,158,11,.7)',D:'rgba(248,113,113,.7)',F:'rgba(239,68,68,.7)'};
+  let h=`<div class="mc2-head" style="margin-bottom:10px"><div class="mc2-title">Model Comparison</div><div class="mc2-sub">Top ${top.length} · sorted by ${esc(pk)}</div></div>`;
   top.forEach((e,i)=>{
-    const pct=lower?100-((e.metric_val-bestVal)/range*80):((e.metric_val-worstVal)/range*80)+20;
-    const cls=i===0?'best':(e.success?'ok':'fail');
-    h+=`<div class="comparison-bar"><div class="comparison-label"><span class="comparison-label-name">#${e.num} ${esc(e.model)}</span><span class="comparison-label-val">${Number(e.metric_val).toFixed(4)}</span></div><div class="comparison-track"><div class="comparison-fill ${cls}" style="width:${Math.max(8,pct)}%"></div></div></div>`;
+    const norm=lower?(1-(e.metric_val-best)/span)*.76+.12:((e.metric_val-worst)/span)*.76+.12;
+    const pct=Math.round(norm*100);
+    const tv=(e.all_metrics||{})['test_'+pk]??e.metric_val;
+    const interp=interpretMetric(pk,tv,dir);
+    const fill=gradeToFill[interp.grade]||'rgba(99,102,241,.7)';
+    h+=`<div class="cmp2-row"><span class="cmp2-rank">${i+1}</span><span class="cmp2-name" title="${esc(e.model)}">#${e.num} ${esc(e.model)}</span><div class="cmp2-track"><div class="cmp2-fill" style="width:${pct}%;background:${fill}"></div></div><span class="cmp2-val">${Number(tv).toFixed(4)}</span><span class="cmp2-badge" style="color:${interp.color}">${interp.grade}</span></div>`;
   });
   el.innerHTML=h;
 }
