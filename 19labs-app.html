@@ -45,6 +45,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 
 /* ── TOPBAR ── */
 .topbar{height:46px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;gap:12px}
+/* macOS desktop: leave room for traffic light buttons (~80px wide from x:16) */
+body.desktop-mac .topbar{padding-left:84px}
 .logo{display:flex;align-items:center;gap:7px;text-decoration:none;cursor:default}
 .logo-mark{display:block;flex-shrink:0;image-rendering:pixelated}
 .logo-text{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
@@ -1140,6 +1142,12 @@ input[type=file]{display:none}
 </div>
 
 <script>
+// ── Desktop app detection ──────────────────
+// window.desktop is exposed by Electron preload.js
+if(window.desktop?.isDesktop && window.desktop?.platform==='darwin'){
+  document.body.classList.add('desktop-mac');
+}
+
 // ═══════════════════════════════════════════
 // MOBILE NAV
 // ═══════════════════════════════════════════

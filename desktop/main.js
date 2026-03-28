@@ -70,7 +70,7 @@ function startServer(callback) {
 function createWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1440, height: 900, minWidth: 900, minHeight: 600,
-    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 },
+    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 17 },
     backgroundColor: '#09090b', show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
