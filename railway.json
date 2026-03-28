@@ -6,11 +6,5 @@
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
-  },
-  "volumes": [
-    {
-      "mount": "/data",
-      "name": "19labs-data"
-    }
-  ]
+  }
 }
