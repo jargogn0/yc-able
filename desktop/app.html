@@ -267,6 +267,7 @@ input[type=file]{display:none}
 .we-n{font-size:56px;opacity:.06;font-family:var(--mono);font-weight:900}
 .we-t{font-size:15px;font-weight:600;color:var(--text-2)}
 .we-s{font-size:13px;color:var(--text-3);max-width:340px;line-height:1.7}
+.we-sample{margin-top:4px;background:none;border:1px solid var(--border-2);color:var(--text-3);font-size:12px;font-family:var(--sans);padding:6px 14px;border-radius:var(--r);cursor:pointer;transition:all var(--t)}.we-sample:hover{border-color:var(--border);color:var(--text-2);background:var(--surface-2)}
 
 /* Data preview table */
 .dp{padding:16px;overflow-x:auto;max-width:100%}
@@ -453,7 +454,7 @@ input[type=file]{display:none}
 .onboard-try-btn{display:block;width:100%;padding:12px 20px;background:#fafafa;border:none;border-radius:8px;color:#09090b;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;letter-spacing:-.1px;transition:opacity .15s;text-align:center}
 .onboard-try-btn:hover{opacity:.88}
 .onboard-skip{margin-top:14px;text-align:center;font-size:12px;color:#3f3f46;cursor:pointer;letter-spacing:.1px}.onboard-skip:hover{color:#71717a}
-.dz-sample-link{display:block;text-align:center;margin-top:8px;font-size:11px;color:#52525b;cursor:pointer}.dz-sample-link:hover{color:#a1a1aa}
+.dz-sample-link{display:block;text-align:center;margin-top:8px;font-size:11px;color:#6366f1;cursor:pointer}.dz-sample-link:hover{color:#a5b4fc}
 /* ── AUTH MODAL ── */
 .auth-overlay{position:fixed;inset:0;background:rgba(5,5,10,.95);backdrop-filter:blur(16px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
 .auth-card{background:#111113;border:1px solid #27272a;border-radius:20px;padding:32px 32px 24px;width:100%;max-width:400px}
@@ -1040,6 +1041,7 @@ input[type=file]{display:none}
         <div class="we-n">19</div>
         <div class="we-t">Drop a dataset to begin</div>
         <div class="we-s">Upload a dataset (CSV, Excel, JSON), describe your goal, and the AI handles everything — profiling, model selection, training, evaluation, and deployment.</div>
+        <button class="we-sample" onclick="loadSampleDataset()">Try the Titanic dataset →</button>
       </div>
       <div id="p-data" class="dp" style="display:none"></div>
       <div id="p-code" style="display:none;height:100%;flex-direction:column">
@@ -1245,11 +1247,10 @@ function _useTrialSlot(){
 function _updateTrialBtn(){
   const btn=document.getElementById('trial-btn');
   if(!btn)return;
-  const rem=_trialRemaining();
-  if(_isTrialMode){
-    btn.textContent=rem>0?`Test it (${rem} left)`:'Sign up to continue';
+  if(!_authUser){
+    btn.textContent='Sign In';
     btn.style.display='inline-block';
-    btn.onclick=rem>0?null:showAuthModal;
+    btn.onclick=showAuthModal;
   } else {
     btn.style.display='none';
   }
@@ -1257,12 +1258,6 @@ function _updateTrialBtn(){
 function startTrial(){
   _isTrialMode=true;
   localStorage.setItem('19labs_trial_started','1');
-  // If server has Bedrock, set it as default so trial runs work without an API key
-  if(_serverConfig.has_bedrock){
-    C.provider='bedrock';
-    localStorage.setItem('19labs_provider','bedrock');
-    spUI('bedrock');
-  }
   hideAuthModal();
   _updateTrialBtn();
 }
@@ -1309,7 +1304,8 @@ async function initAuth(){
   if(_isTrialMode&&_trialRemaining()>0){
     _updateTrialBtn();return;
   }
-  // No session — show the auth modal
+  // No session — show sign-in button and auth modal
+  _updateTrialBtn();
   showAuthModal();
 }
 
@@ -2286,20 +2282,15 @@ async function launchRun(){
   if(S.running||!S.file)return;
   if(!S.analyzed){chat('ai','Let me analyze first...');await runDiscover(S.hint||'');return}
   if(C.demo){await runPreview();return}
-  // Trial mode gate
-  if(_isTrialMode){
-    if(_trialRemaining()<=0){
-      chat('ai','You\'ve used all 3 free experiments. Sign up to keep going — it\'s free!');
+  // Auth gate — require login or own API key
+  if(!_authUser){
+    if(!C.key)C.key=gk(C.provider);
+    if(!C.key){
+      chat('ai','Sign in to run experiments — or add your own API key in Settings.');
       showAuthModal();return;
     }
-    _useTrialSlot();
-    if(_trialRemaining()===0) chat('sys','Last free experiment. Sign up to run unlimited experiments.');
   }
   if(!C.key)C.key=gk(C.provider);
-  // If no key but server has Bedrock for trial — server handles it, proceed
-  if(!C.key&&!_serverConfig.has_bedrock){
-    try{const pr=await apiFetch(`${BASE}/api/provider-status`);if(pr.ok){const pj=await pr.json();if(!pj.server_key_available&&!pj.cached_key_available){chat('ai','Need an API key to run experiments. Add one in Settings or sign in.');showKeyPrompt();return}}}catch(_){}
-  }
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
   setBadge('RUNNING','run');setProg(5);
