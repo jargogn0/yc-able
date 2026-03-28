@@ -2183,13 +2183,15 @@ async function runDiscover(hint){
   if(!S.file)return;
   typing(true);setBadge('ANALYZING','run');
   sbUpdate({status:'Analyzing...',running:true});
-  // Trial mode: send no key — server uses own Bedrock
-  const _discKey=(_isTrialMode&&!_authUser)?undefined:(C.key||gk(C.provider)||undefined);
+  // Trial mode: send no key and no provider — server picks Bedrock automatically
+  const _isTrial=(_isTrialMode&&!_authUser);
+  const _discKey=_isTrial?undefined:(C.key||gk(C.provider)||undefined);
+  const _discProv=_isTrial?undefined:C.provider;
   try{
     const _prevObj = S.discovery?.objective || null;
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:C.provider,model:C.model||undefined}
-      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:C.provider,model:C.model||undefined};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:_discProv,model:_isTrial?undefined:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:_discProv,model:_isTrial?undefined:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
@@ -2266,9 +2268,11 @@ async function launchRun(){
     if(!C.key)C.key=gk(C.provider);
     if(!C.key){chat('ai','Click Start Free to try it — or sign in.');showAuthModal();return;}
   }
-  // In trial mode: send no key — server uses its own Bedrock credentials
-  const _apiKey = (_isTrialMode&&!_authUser) ? undefined : (C.key||gk(C.provider)||undefined);
-  if(!_apiKey&&!_isTrialMode)C.key=gk(C.provider);
+  // Trial: send no key, no provider — server uses Bedrock automatically
+  const _trialRun=(_isTrialMode&&!_authUser);
+  const _apiKey=_trialRun?undefined:(C.key||gk(C.provider)||undefined);
+  const _runProv=_trialRun?undefined:C.provider;
+  const _runModel=_trialRun?undefined:C.model||undefined;
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
   setBadge('RUNNING','run');setProg(5);
@@ -2284,8 +2288,8 @@ async function launchRun(){
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
   try{
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:_runProv,model:_runModel,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:_runProv,model:_runModel,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();
