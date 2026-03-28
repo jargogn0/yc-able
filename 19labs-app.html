@@ -158,7 +158,9 @@ body.desktop-mac .topbar{padding-left:84px}
   .statusbar{display:none}
 
   /* ── Compact topbar: only logo + badge + user ── */
-  .topbar{padding:0 12px;gap:8px;height:44px;flex-wrap:nowrap;overflow:hidden}
+  .topbar{padding:0 12px;gap:8px;height:44px;flex-wrap:nowrap}
+  /* Popup must escape topbar on mobile — use fixed positioning */
+  .user-menu-popup{position:fixed!important;top:50px!important;right:8px!important;left:auto!important}
   .topbar-tag,.topbar-sep{display:none}
   .topbar .tbtn:not(#stop-btn){display:none}
   .badge{font-size:10px;padding:3px 8px}
@@ -1702,9 +1704,10 @@ async function doLogout(){
   await fetch(`${BASE}/auth/logout`,{method:'POST',headers:_authHeader()}).catch(()=>{});
   _authToken='';_authUser=null;_savedKeys={};
   localStorage.removeItem('19labs_auth_token');
-  // Keep API keys in localStorage — user should not have to re-enter them after re-login
-  document.getElementById('user-btn').style.display='none';
-  showAuthModal();
+  localStorage.removeItem('19labs_trial_started');
+  localStorage.removeItem('19labs_last_run_id');
+  // Hard reload — clears all in-memory state and prevents auto-re-login via API key path
+  window.location.reload();
 }
 
 function toggleUserMenu(){
