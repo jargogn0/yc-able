@@ -141,19 +141,6 @@ def _init_db():
         error TEXT,
         result_json TEXT
     )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        name TEXT DEFAULT '',
-        password_hash TEXT NOT NULL,
-        created REAL NOT NULL
-    )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
-        token TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        created REAL NOT NULL,
-        expires REAL NOT NULL
-    )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS user_api_keys (
         user_id TEXT NOT NULL,
         provider TEXT NOT NULL,
@@ -164,96 +151,39 @@ def _init_db():
     conn.close()
 
 # ── AUTH HELPERS ──────────────────────────────────────────────
-# JWT secret strategy (priority order):
-#   1. JWT_SECRET env var (explicit override)
-#   2. Derived from API key env vars (deterministic, survives restarts with no extra config)
-#   3. Persisted in SQLite app_config (survives restarts when DB is on a persistent volume)
-#   4. Random (dev only — tokens invalidated on restart, warns loudly)
-def _get_or_create_jwt_secret() -> str:
-    import sys as _sys
-    for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "OPENAI_API_KEY", "ACCESS_PASSWORD"):
-        val = os.environ.get(var, "").strip()
-        if val:
-            secret = hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
-            print(f"[auth] JWT secret derived from {var}", file=_sys.stderr, flush=True)
-            return secret
-    # Try to load/persist in DB
-    try:
-        conn = DBConn()
-        row = conn.execute("SELECT value FROM app_config WHERE key='jwt_secret'").fetchone()
-        if row and row[0]:
-            conn.close()
-            print("[auth] JWT secret loaded from database", file=_sys.stderr, flush=True)
-            return row[0]
-        secret = _secrets.token_hex(32)
-        conn.execute(
-            "INSERT INTO app_config (key, value) VALUES ('jwt_secret', ?) "
-            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (secret,))
-        conn.commit()
-        conn.close()
-        print("[auth] JWT secret generated and stored in database", file=_sys.stderr, flush=True)
-        return secret
-    except Exception:
-        pass
-    print("[auth] WARNING: no stable JWT secret source — tokens will be invalidated on restart", file=_sys.stderr, flush=True)
-    return _secrets.token_hex(32)
 
-_JWT_SECRET = _get_or_create_jwt_secret()
-
-def _make_jwt(user_id: str, email: str, name: str) -> str:
-    h = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b'=').decode()
-    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 365*24*3600}).encode()).rstrip(b'=').decode()
-    sig = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
-    return f"{h}.{p}.{sig}"
-
-def _verify_jwt(token: str) -> dict | None:
+def _verify_supabase_jwt(token: str) -> dict | None:
+    """Verify a Supabase-issued JWT using SUPABASE_JWT_SECRET."""
+    secret = os.environ.get("SUPABASE_JWT_SECRET", "").strip()
+    if not secret:
+        return None
     try:
         parts = token.split('.')
         if len(parts) != 3:
             return None
         h, p, s = parts
-        expected = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
+        expected = base64.urlsafe_b64encode(
+            _hmac.new(secret.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()
+        ).rstrip(b'=').decode()
         if not _hmac.compare_digest(s, expected):
             return None
-        data = json.loads(base64.urlsafe_b64decode(p + '=' * (4 - len(p) % 4)))
+        pad = lambda x: x + '=' * (4 - len(x) % 4)
+        data = json.loads(base64.urlsafe_b64decode(pad(p)))
         if data.get('exp', 0) < time.time():
             return None
         return data
     except Exception:
         return None
 
-def _hash_pw(pw: str) -> str:
-    salt = _secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 260000)
-    return f"{salt}:{h.hex()}"
-
-def _verify_pw(pw: str, stored: str) -> bool:
-    try:
-        salt, h = stored.split(':', 1)
-        return hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 260000).hex() == h
-    except Exception:
-        return False
-
 def _get_user(token: str) -> dict | None:
     if not token:
         return None
-    # JWT first — stateless, survives container restarts
-    data = _verify_jwt(token)
-    if data:
-        return {"id": data["sub"], "email": data["email"], "name": data.get("name", "")}
-    # Fallback: DB session (for old tokens)
-    try:
-        conn = DBConn()
-        row = conn.execute(
-            "SELECT u.id, u.email, u.name FROM users u "
-            "JOIN user_sessions s ON u.id=s.user_id "
-            "WHERE s.token=? AND s.expires>?",
-            (token, time.time())
-        ).fetchone()
-        conn.close()
-        return {"id": row[0], "email": row[1], "name": row[2]} if row else None
-    except Exception:
+    data = _verify_supabase_jwt(token)
+    if not data:
         return None
+    meta = data.get('user_metadata') or {}
+    name = meta.get('full_name') or meta.get('name') or data.get('email', '').split('@')[0]
+    return {"id": data["sub"], "email": data.get("email", ""), "name": name}
 
 def _token_from_request(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
@@ -557,8 +487,6 @@ def _download_linux():
     return RedirectResponse(_gh_release_url(_APP_VERSION, f"19Labs-{_APP_VERSION}.AppImage"), status_code=302)
 
 # ── AUTH ENDPOINTS ────────────────────────────────────────────
-# In-memory CSRF state store for Google OAuth (short-lived)
-_OAUTH_STATES: dict[str, float] = {}
 
 def _validate_provider_key(provider: str, api_key: str) -> tuple[bool, str]:
     """Validate an API key by calling the provider. Returns (valid, display_name)."""
