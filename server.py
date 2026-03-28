@@ -450,6 +450,13 @@ threading.Thread(target=_cleanup_loop, daemon=True).start()
 _cleanup_old_workspaces()
 
 # ── SERVE LANDING + APP ───────────────────────────────────────
+@app.get("/ghost.svg")
+def serve_ghost_svg():
+    p = Path(__file__).parent / "ghost.svg"
+    if p.exists():
+        return FileResponse(str(p), media_type="image/svg+xml")
+    return HTMLResponse("not found", status_code=404)
+
 @app.get("/")
 def serve_landing():
     if LANDING_HTML.exists():
