@@ -2267,7 +2267,9 @@ async function launchRun(){
     if(!C.key)C.key=gk(C.provider);
     if(!C.key){chat('ai','Click Start Free to try it — or sign in.');showAuthModal();return;}
   }
-  if(!C.key)C.key=gk(C.provider);
+  // In trial mode: send no key — server uses its own Bedrock credentials
+  const _apiKey = (_isTrialMode&&!_authUser) ? undefined : (C.key||gk(C.provider)||undefined);
+  if(!_apiKey&&!_isTrialMode)C.key=gk(C.provider);
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
   setBadge('RUNNING','run');setProg(5);
@@ -2283,8 +2285,8 @@ async function launchRun(){
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
   try{
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();
