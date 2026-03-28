@@ -1000,9 +1000,16 @@ async def discover(req: DiscoverRequest, request: Request):
         from functools import partial
         loop = asyncio.get_event_loop()
         _fn = partial(discover_user_need, data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=resolved_provider, model=req.model or None)
-        result = await asyncio.wait_for(loop.run_in_executor(None, _fn), timeout=90)
-        result["used_fallback"] = False
-        return {"ok": True, **result}
+        try:
+            result = await asyncio.wait_for(loop.run_in_executor(None, _fn), timeout=90)
+            result["used_fallback"] = False
+            return {"ok": True, **result}
+        except Exception as ai_err:
+            print(f"[discover] AI call failed ({resolved_provider}): {ai_err} — falling back to static discovery", flush=True)
+            fallback = _fallback_discovery(profile, req.hint)
+            fallback["ok"] = True
+            fallback["used_fallback"] = True
+            return fallback
     except Exception as e:
         import traceback as _tb
         tb = _tb.format_exc()
