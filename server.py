@@ -807,25 +807,29 @@ async def start_run(req: RunRequest, request: Request):
         if saved:
             req.api_key = saved
 
-    # Trial user (no auth, no key) — use server's AI credentials, rate-limited by IP
-    _server_anthropic = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    _server_openai = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not req.api_key and not user and (_server_has_bedrock() or _server_anthropic or _server_openai):
-        ip = _trial_ip(request)
-        allowed, used = _trial_check_and_increment(ip)
-        if not allowed:
-            raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} free runs per day). Create a free account to continue.")
-        if _server_has_bedrock():
-            req.provider = "bedrock"
-            req.api_key = json.dumps(_bedrock_creds())
-        elif _server_anthropic:
-            req.provider = "claude"
-            req.api_key = _server_anthropic
+    # No API key — use server credentials (Bedrock/Anthropic/OpenAI)
+    # Anonymous users are rate-limited by IP; authenticated users run freely
+    if not req.api_key:
+        _server_anthropic = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        _server_openai = os.environ.get("OPENAI_API_KEY", "").strip()
+        if _server_has_bedrock() or _server_anthropic or _server_openai:
+            if not user:
+                # Rate-limit anonymous/trial users by IP
+                ip = _trial_ip(request)
+                allowed, used = _trial_check_and_increment(ip)
+                if not allowed:
+                    raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} free runs per day). Create a free account to continue.")
+            if _server_has_bedrock():
+                req.provider = "bedrock"
+                req.api_key = json.dumps(_bedrock_creds())
+            elif _server_anthropic:
+                req.provider = "claude"
+                req.api_key = _server_anthropic
+            else:
+                req.provider = "openai"
+                req.api_key = _server_openai
         else:
-            req.provider = "openai"
-            req.api_key = _server_openai
-    elif not req.api_key and not user:
-        raise HTTPException(401, "Sign in to run experiments. Create a free account at yc-able.com.")
+            raise HTTPException(401, "No API key configured. Add your key in Settings or sign in.")
 
     run_id = str(uuid.uuid4())[:12]
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
