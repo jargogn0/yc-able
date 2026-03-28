@@ -948,13 +948,21 @@ async def validate_key(req: ValidateKeyRequest):
         return {"ok": False, "error": msg}
 
 @app.post("/api/discover")
-async def discover(req: DiscoverRequest):
+async def discover(req: DiscoverRequest, request: Request):
     ws = Path(tempfile.mkdtemp(prefix="19labs_discover_"))
     cleanup_ws = True
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent))
         from engine import discover_user_need, profile_dataset, profile_media_dataset
+
+        # Load saved key for authenticated users (same as /api/run)
+        if not req.api_key:
+            user = _get_user(_token_from_request(request))
+            if user:
+                saved = _get_user_api_key(user["id"], req.provider or "claude")
+                if saved:
+                    req.api_key = saved
 
         # Resolve data path — media dataset or CSV
         if req.dataset_id:
@@ -988,7 +996,11 @@ async def discover(req: DiscoverRequest):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=resolved_provider, model=req.model or None)
+        import asyncio
+        from functools import partial
+        loop = asyncio.get_event_loop()
+        _fn = partial(discover_user_need, data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=resolved_provider, model=req.model or None)
+        result = await asyncio.wait_for(loop.run_in_executor(None, _fn), timeout=90)
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
