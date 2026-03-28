@@ -249,8 +249,7 @@ nav{
     Labs
   </a>
   <div class="nav-r">
-    <button class="btn-ghost" onclick="openStartModal()">Sign in</button>
-    <button class="btn-solid" onclick="openStartModal()">Start Free</button>
+    <button class="btn-solid" onclick="openStartModal()">Sign Up</button>
   </div>
 </nav>
 
@@ -319,11 +318,17 @@ nav{
     // Check platform
     const ua=navigator.userAgent||'';
     const isMac=/Mac|iPhone|iPod|iPad/.test(ua)&&!('ontouchend' in document);
+    const isMobile=window.innerWidth<=600;
     if(!isMac){
       // Not Mac — switch primary to web app
-      btn.href='/app';btn.textContent='Start Free — in browser';
+      btn.href='/app';btn.textContent='Get Started';
       const wb=document.getElementById('dl-web-link');
       if(wb)wb.parentElement.style.display='none';
+    }
+    // On mobile, rename secondary button to "Get Started" too
+    if(isMobile){
+      const dlWeb=document.querySelector('.dl-web');
+      if(dlWeb)dlWeb.textContent='Get Started';
     }
     fetch('/api/latest-release').then(r=>r.ok?r.json():null).then(d=>{
       if(d&&d.version&&versionEl)
