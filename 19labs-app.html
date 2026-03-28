@@ -207,7 +207,7 @@ body.desktop-mac .topbar{padding-left:84px}
 
   /* ── Onboarding modal: bottom sheet ── */
   .onboard-overlay{align-items:flex-end;padding:0}
-  .onboard-card{border-radius:20px 20px 0 0;max-width:100%;width:100%;max-height:92vh;overflow-y:auto;padding:28px 20px 32px}
+  .onboard-card{border-radius:16px 16px 0 0;max-width:100%;width:100%;padding:28px 24px 36px}
 }
 
 /* ── SIDEBAR ── */
@@ -438,20 +438,16 @@ input[type=file]{display:none}
 #monaco-wrap{width:100%;height:100%;min-height:300px}
 
 /* ── ONBOARDING MODAL ── */
-.onboard-overlay{position:fixed;inset:0;background:rgba(5,5,10,.88);backdrop-filter:blur(12px);z-index:8500;display:flex;align-items:center;justify-content:center;padding:20px}
-.onboard-card{background:#111113;border:1px solid #3f3f46;border-radius:20px;padding:36px 32px 28px;width:100%;max-width:460px;position:relative}
-.onboard-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-.onboard-logo-text{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:800;letter-spacing:-.5px}
-.onboard-tagline{font-size:13px;color:#a1a1aa;margin-bottom:24px;line-height:1.5}
-.onboard-features{display:flex;flex-direction:column;gap:10px;margin-bottom:28px}
-.onboard-feat{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:#18181b;border:1px solid #27272a;border-radius:10px}
-.onboard-feat-icon{font-size:18px;line-height:1;flex-shrink:0;margin-top:1px}
-.onboard-feat-text{font-size:12px;line-height:1.5;color:#a1a1aa}.onboard-feat-text b{color:#fafafa;display:block;font-size:13px;margin-bottom:1px}
-.onboard-cta{display:flex;flex-direction:column;gap:10px}
-.onboard-try-btn{width:100%;padding:13px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:opacity .15s}
-.onboard-try-btn:hover{opacity:.9}
-.onboard-skip{text-align:center;font-size:12px;color:#52525b;cursor:pointer;padding:4px}.onboard-skip:hover{color:#a1a1aa}
-.dz-sample-link{display:block;text-align:center;margin-top:8px;font-size:11px;color:#6366f1;cursor:pointer;text-decoration:none}.dz-sample-link:hover{color:#818cf8}
+.onboard-overlay{position:fixed;inset:0;background:rgba(5,5,10,.7);backdrop-filter:blur(20px);z-index:8500;display:flex;align-items:center;justify-content:center;padding:20px}
+.onboard-card{background:#0e0e10;border:1px solid #232326;border-radius:16px;padding:40px 36px 32px;width:100%;max-width:400px}
+.onboard-logo{display:flex;align-items:center;gap:8px;margin-bottom:32px}
+.onboard-logo-text{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:-.3px;color:#fafafa}
+.onboard-headline{font-size:22px;font-weight:700;letter-spacing:-.4px;line-height:1.3;color:#fafafa;margin-bottom:10px}
+.onboard-sub{font-size:13px;color:#52525b;line-height:1.6;margin-bottom:32px}
+.onboard-try-btn{display:block;width:100%;padding:12px 20px;background:#fafafa;border:none;border-radius:8px;color:#09090b;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;letter-spacing:-.1px;transition:opacity .15s;text-align:center}
+.onboard-try-btn:hover{opacity:.88}
+.onboard-skip{margin-top:14px;text-align:center;font-size:12px;color:#3f3f46;cursor:pointer;letter-spacing:.1px}.onboard-skip:hover{color:#71717a}
+.dz-sample-link{display:block;text-align:center;margin-top:8px;font-size:11px;color:#52525b;cursor:pointer}.dz-sample-link:hover{color:#a1a1aa}
 /* ── AUTH MODAL ── */
 .auth-overlay{position:fixed;inset:0;background:rgba(5,5,10,.95);backdrop-filter:blur(16px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
 .auth-card{background:#111113;border:1px solid #27272a;border-radius:20px;padding:32px 32px 24px;width:100%;max-width:400px}
@@ -768,33 +764,17 @@ input[type=file]{display:none}
 <div class="onboard-overlay" id="onboard-overlay" style="display:none">
   <div class="onboard-card">
     <div class="onboard-logo">
-      <svg width="36" height="36" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated;flex-shrink:0">
+      <svg width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated;flex-shrink:0">
         <rect width="32" height="32" rx="6" fill="#18181b"/>
-        <rect x="6" y="4" width="3" height="3" fill="#6366f1"/>
-        <rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/>
-        <rect x="6" y="12" width="3" height="3" fill="#6366f1"/>
-        <rect x="6" y="16" width="3" height="3" fill="#6366f1"/>
-        <rect x="6" y="20" width="3" height="3" fill="#6366f1"/>
-        <rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
-        <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/>
-        <rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/>
-        <rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/>
-        <rect x="26" y="16" width="3" height="3" fill="#a78bfa"/>
-        <rect x="26" y="20" width="3" height="3" fill="#a78bfa"/>
-        <rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
+        <rect x="6" y="4" width="3" height="3" fill="#6366f1"/><rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="12" width="3" height="3" fill="#6366f1"/><rect x="6" y="16" width="3" height="3" fill="#6366f1"/><rect x="6" y="20" width="3" height="3" fill="#6366f1"/><rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
+        <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/><rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/><rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="16" width="3" height="3" fill="#a78bfa"/><rect x="26" y="20" width="3" height="3" fill="#a78bfa"/><rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
       </svg>
-      <span class="onboard-logo-text">Labs</span>
+      <span class="onboard-logo-text">19Labs</span>
     </div>
-    <div class="onboard-tagline">Drop a dataset — the AI handles everything: profiling, model selection, training, evaluation, and deployment.</div>
-    <div class="onboard-features">
-      <div class="onboard-feat"><div class="onboard-feat-icon">⚡</div><div class="onboard-feat-text"><b>Autonomous Experiments</b>Runs dozens of models & hyperparameter configs automatically, picks the best one.</div></div>
-      <div class="onboard-feat"><div class="onboard-feat-icon">🔬</div><div class="onboard-feat-text"><b>SHAP Explainability</b>Visualize feature importance, partial dependence, and SHAP beeswarm plots for any model.</div></div>
-      <div class="onboard-feat"><div class="onboard-feat-icon">🚀</div><div class="onboard-feat-text"><b>One-click Deploy</b>Export a trained model with a REST inference endpoint, ready for production.</div></div>
-    </div>
-    <div class="onboard-cta">
-      <button class="onboard-try-btn" onclick="loadSampleDataset()">Try Titanic Dataset — see results in 60 seconds</button>
-      <div class="onboard-skip" onclick="closeOnboarding()">I'll upload my own dataset →</div>
-    </div>
+    <div class="onboard-headline">Drop a dataset.<br>Get a trained model.</div>
+    <div class="onboard-sub">Upload CSV, describe your goal — the rest is automatic. Or start with a sample.</div>
+    <button class="onboard-try-btn" onclick="loadSampleDataset()">Try the Titanic dataset</button>
+    <div class="onboard-skip" onclick="closeOnboarding()">Upload my own →</div>
   </div>
 </div>
 
