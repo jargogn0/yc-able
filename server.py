@@ -721,7 +721,7 @@ async def get_config():
         "has_bedrock": _server_has_bedrock(),
         "has_trial": _has_trial,
         "trial_limit": TRIAL_RUN_LIMIT,
-        "bedrock_model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
+        "bedrock_model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0"),
         "supabase_url": os.environ.get("SUPABASE_URL", ""),
         "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", ""),
     }

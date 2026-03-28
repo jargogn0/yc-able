@@ -200,7 +200,7 @@ _active_openai_model  = OPENAI_MODEL
 # Bedrock model ID — can be overridden via BEDROCK_MODEL env var.
 # Default is claude-3-5-sonnet which is widely available across regions.
 # Cross-region inference prefix format: us.anthropic.claude-... (for us-east-1/us-west-2)
-BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6")
+BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0")
 EXEC_TIMEOUT = 180          # hard wall-clock kill per experiment
 TIME_BUDGET  = 120          # target training budget (seconds) injected into scripts
 STAGNATION_LIMIT = 3
@@ -751,8 +751,16 @@ def _classify_api_error(e):
         return "Invalid API key. Check it in Settings and try again."
     if "rate_limit" in msg or "rate limit" in msg or "too many requests" in msg:
         return "Rate limited by the API. Waiting and retrying..."
-    if "connection error" in msg or "connection refused" in msg:
+    if "no such host" in msg or "name or service not known" in msg or "connection refused" in msg:
         return "Cannot reach the API. Check your internet connection, VPN, or firewall."
+    if "connection error" in msg or "connect timeout" in msg or "timed out" in msg:
+        return "Cannot reach the API. Check your internet connection, VPN, or firewall."
+    if "unrecognizedclientexception" in msg or "invalidclienttokenid" in msg:
+        return "AWS credentials rejected. Check your Access Key ID and Secret in Railway variables."
+    if "accessdeniedexception" in msg or "is not authorized to perform" in msg:
+        return "AWS account doesn't have Bedrock access. Enable Bedrock model access in the AWS console."
+    if "validationexception" in msg and "model" in msg:
+        return "Bedrock model not found. Set BEDROCK_MODEL in Railway variables to a model you have access to."
     if "authentication" in msg or "401" in msg:
         return "Authentication failed. Your API key may be expired or revoked."
     return None
