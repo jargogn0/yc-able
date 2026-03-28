@@ -705,8 +705,14 @@ def _profile_media_dir(data_dir: Path) -> dict:
 @app.get("/api/config")
 async def get_config():
     """Public config — tells the frontend what's available server-side."""
+    _has_trial = bool(
+        _server_has_bedrock()
+        or os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        or os.environ.get("OPENAI_API_KEY", "").strip()
+    )
     return {
         "has_bedrock": _server_has_bedrock(),
+        "has_trial": _has_trial,
         "trial_limit": TRIAL_RUN_LIMIT,
         "bedrock_model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
         "supabase_url": os.environ.get("SUPABASE_URL", ""),
@@ -794,17 +800,26 @@ async def start_run(req: RunRequest, request: Request):
         if saved:
             req.api_key = saved
 
-    # Trial user (no auth, no key) — use server's Bedrock if available, rate-limited by IP
-    if not req.api_key and not user and _server_has_bedrock():
+    # Trial user (no auth, no key) — use server's AI credentials, rate-limited by IP
+    _server_anthropic = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    _server_openai = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not req.api_key and not user and (_server_has_bedrock() or _server_anthropic or _server_openai):
         ip = _trial_ip(request)
         allowed, used = _trial_check_and_increment(ip)
         if not allowed:
             raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} free runs per day). Create a free account to continue.")
-        req.provider = "bedrock"
-        _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
-        _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-        req.api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg})
+        if _server_has_bedrock():
+            req.provider = "bedrock"
+            _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+            _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+            _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+            req.api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg})
+        elif _server_anthropic:
+            req.provider = "claude"
+            req.api_key = _server_anthropic
+        else:
+            req.provider = "openai"
+            req.api_key = _server_openai
     elif not req.api_key and not user:
         raise HTTPException(401, "Sign in to run experiments. Create a free account at yc-able.com.")
 
