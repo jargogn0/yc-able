@@ -132,7 +132,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 /* ── LAYOUT ── */
 .layout{display:grid;grid-template-columns:280px minmax(0,1fr) 400px;flex:1;overflow:hidden;min-height:0}
 @media(max-width:1200px){.layout{grid-template-columns:220px minmax(0,1fr) 340px}}
-@media(max-width:900px){.layout{grid-template-columns:1fr;grid-template-rows:auto 1fr auto}.side{display:none}.chat{max-height:300px;border-left:none;border-top:1px solid var(--border)}}
+@media(max-width:900px){.layout{grid-template-columns:1fr;grid-template-rows:1fr}.side{display:none}.chat{max-height:300px;border-left:none;border-top:1px solid var(--border)}}
 
 /* ── MOBILE NAV (≤767px) ── */
 .mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:54px;background:var(--surface);border-top:1px solid var(--border);z-index:600;flex-direction:row;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
@@ -145,38 +145,65 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 @media(max-width:767px){
   body{overflow:hidden}
   .mob-nav{display:flex}
+  .statusbar{display:none}
 
-  /* Push layout above the bottom nav */
-  body>:not(.mob-nav){--mob-nav-h:54px}
-  .layout{grid-template-columns:1fr!important;grid-template-rows:1fr!important;padding-bottom:54px}
-
-  /* Each panel takes full space; only one shown at a time */
-  .side{display:flex!important;position:absolute;inset:0;top:0;z-index:1;transform:translateX(-100%);transition:transform .22s ease;height:100%;border:none}
-  .ws{position:absolute;inset:0;top:0;z-index:1;transform:translateX(100%);transition:transform .22s ease}
-  .chat{position:absolute;inset:0;top:0;z-index:1;max-height:none!important;border:none!important;transform:translateX(100%);transition:transform .22s ease}
-  .side.mob-active,.ws.mob-active,.chat.mob-active{transform:translateX(0)!important}
-
-  /* Topbar compact */
+  /* ── Compact topbar: only logo + badge + user ── */
+  .topbar{padding:0 12px;gap:8px;height:44px;flex-wrap:nowrap;overflow:hidden}
   .topbar-tag,.topbar-sep{display:none}
-  .topbar{padding:0 12px;gap:8px}
-  .badge{font-size:9px;padding:3px 7px}
-  .tbtn{font-size:11px;padding:4px 9px}
+  .topbar .tbtn:not(#stop-btn){display:none}
+  .badge{font-size:10px;padding:3px 8px}
+  #stop-btn{font-size:11px;padding:4px 10px}
 
-  /* Workspace tabs: scrollable */
-  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:0;padding:0 4px}
+  /* ── Layout container: block, no longer a grid ── */
+  .layout{display:block!important;flex:1;min-height:0}
+
+  /* ── Panels: fixed full-screen between topbar+prog (46px) and bottom nav (54px) ──
+     All hidden by default; only .mob-active panel shows */
+  .side,.ws,.chat{
+    position:fixed!important;
+    top:46px;left:0;right:0;bottom:54px;
+    z-index:300;
+    display:none!important;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  .side.mob-active,.ws.mob-active,.chat.mob-active{
+    display:flex!important;
+  }
+
+  /* Panel backgrounds */
+  .side{background:var(--surface);border:none!important}
+  .ws{background:var(--bg)}
+  .chat{background:var(--surface);max-height:none!important;border:none!important}
+
+  /* ── Sidebar internals ── */
+  .side-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .side-h{flex-shrink:0}
+  .side-status{flex-shrink:0}
+
+  /* ── Workspace internals ── */
+  .tabs{flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:0;padding:0 4px;height:40px}
   .tabs::-webkit-scrollbar{display:none}
-  .tab{flex-shrink:0;padding:5px 10px;font-size:11px}
+  .tab{flex-shrink:0;padding:6px 12px;font-size:12px}
+  .ws-body{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 
-  /* Auth modal: full-width on small screens, scrollable */
+  /* ── Chat internals ── */
+  .chat-h{flex-shrink:0}
+  .chat-msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .comp{flex-shrink:0}
+  .comp-send{width:44px;height:44px}
+  .comp-in{font-size:16px}/* prevent iOS auto-zoom */
+
+  /* ── Dropzone: compact ── */
+  .dz{padding:14px 10px;margin:8px 8px 4px}
+
+  /* ── Auth modal: bottom sheet ── */
   .auth-overlay{align-items:flex-end;padding:0}
   .auth-card{border-radius:20px 20px 0 0;max-width:100%;width:100%;max-height:92vh;overflow-y:auto;padding:24px 20px 32px}
 
-  /* Chat composer: bigger tap target */
-  .comp-send{width:44px;height:44px}
-  .comp-in{font-size:16px}/* prevent iOS zoom on focus */
-
-  /* Prevent body scroll bleed */
-  .layout{overflow:hidden;position:relative}
+  /* ── Onboarding modal: bottom sheet ── */
+  .onboard-overlay{align-items:flex-end;padding:0}
+  .onboard-card{border-radius:20px 20px 0 0;max-width:100%;width:100%;max-height:92vh;overflow-y:auto;padding:28px 20px 32px}
 }
 
 /* ── SIDEBAR ── */
@@ -1860,6 +1887,7 @@ async function send(){
   const inp=document.getElementById('cin');
   const text=(inp.value||'').trim();if(!text)return;
   inp.value='';inp.style.height='auto';
+  if(window.innerWidth<=767)setMobPanel('chat');
   chat('user',text);
   const lo=text.toLowerCase();
 
@@ -3846,6 +3874,8 @@ async function handleFile(f,preloadedText){
   } else {
     msg+=`<br><br>What would you like to do with this data?`;
   }
+  // On mobile: show workspace so user sees data preview, then switch to chat for the AI message
+  if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),600);}
   chat('ai',msg);
   autoDiscover();
 }
