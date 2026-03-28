@@ -276,7 +276,8 @@ input[type=file]{display:none}
 
 /* Empty */
 .ws-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:40px}
-.we-n{font-size:56px;opacity:.06;font-family:var(--mono);font-weight:900}
+.we-n{display:flex;align-items:center;justify-content:center;opacity:.18;margin-bottom:4px}
+.we-n img{width:64px;height:64px;filter:drop-shadow(0 0 16px rgba(168,85,247,.6))}
 .we-t{font-size:15px;font-weight:600;color:var(--text-2)}
 .we-s{font-size:13px;color:var(--text-3);max-width:340px;line-height:1.7}
 .we-sample{margin-top:4px;background:none;border:1px solid var(--border-2);color:var(--text-3);font-size:12px;font-family:var(--sans);padding:6px 14px;border-radius:var(--r);cursor:pointer;transition:all var(--t)}.we-sample:hover{border-color:var(--border);color:var(--text-2);background:var(--surface-2)}
@@ -414,7 +415,8 @@ input[type=file]{display:none}
 .cm.user{background:var(--accent);color:#fff;align-self:flex-end}
 .cm.sys{background:var(--surface-3);color:var(--text-2);font-size:12px;border:1px solid var(--border);align-self:flex-start}
 .cm.err{background:var(--red-soft);color:var(--red);font-size:12px;border:1px solid rgba(239,68,68,.2);align-self:flex-start}
-.cm .cl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;opacity:.5}
+.cm .cl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;opacity:.5;display:flex;align-items:center;gap:5px}
+.cm .cl img{width:13px;height:13px;opacity:1;filter:drop-shadow(0 0 3px rgba(168,85,247,.6))}
 .cm.ai .cl{color:var(--accent)}
 .cm code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px}
 .cm strong{font-weight:700}
@@ -428,7 +430,8 @@ input[type=file]{display:none}
 
 /* Welcome */
 .cw{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;padding:32px}
-.cw-i{font-family:var(--mono);font-size:28px;font-weight:900;opacity:.1}
+.cw-i{display:flex;align-items:center;justify-content:center;opacity:.25}
+.cw-i img{width:36px;height:36px;filter:drop-shadow(0 0 8px rgba(168,85,247,.5))}
 .cw-t{font-size:15px;font-weight:700}
 .cw-s{font-size:13px;color:var(--text-3);line-height:1.7;max-width:280px}
 .cw-hints{display:flex;flex-direction:column;gap:6px;margin-top:8px;width:100%;max-width:300px}
@@ -1163,7 +1166,7 @@ input[type=file]{display:none}
     </div>
     <div class="ws-body" id="ws-body">
       <div class="ws-empty" id="ws-empty">
-        <div class="we-n">19</div>
+        <div class="we-n"><img src="/ghost.svg" alt="19Labs"></div>
         <div class="we-t">Drop a dataset to begin</div>
         <div class="we-s">Upload a dataset (CSV, Excel, JSON), describe your goal, and the AI handles everything — profiling, model selection, training, evaluation, and deployment.</div>
         <button class="we-sample" onclick="loadSampleDataset()">Try the Titanic dataset →</button>
@@ -1200,7 +1203,7 @@ input[type=file]{display:none}
     </div>
     <div class="chat-msgs" id="msgs">
       <div class="cw" id="cw">
-        <div class="cw-i">19</div>
+        <div class="cw-i"><img src="/ghost.svg" alt="19Labs"></div>
         <div class="cw-t">What are you building?</div>
         <div class="cw-s">Drop any dataset (CSV, Excel, JSON) and describe your goal. I'll profile the data, build a plan, train models, and deploy — all automatically.</div>
         <div class="cw-hints">
@@ -2638,7 +2641,7 @@ function procMsg(d){
   // Narration messages → show as special chat bubbles
   if(tag==='narrate'){
     const el=document.createElement('div');el.className='cm narrate';
-    el.innerHTML=`<div class="cl">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
+    el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
     const c=document.getElementById('msgs');
     const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
     c.appendChild(el);if(atBottom)c.scrollTop=c.scrollHeight;
@@ -3708,7 +3711,7 @@ async function chatGenerateChart(query){
     const el=document.createElement('div');el.className='cm ai';
     const title=spec.title||'Chart';
     const insight=spec.insight||'';
-    el.innerHTML=`<div class="cl">19 Agent</div><div class="cm-chart"><div class="cm-chart-title">${esc(title)}</div>${svg}${insight?`<div class="cm-chart-insight">${esc(insight)}</div>`:''}</div><div class="cm-time">${chatTime()}</div>`;
+    el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div><div class="cm-chart"><div class="cm-chart-title">${esc(title)}</div>${svg}${insight?`<div class="cm-chart-insight">${esc(insight)}</div>`:''}</div><div class="cm-time">${chatTime()}</div>`;
     const c=document.getElementById('msgs');c.appendChild(el);c.scrollTop=c.scrollHeight;
   }catch(e){typing(false);chat('err',`Chart error: ${esc(e.message)}`)}
 }
