@@ -1304,9 +1304,10 @@ async function initAuth(){
   if(_isTrialMode&&_trialRemaining()>0){
     _updateTrialBtn();return;
   }
-  // No session — show sign-in button and auth modal
+  // No session — just show topbar buttons, let user decide
   _updateTrialBtn();
-  showAuthModal();
+  // Still try to restore last run for trial/anonymous users
+  _restoreRunHistory();
 }
 
 async function _refreshTokenSilently(){
@@ -1501,15 +1502,19 @@ async function _restoreRunHistory(){
       const r=await apiFetch(`${BASE}/api/run/${lastRun}/status`);
       if(r.ok){
         const st=await r.json();
-        if(st.status==='done'||st.status==='running'){
+        if(st.status==='done'||st.status==='running'||st.status==='stopping'){
           S.runId=lastRun;
+          // Restore hint and filename from DB if available
+          if(st.hint&&!S.hint)S.hint=st.hint;
+          if(st.filename&&!S.file)S.file={name:st.filename};
           if(st.best){S.best=st.best;showBest(st.best,st.objective,lastRun)}
           if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
           if(st.artifacts){S.artifacts=st.artifacts;showArts(lastRun,st.artifacts);updArtSide()}
           if(st.report){S.report=st.report;showRpt(st.report)}
           updStatus();
           stab('exp');
-          toast(`Restored last run ${lastRun}`,'info',3000);
+          const src=st.from_db?'session':'live';
+          toast(`Session restored (${src})${st.hint?' — '+st.hint.slice(0,40):''}`, 'ok', 4000);
         }
       }
     }catch(_){}
@@ -2904,16 +2909,21 @@ function renderRunHistory(){
 }
 async function loadRunStatus(id){
   try{
-    const r=await apiFetch(`${BASE}/api/run/${id}/status`);if(!r.ok){toast(`Run ${id} not found on server`,'warn');return;}
+    const r=await apiFetch(`${BASE}/api/run/${id}/status`);
+    if(!r.ok){toast(`Run ${id} not found on server`,'warn');return;}
     const st=await r.json();
     S.runId=id;localStorage.setItem('19labs_last_run_id',id);
+    // Restore session metadata
+    if(st.hint)S.hint=st.hint;
+    if(st.filename)S.file={name:st.filename};
     S.exps=[];document.getElementById('p-exp').innerHTML='';
     if(st.best){S.best=st.best;showBest(st.best,st.objective,id)}
     if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
     if(st.artifacts){S.artifacts=st.artifacts;showArts(id,st.artifacts);updArtSide()}
     if(st.report){S.report=st.report;showRpt(st.report)}
     updStatus();stab('exp');
-    toast(`Loaded run ${id}`,'ok',2500);
+    const src=st.from_db?'(from DB)':'';
+    toast(`Loaded run ${id} ${src}`,'ok',2500);
   }catch(_){}
 }
 

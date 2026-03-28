@@ -289,12 +289,27 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
 _init_db()
 
 def _save_run_to_db(run_id: str, run: dict):
-    """Persist run summary to DB."""
+    """Persist run summary (and full result JSON) to DB."""
     try:
         result = run.get("result") or {}
         best = result.get("best") or {}
         tu = result.get("token_usage") or {}
         diag = result.get("diagnostics") or {}
+        # Serialize result_json — strip CSV/binary blobs, cap at 4 MB
+        result_json_str = None
+        if result:
+            try:
+                serialized = json.dumps(result)
+                if len(serialized) <= 4 * 1024 * 1024:  # 4 MB cap
+                    result_json_str = serialized
+                else:
+                    # Strip large fields and try again
+                    slim = {k: v for k, v in result.items() if k not in ("plots", "csv_data")}
+                    slim_serialized = json.dumps(slim)
+                    if len(slim_serialized) <= 4 * 1024 * 1024:
+                        result_json_str = slim_serialized
+            except Exception:
+                pass
         conn = DBConn()
         conn.execute("""INSERT INTO runs
             (id, status, filename, provider, started, finished, hint, budget,
@@ -307,7 +322,7 @@ def _save_run_to_db(run_id: str, run: dict):
               best_metric_val=EXCLUDED.best_metric_val, total_experiments=EXCLUDED.total_experiments,
               token_input=EXCLUDED.token_input, token_output=EXCLUDED.token_output,
               token_calls=EXCLUDED.token_calls, yc_score=EXCLUDED.yc_score,
-              error=EXCLUDED.error""",
+              error=EXCLUDED.error, result_json=EXCLUDED.result_json""",
             (run_id, run.get("status", "done"),
              Path(run.get("csv", "")).name if run.get("csv") else "",
              run.get("provider", "claude"),
@@ -324,7 +339,7 @@ def _save_run_to_db(run_id: str, run: dict):
              tu.get("calls", 0),
              diag.get("yc_readiness_score"),
              run.get("error"),
-             None))  # Don't store full result_json for now (too large)
+             result_json_str))
         conn.commit()
         conn.close()
     except Exception:
@@ -1167,6 +1182,7 @@ async def start_run(req: RunRequest, request: Request):
         id=run_id, status="running", ws=str(ws),
         csv=str(csv_path), logs=[], result=None,
         started=time.time(), provider=req.provider,
+        hint=req.hint or "", budget=req.budget,
         cancel_event=cancel_event,
     )
 
@@ -1444,6 +1460,46 @@ async def stream_logs(run_id: str):
 @app.get("/api/run/{run_id}/status")
 def get_status(run_id: str):
     if run_id not in RUNS:
+        # Try to reconstruct from DB
+        try:
+            conn = DBConn()
+            row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            conn.close()
+            if row:
+                result = json.loads(row["result_json"]) if row["result_json"] else None
+                elapsed = round((row["finished"] or time.time()) - (row["started"] or time.time()), 1)
+                out = dict(
+                    status=row["status"],
+                    log_count=0,
+                    elapsed=elapsed,
+                    from_db=True,
+                    hint=row["hint"],
+                    filename=row["filename"],
+                )
+                if result:
+                    out["best"]           = result.get("best")
+                    out["objective"]      = result.get("objective")
+                    out["history"]        = result.get("history")
+                    out["report"]         = result.get("report")
+                    out["deploy_path"]    = result.get("deploy_path")
+                    out["diagnostics"]    = result.get("diagnostics")
+                    out["executive_brief"]= result.get("executive_brief")
+                    out["artifacts"]      = result.get("artifacts")
+                    out["total_experiments"] = result.get("total_experiments", len(result.get("history", [])))
+                    out["continuous_mode"]= result.get("continuous_mode", False)
+                    out["token_usage"]    = result.get("token_usage", {})
+                elif row["best_model"]:
+                    # No full result_json but we have summary fields
+                    out["best"] = {
+                        "model": row["best_model"],
+                        "metric_name": row["best_metric_name"],
+                        "metric_val": row["best_metric_val"],
+                    }
+                if row["error"]:
+                    out["error"] = row["error"]
+                return out
+        except Exception:
+            pass
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
     result = run.get("result")
