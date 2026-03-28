@@ -1238,6 +1238,10 @@ let _authTab = 'signin';
 const TRIAL_LIMIT = 3;
 let _trialCount = parseInt(localStorage.getItem('19labs_trial_count')||'0',10);
 let _isTrialMode = localStorage.getItem('19labs_trial_started')==='1';
+// Clear stale bedrock provider setting from old trial sessions
+if(localStorage.getItem('19labs_provider')==='bedrock'&&!localStorage.getItem('19labs_auth_token')){
+  localStorage.removeItem('19labs_provider');
+}
 
 function _trialRemaining(){ return Math.max(0, TRIAL_LIMIT - _trialCount); }
 function _useTrialSlot(){
@@ -1283,9 +1287,7 @@ function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`
 
 async function initAuth(){
   if(!_supabase){
-    // Supabase not configured — fall back to trial/key mode
-    const hasKey=gk('claude')||gk('openai')||gk('gemini');
-    if(hasKey){_authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;}
+    // Supabase not configured — trial/sign-in only
     if(_isTrialMode&&_trialRemaining()>0){_updateTrialBtn();return;}
     _updateTrialBtn();showAuthModal();return;
   }
@@ -1314,9 +1316,7 @@ async function initAuth(){
     localStorage.setItem('19labs_auth_token',_authToken);
     hideAuthModal();onAuthSuccess();return;
   }
-  // No session — check trial/key
-  const hasKey=gk('claude')||gk('openai')||gk('gemini');
-  if(hasKey){_authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;}
+  // No session
   if(_isTrialMode&&_trialRemaining()>0){_updateTrialBtn();return;}
   _updateTrialBtn();showAuthModal();
 }
