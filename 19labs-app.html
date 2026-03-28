@@ -267,7 +267,7 @@ input[type=file]{display:none}
 .we-n{font-size:56px;opacity:.06;font-family:var(--mono);font-weight:900}
 .we-t{font-size:15px;font-weight:600;color:var(--text-2)}
 .we-s{font-size:13px;color:var(--text-3);max-width:340px;line-height:1.7}
-.we-sample{margin-top:4px;background:none;border:1px solid var(--border-2);color:var(--text-3);font-size:12px;font-family:var(--sans);padding:6px 14px;border-radius:var(--r);cursor:pointer;transition:all var(--t)}.we-sample:hover{border-color:var(--border);color:var(--text-2);background:var(--surface-2)}
+.we-sample{margin-top:8px;background:var(--surface-2);border:1px solid var(--border-2);color:var(--text-2);font-size:12px;font-family:var(--sans);font-weight:500;padding:8px 18px;border-radius:var(--r);cursor:pointer;transition:all var(--t);letter-spacing:.01em}.we-sample:hover{border-color:rgba(99,102,241,.5);color:#a5b4fc;background:rgba(99,102,241,.08)}
 
 /* Data preview table */
 .dp{padding:16px;overflow-x:auto;max-width:100%}
@@ -956,8 +956,9 @@ input[type=file]{display:none}
     <div class="badge" id="badge">IDLE</div>
     <button class="tbtn" onclick="openCmd()" data-tip="Command Palette (⌘K)">⌘K</button>
     <button class="tbtn" id="tb-prov" onclick="openSettings()" data-tip="Provider settings (⌘,)">Claude</button>
-    <!-- Trial / auth button — shown when not logged in -->
-    <button class="tbtn-start" id="trial-btn" style="display:none" onclick="showAuthModal()">Start Free</button>
+    <!-- Auth buttons — shown when not logged in -->
+    <button class="tbtn" id="signin-btn" style="display:none" onclick="showAuthModal()">Sign In</button>
+    <button class="tbtn-start" id="trial-btn" style="display:none" onclick="startTrial()">Start Free</button>
     <div style="position:relative">
       <div class="user-btn" id="user-btn" onclick="toggleUserMenu()" style="display:none">
         <div class="user-avatar" id="user-avatar">?</div>
@@ -1246,31 +1247,35 @@ function _useTrialSlot(){
 }
 function _updateTrialBtn(){
   const btn=document.getElementById('trial-btn');
+  const si=document.getElementById('signin-btn');
   if(!btn)return;
-  if(_authUser){btn.style.display='none';return;}
+  if(_authUser){
+    btn.style.display='none';
+    if(si)si.style.display='none';
+    return;
+  }
   const rem=_trialRemaining();
   if(_isTrialMode){
-    btn.textContent=rem>0?`${rem} left`:'Sign Up';
+    // In trial — show slot counter, hide Sign In (cleaner)
+    btn.textContent=rem>0?`${rem} run${rem===1?'':'s'} left`:'Sign Up Free';
     btn.style.display='inline-block';
     btn.onclick=rem>0?null:showAuthModal;
+    if(si)si.style.display='none';
   } else {
+    // Not yet in trial — show both Sign In and Start Free
     btn.textContent='Start Free';
     btn.style.display='inline-block';
-    btn.onclick=showAuthModal;
+    btn.onclick=startTrial;
+    if(si)si.style.display='';
   }
 }
 function startTrial(){
   _isTrialMode=true;
   localStorage.setItem('19labs_trial_started','1');
-  if(_serverConfig.has_bedrock){
-    C.provider='bedrock';
-    localStorage.setItem('19labs_provider','bedrock');
-    spUI('bedrock');
-  }
   hideAuthModal();
   _updateTrialBtn();
-  // Show onboarding with Titanic prompt if no dataset loaded yet
-  if(!S.csv&&!S.runId)setTimeout(showOnboarding,200);
+  // Show Titanic/onboarding prompt if no dataset loaded yet
+  if(!S.csv&&!S.runId)setTimeout(showOnboarding,150);
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -1477,6 +1482,7 @@ function onAuthSuccess(){
   document.getElementById('ump-email-full').textContent=user.email||'';
   document.getElementById('user-btn').style.display='flex';
   document.getElementById('trial-btn').style.display='none';
+  const si=document.getElementById('signin-btn');if(si)si.style.display='none';
   _isTrialMode=false;
   localStorage.removeItem('19labs_trial_started');
   // Upload any locally-stored keys to server (in case they were set before login)
@@ -1551,6 +1557,9 @@ async function doLogout(){
   localStorage.removeItem('19labs_auth_token');
   // Keep API keys in localStorage — user should not have to re-enter them after re-login
   document.getElementById('user-btn').style.display='none';
+  _isTrialMode=false;
+  localStorage.removeItem('19labs_trial_started');
+  _updateTrialBtn();
   showAuthModal();
 }
 
