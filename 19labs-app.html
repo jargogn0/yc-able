@@ -4038,15 +4038,24 @@ const TITANIC_CSV=`PassengerId,Survived,Pclass,Name,Sex,Age,SibSp,Parch,Ticket,F
 
 async function loadSampleDataset(){
   closeOnboarding();
+  // Auto-start trial if visitor isn't logged in
+  if(!_authUser&&!_isTrialMode){
+    _isTrialMode=true;
+    localStorage.setItem('19labs_trial_started','1');
+    _updateTrialBtn();
+  }
   const blob=new Blob([TITANIC_CSV],{type:'text/csv'});
   const file=new File([blob],'titanic.csv',{type:'text/csv',lastModified:Date.now()});
   await handleFile(file,TITANIC_CSV);
+  // Pre-fill goal and auto-trigger analysis
+  const hint='Predict passenger survival. Target: Survived';
+  S.hint=hint;
   setTimeout(()=>{
     const cin=document.getElementById('cin');
-    if(cin&&!cin.value)cin.value='Predict passenger survival. Target: Survived';
-    // Professional intro message in chat
-    chat('ai',`<strong>Titanic — Passenger Survival</strong><br><br>Classic classification problem. 100 passengers, 12 features including class, age, sex, fare, and cabin. Goal: predict who survived the sinking.<br><br>Type <strong>go</strong> to start training, or describe a specific angle.`);
-  },300);
+    if(cin)cin.value=hint;
+    // Auto-send to trigger real AI analysis
+    send();
+  },500);
 }
 </script>
 </body>
