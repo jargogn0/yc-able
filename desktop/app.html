@@ -2183,15 +2183,13 @@ async function runDiscover(hint){
   if(!S.file)return;
   typing(true);setBadge('ANALYZING','run');
   sbUpdate({status:'Analyzing...',running:true});
-  let key=C.key||gk(C.provider);
+  // Trial mode: send no key — server uses own Bedrock
+  const _discKey=(_isTrialMode&&!_authUser)?undefined:(C.key||gk(C.provider)||undefined);
   try{
-    // Include the current objective so the LLM can interpret corrections in context
-    // e.g. agent proposed "predict shipped_weight", user says "no revenue forecast"
-    // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
     const _prevObj = S.discovery?.objective || null;
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
-      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:C.provider,model:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
@@ -4040,17 +4038,15 @@ const TITANIC_CSV=`PassengerId,Survived,Pclass,Name,Sex,Age,SibSp,Parch,Ticket,F
 
 async function loadSampleDataset(){
   closeOnboarding();
-  toast('Loading Titanic dataset...','info',2000);
-  // Build a File-like object from the embedded CSV
   const blob=new Blob([TITANIC_CSV],{type:'text/csv'});
   const file=new File([blob],'titanic.csv',{type:'text/csv',lastModified:Date.now()});
   await handleFile(file,TITANIC_CSV);
-  // Pre-fill goal
   setTimeout(()=>{
     const cin=document.getElementById('cin');
     if(cin&&!cin.value)cin.value='Predict passenger survival. Target: Survived';
-    toast('Titanic dataset loaded! Hit Enter or click Send to start training.','ok',5000);
-  },400);
+    // Professional intro message in chat
+    chat('ai',`<strong>Titanic — Passenger Survival</strong><br><br>Classic classification problem. 100 passengers, 12 features including class, age, sex, fare, and cabin. Goal: predict who survived the sinking.<br><br>Type <strong>go</strong> to start training, or describe a specific angle.`);
+  },300);
 }
 </script>
 </body>

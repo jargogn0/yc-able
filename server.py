@@ -938,7 +938,19 @@ async def discover(req: DiscoverRequest):
             data_path = str(csv_path)
             profile = profile_dataset(data_path)
 
-        resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        resolved_api_key = req.api_key
+        resolved_provider = req.provider or "claude"
+
+        if not resolved_api_key and _server_has_bedrock():
+            # Trial / no-key path — use server Bedrock (same as /api/run trial logic)
+            resolved_api_key = json.dumps({
+                "access_key": os.environ.get("AWS_ACCESS_KEY_ID", ""),
+                "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+                "region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            })
+            resolved_provider = "bedrock"
+        elif not resolved_api_key:
+            resolved_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
         if not resolved_api_key:
             fallback = _fallback_discovery(profile, req.hint)
@@ -946,7 +958,7 @@ async def discover(req: DiscoverRequest):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None)
+        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=resolved_provider, model=req.model or None)
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
