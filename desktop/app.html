@@ -1290,9 +1290,8 @@ function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`
 
 async function initAuth(){
   if(!_supabase){
-    // Supabase not configured — trial/sign-in only
-    if(_isTrialMode&&_trialRemaining()>0){_updateTrialBtn();return;}
-    _updateTrialBtn();showAuthModal();return;
+    // Supabase not configured — just show topbar buttons, no modal
+    _updateTrialBtn();return;
   }
   // Listen for auth state changes (handles OAuth redirects, session restore, signout)
   _supabase.auth.onAuthStateChange((event, session)=>{
@@ -1308,7 +1307,7 @@ async function initAuth(){
       _isTrialMode=false;
       localStorage.removeItem('19labs_trial_started');
       _updateTrialBtn();
-      showAuthModal();
+      // Don't auto-show modal — user can click Sign In when ready
     }
   });
   // Check existing session
@@ -1319,9 +1318,8 @@ async function initAuth(){
     localStorage.setItem('19labs_auth_token',_authToken);
     hideAuthModal();onAuthSuccess();return;
   }
-  // No session
-  if(_isTrialMode&&_trialRemaining()>0){_updateTrialBtn();return;}
-  _updateTrialBtn();showAuthModal();
+  // No session — just show topbar buttons, let user decide
+  _updateTrialBtn();
 }
 
 function showAuthModal(){
@@ -4051,14 +4049,13 @@ async function loadSampleDataset(){
   const blob=new Blob([TITANIC_CSV],{type:'text/csv'});
   const file=new File([blob],'titanic.csv',{type:'text/csv',lastModified:Date.now()});
   await handleFile(file,TITANIC_CSV);
-  // Pre-fill goal and auto-trigger analysis
+  // Set goal and launch directly — no chat messages, no plan confirmation step
   const hint='Predict passenger survival. Target: Survived';
   S.hint=hint;
-  setTimeout(()=>{
-    const cin=document.getElementById('cin');
-    if(cin)cin.value=hint;
-    // Auto-send to trigger real AI analysis
-    send();
+  S.confirmed=true;
+  setTimeout(async()=>{
+    await runDiscover(hint);
+    if(S.analyzed)await launchRun();
   },500);
 }
 </script>
