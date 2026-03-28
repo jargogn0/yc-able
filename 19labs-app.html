@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>19Labs — Autonomous ML Research</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Ctext x='16' y='22' font-family='Inter,system-ui,sans-serif' font-size='13' font-weight='600' fill='white' text-anchor='middle' letter-spacing='-0.5'%3E19%3C/text%3E%3C/svg%3E">
+<title>19Labs — Auto-ML Research</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2318181b'/%3E%3Crect x='6' y='4' width='3' height='3' fill='%236366f1'/%3E%3Crect x='2' y='8' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='8' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='12' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='16' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='20' width='3' height='3' fill='%236366f1'/%3E%3Crect x='2' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='6' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='10' y='24' width='3' height='3' fill='%236366f1'/%3E%3Crect x='22' y='4' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='4' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='18' y='8' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='8' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='22' y='12' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='12' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='16' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='20' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='22' y='24' width='3' height='3' fill='%23a78bfa'/%3E%3Crect x='26' y='24' width='3' height='3' fill='%23a78bfa'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
@@ -45,7 +45,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 
 /* ── TOPBAR ── */
 .topbar{height:46px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;gap:12px}
-.logo{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:-.3px}.logo b{color:var(--accent);font-weight:800}
+/* macOS desktop: leave room for traffic light buttons (~80px wide from x:16) */
+body.desktop-mac .topbar{padding-left:84px}
+.logo{display:flex;align-items:center;gap:7px;text-decoration:none;cursor:default}
+.logo-mark{display:block;flex-shrink:0;image-rendering:pixelated}
+.logo-text{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
 .topbar-sep{width:1px;height:18px;background:var(--border)}
 .topbar-tag{font-size:12px;color:var(--text-3)}
 .topbar-r{margin-left:auto;display:flex;align-items:center;gap:8px}
@@ -132,7 +136,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 /* ── LAYOUT ── */
 .layout{display:grid;grid-template-columns:280px minmax(0,1fr) 400px;flex:1;overflow:hidden;min-height:0}
 @media(max-width:1200px){.layout{grid-template-columns:220px minmax(0,1fr) 340px}}
-@media(max-width:900px){.layout{grid-template-columns:1fr;grid-template-rows:auto 1fr auto}.side{display:none}.chat{max-height:300px;border-left:none;border-top:1px solid var(--border)}}
+/* 768–900px: side hidden, ws+chat share the column */
+@media(max-width:900px){
+  .layout{display:flex!important;flex-direction:column}
+  .side{display:none!important}
+  .ws{flex:1;min-height:0;overflow:hidden}
+  .chat{flex:0 0 260px;min-height:0;border-left:none!important;border-top:1px solid var(--border)}
+}
 
 /* ── MOBILE NAV (≤767px) ── */
 .mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:54px;background:var(--surface);border-top:1px solid var(--border);z-index:600;flex-direction:row;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
@@ -145,38 +155,65 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 @media(max-width:767px){
   body{overflow:hidden}
   .mob-nav{display:flex}
+  .statusbar{display:none}
 
-  /* Push layout above the bottom nav */
-  body>:not(.mob-nav){--mob-nav-h:54px}
-  .layout{grid-template-columns:1fr!important;grid-template-rows:1fr!important;padding-bottom:54px}
-
-  /* Each panel takes full space; only one shown at a time */
-  .side{display:flex!important;position:absolute;inset:0;top:0;z-index:1;transform:translateX(-100%);transition:transform .22s ease;height:100%;border:none}
-  .ws{position:absolute;inset:0;top:0;z-index:1;transform:translateX(100%);transition:transform .22s ease}
-  .chat{position:absolute;inset:0;top:0;z-index:1;max-height:none!important;border:none!important;transform:translateX(100%);transition:transform .22s ease}
-  .side.mob-active,.ws.mob-active,.chat.mob-active{transform:translateX(0)!important}
-
-  /* Topbar compact */
+  /* ── Compact topbar: only logo + badge + user ── */
+  .topbar{padding:0 12px;gap:8px;height:44px;flex-wrap:nowrap;overflow:hidden}
   .topbar-tag,.topbar-sep{display:none}
-  .topbar{padding:0 12px;gap:8px}
-  .badge{font-size:9px;padding:3px 7px}
-  .tbtn{font-size:11px;padding:4px 9px}
+  .topbar .tbtn:not(#stop-btn){display:none}
+  .badge{font-size:10px;padding:3px 8px}
+  #stop-btn{font-size:11px;padding:4px 10px}
 
-  /* Workspace tabs: scrollable */
-  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:0;padding:0 4px}
+  /* ── Layout container: block, no longer a grid ── */
+  .layout{display:block!important;flex:1;min-height:0}
+
+  /* ── Panels: fixed full-screen ── */
+  .side,.ws,.chat{
+    position:fixed!important;
+    /* topbar 44px + border 1px + prog 2px = 47px */
+    top:47px;left:0;right:0;bottom:54px;
+    z-index:300;
+    display:none!important;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  .side.mob-active,.ws.mob-active,.chat.mob-active{
+    display:flex!important;
+  }
+
+  /* Panel backgrounds — override desktop styles */
+  .side{background:var(--surface);border:none!important;max-height:none!important}
+  .ws{background:var(--bg);flex:none!important}
+  .chat{background:var(--surface);border:none!important;max-height:none!important;flex:none!important}
+
+  /* ── Sidebar internals ── */
+  .side-h{flex-shrink:0}
+  .side-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .side-status{flex-shrink:0}
+
+  /* ── Workspace internals ── */
+  .tabs{flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:0;padding:0 4px;height:40px}
   .tabs::-webkit-scrollbar{display:none}
-  .tab{flex-shrink:0;padding:5px 10px;font-size:11px}
+  .tab{flex-shrink:0;padding:6px 12px;font-size:12px}
+  .ws-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 
-  /* Auth modal: full-width on small screens, scrollable */
+  /* ── Chat internals ── */
+  .chat-h{flex-shrink:0}
+  .chat-msgs{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .comp{flex-shrink:0}
+  .comp-send{width:44px;height:44px}
+  .comp-in{font-size:16px}/* prevent iOS auto-zoom */
+
+  /* ── Dropzone: compact ── */
+  .dz{padding:14px 10px;margin:8px 8px 4px}
+
+  /* ── Auth modal: bottom sheet ── */
   .auth-overlay{align-items:flex-end;padding:0}
   .auth-card{border-radius:20px 20px 0 0;max-width:100%;width:100%;max-height:92vh;overflow-y:auto;padding:24px 20px 32px}
 
-  /* Chat composer: bigger tap target */
-  .comp-send{width:44px;height:44px}
-  .comp-in{font-size:16px}/* prevent iOS zoom on focus */
-
-  /* Prevent body scroll bleed */
-  .layout{overflow:hidden;position:relative}
+  /* ── Onboarding modal: bottom sheet ── */
+  .onboard-overlay{align-items:flex-end;padding:0}
+  .onboard-card{border-radius:16px 16px 0 0;max-width:100%;width:100%;padding:28px 24px 36px}
 }
 
 /* ── SIDEBAR ── */
@@ -230,6 +267,7 @@ input[type=file]{display:none}
 .we-n{font-size:56px;opacity:.06;font-family:var(--mono);font-weight:900}
 .we-t{font-size:15px;font-weight:600;color:var(--text-2)}
 .we-s{font-size:13px;color:var(--text-3);max-width:340px;line-height:1.7}
+.we-sample{margin-top:4px;background:none;border:1px solid var(--border-2);color:var(--text-3);font-size:12px;font-family:var(--sans);padding:6px 14px;border-radius:var(--r);cursor:pointer;transition:all var(--t)}.we-sample:hover{border-color:var(--border);color:var(--text-2);background:var(--surface-2)}
 
 /* Data preview table */
 .dp{padding:16px;overflow-x:auto;max-width:100%}
@@ -351,13 +389,13 @@ input[type=file]{display:none}
 .logs{padding:12px;font-family:var(--mono);font-size:11px;color:var(--text-3);line-height:1.8;white-space:pre-wrap;overflow-y:auto}
 
 /* ── CHAT ── */
-.chat{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);min-height:0}
+.chat{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);min-height:0;overflow:hidden}
 .chat-h{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
 .chat-h h3{font-size:13px;font-weight:700}
 .chat-dot{width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-left:auto;transition:background .3s}
 .chat-dot.on{background:var(--accent);animation:pulse 1.5s infinite}
 .chat-dot.ok{background:var(--accent)}
-.chat-msgs{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:6px}
+.chat-msgs{flex:1;min-height:0;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:6px}
 
 .cm{padding:10px 14px;border-radius:var(--rl);font-size:13px;line-height:1.65;animation:si .2s ease;max-width:92%}
 .cm.ai{background:var(--surface-2);border:1px solid var(--border);align-self:flex-start}
@@ -406,10 +444,22 @@ input[type=file]{display:none}
 /* Monaco editor container */
 #monaco-wrap{width:100%;height:100%;min-height:300px}
 
+/* ── ONBOARDING MODAL ── */
+.onboard-overlay{position:fixed;inset:0;background:rgba(5,5,10,.7);backdrop-filter:blur(20px);z-index:8500;display:flex;align-items:center;justify-content:center;padding:20px}
+.onboard-card{background:#0e0e10;border:1px solid #232326;border-radius:16px;padding:40px 36px 32px;width:100%;max-width:400px}
+.onboard-logo{display:flex;align-items:center;gap:8px;margin-bottom:32px}
+.onboard-logo-text{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:-.3px;color:#fafafa}
+.onboard-headline{font-size:22px;font-weight:700;letter-spacing:-.4px;line-height:1.3;color:#fafafa;margin-bottom:10px}
+.onboard-sub{font-size:13px;color:#52525b;line-height:1.6;margin-bottom:32px}
+.onboard-try-btn{display:block;width:100%;padding:12px 20px;background:#fafafa;border:none;border-radius:8px;color:#09090b;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;letter-spacing:-.1px;transition:opacity .15s;text-align:center}
+.onboard-try-btn:hover{opacity:.88}
+.onboard-skip{margin-top:14px;text-align:center;font-size:12px;color:#3f3f46;cursor:pointer;letter-spacing:.1px}.onboard-skip:hover{color:#71717a}
+.dz-sample-link{display:block;text-align:center;margin-top:8px;font-size:11px;color:#6366f1;cursor:pointer}.dz-sample-link:hover{color:#a5b4fc}
 /* ── AUTH MODAL ── */
 .auth-overlay{position:fixed;inset:0;background:rgba(5,5,10,.95);backdrop-filter:blur(16px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}
 .auth-card{background:#111113;border:1px solid #27272a;border-radius:20px;padding:32px 32px 24px;width:100%;max-width:400px}
-.auth-logo{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;letter-spacing:-.5px;margin-bottom:4px;text-align:center}.auth-logo b{color:#6366f1}
+.auth-logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:4px}
+.auth-logo-text{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;letter-spacing:-.5px}
 .auth-tagline{font-size:12px;color:#52525b;text-align:center;margin-bottom:24px}
 /* Tabs */
 .auth-tabs{display:flex;gap:0;background:#18181b;border:1px solid #27272a;border-radius:9px;padding:3px;margin-bottom:24px}
@@ -586,6 +636,12 @@ input[type=file]{display:none}
 .fi-val{font-size:10px;font-family:var(--mono);color:var(--text-3);width:60px;text-align:right;flex-shrink:0}
 .pdp-chart{margin-top:8px}
 .pdp-chart svg{width:100%;display:block}
+/* ── SHAP BEESWARM ── */
+.shap-beeswarm{overflow-x:auto;margin-top:4px}
+.shap-beeswarm svg{display:block;min-width:320px;width:100%}
+.shap-method-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.3);color:#a78bfa;font-size:10px;font-weight:700;border-radius:4px;padding:2px 7px;letter-spacing:.04em;text-transform:uppercase}
+.shap-legend{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3);margin-top:8px}
+.shap-legend-grad{width:60px;height:6px;border-radius:3px;background:linear-gradient(to right,#3b82f6,#e2e8f0,#ef4444)}
 
 /* ── SHARE BUTTON ── */
 .share-btn{padding:8px 14px;font-size:12px;font-weight:600;border-radius:var(--r);border:1px solid rgba(167,139,250,.3);background:rgba(167,139,250,.08);color:var(--purple);cursor:pointer;transition:all var(--t);display:inline-flex;align-items:center;gap:6px}
@@ -711,11 +767,46 @@ input[type=file]{display:none}
   </div>
 </div>
 
+<!-- ONBOARDING MODAL -->
+<div class="onboard-overlay" id="onboard-overlay" style="display:none">
+  <div class="onboard-card">
+    <div class="onboard-logo">
+      <svg width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated;flex-shrink:0">
+        <rect width="32" height="32" rx="6" fill="#18181b"/>
+        <rect x="6" y="4" width="3" height="3" fill="#6366f1"/><rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="12" width="3" height="3" fill="#6366f1"/><rect x="6" y="16" width="3" height="3" fill="#6366f1"/><rect x="6" y="20" width="3" height="3" fill="#6366f1"/><rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
+        <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/><rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/><rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="16" width="3" height="3" fill="#a78bfa"/><rect x="26" y="20" width="3" height="3" fill="#a78bfa"/><rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
+      </svg>
+      <span class="onboard-logo-text">19Labs</span>
+    </div>
+    <div class="onboard-headline">Drop a dataset.<br>Get a trained model.</div>
+    <div class="onboard-sub">Upload CSV, describe your goal — the rest is automatic. Or start with a sample.</div>
+    <button class="onboard-try-btn" onclick="loadSampleDataset()">Try the Titanic dataset</button>
+    <div class="onboard-skip" onclick="closeOnboarding()">Upload my own →</div>
+  </div>
+</div>
+
 <!-- AUTH MODAL -->
 <div class="auth-overlay" id="auth-overlay" style="display:none">
   <div class="auth-card">
-    <div class="auth-logo"><b>19</b>Labs</div>
-    <div class="auth-tagline">Autonomous ML Research</div>
+    <div class="auth-logo">
+      <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated;flex-shrink:0">
+        <rect width="32" height="32" rx="6" fill="#18181b"/>
+        <rect x="6" y="4" width="3" height="3" fill="#6366f1"/>
+        <rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="12" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="16" width="3" height="3" fill="#6366f1"/>
+        <rect x="6" y="20" width="3" height="3" fill="#6366f1"/>
+        <rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
+        <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/>
+        <rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/>
+        <rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/>
+        <rect x="26" y="16" width="3" height="3" fill="#a78bfa"/>
+        <rect x="26" y="20" width="3" height="3" fill="#a78bfa"/>
+        <rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
+      </svg>
+      <span class="auth-logo-text">Labs</span>
+    </div>
+    <div class="auth-tagline">Auto-ML Research</div>
 
     <div id="auth-stage-providers">
       <!-- Primary: OAuth buttons -->
@@ -838,9 +929,28 @@ input[type=file]{display:none}
 
 <!-- TOPBAR -->
 <div class="topbar" style="position:relative">
-  <div class="logo"><b>19</b>Labs</div>
+  <div class="logo">
+    <svg class="logo-mark" width="26" height="26" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="6" fill="#18181b"/>
+      <!-- "1": indigo -->
+      <rect x="6" y="4" width="3" height="3" fill="#6366f1"/>
+      <rect x="2" y="8" width="3" height="3" fill="#6366f1"/><rect x="6" y="8" width="3" height="3" fill="#6366f1"/>
+      <rect x="6" y="12" width="3" height="3" fill="#6366f1"/>
+      <rect x="6" y="16" width="3" height="3" fill="#6366f1"/>
+      <rect x="6" y="20" width="3" height="3" fill="#6366f1"/>
+      <rect x="2" y="24" width="3" height="3" fill="#6366f1"/><rect x="6" y="24" width="3" height="3" fill="#6366f1"/><rect x="10" y="24" width="3" height="3" fill="#6366f1"/>
+      <!-- "9": purple -->
+      <rect x="22" y="4" width="3" height="3" fill="#a78bfa"/><rect x="26" y="4" width="3" height="3" fill="#a78bfa"/>
+      <rect x="18" y="8" width="3" height="3" fill="#a78bfa"/><rect x="26" y="8" width="3" height="3" fill="#a78bfa"/>
+      <rect x="22" y="12" width="3" height="3" fill="#a78bfa"/><rect x="26" y="12" width="3" height="3" fill="#a78bfa"/>
+      <rect x="26" y="16" width="3" height="3" fill="#a78bfa"/>
+      <rect x="26" y="20" width="3" height="3" fill="#a78bfa"/>
+      <rect x="22" y="24" width="3" height="3" fill="#a78bfa"/><rect x="26" y="24" width="3" height="3" fill="#a78bfa"/>
+    </svg>
+    <span class="logo-text">Labs</span>
+  </div>
   <div class="topbar-sep"></div>
-  <div class="topbar-tag">Autonomous ML Research</div>
+  <div class="topbar-tag">Auto-ML Research</div>
   <div class="topbar-r">
     <button class="stop-btn" id="stop-btn" style="display:none" onclick="cancelRun()" data-tip="Stop current run">Stop</button>
     <div class="badge" id="badge">IDLE</div>
@@ -882,6 +992,7 @@ input[type=file]{display:none}
         <input class="url-in" id="url-in" placeholder="Paste URL or Google Sheets link..." onkeydown="if(event.key==='Enter')fetchFromURL()">
         <button class="url-btn" onclick="fetchFromURL()">Fetch</button>
       </div>
+      <a class="dz-sample-link" onclick="loadSampleDataset()">or try the Titanic sample dataset →</a>
       <div id="multi-ds-panel"></div>
       <div id="file-list"></div>
       <div id="run-history"></div>
@@ -930,6 +1041,7 @@ input[type=file]{display:none}
         <div class="we-n">19</div>
         <div class="we-t">Drop a dataset to begin</div>
         <div class="we-s">Upload a dataset (CSV, Excel, JSON), describe your goal, and the AI handles everything — profiling, model selection, training, evaluation, and deployment.</div>
+        <button class="we-sample" onclick="loadSampleDataset()">Try the Titanic dataset →</button>
       </div>
       <div id="p-data" class="dp" style="display:none"></div>
       <div id="p-code" style="display:none;height:100%;flex-direction:column">
@@ -1018,6 +1130,12 @@ input[type=file]{display:none}
 </div>
 
 <script>
+// ── Desktop app detection ──────────────────
+// window.desktop is exposed by Electron preload.js
+if(window.desktop?.isDesktop && window.desktop?.platform==='darwin'){
+  document.body.classList.add('desktop-mac');
+}
+
 // ═══════════════════════════════════════════
 // MOBILE NAV
 // ═══════════════════════════════════════════
@@ -1129,11 +1247,10 @@ function _useTrialSlot(){
 function _updateTrialBtn(){
   const btn=document.getElementById('trial-btn');
   if(!btn)return;
-  const rem=_trialRemaining();
-  if(_isTrialMode){
-    btn.textContent=rem>0?`Test it (${rem} left)`:'Sign up to continue';
+  if(!_authUser){
+    btn.textContent='Sign In';
     btn.style.display='inline-block';
-    btn.onclick=rem>0?null:showAuthModal;
+    btn.onclick=showAuthModal;
   } else {
     btn.style.display='none';
   }
@@ -1141,12 +1258,6 @@ function _updateTrialBtn(){
 function startTrial(){
   _isTrialMode=true;
   localStorage.setItem('19labs_trial_started','1');
-  // If server has Bedrock, set it as default so trial runs work without an API key
-  if(_serverConfig.has_bedrock){
-    C.provider='bedrock';
-    localStorage.setItem('19labs_provider','bedrock');
-    spUI('bedrock');
-  }
   hideAuthModal();
   _updateTrialBtn();
 }
@@ -1193,7 +1304,8 @@ async function initAuth(){
   if(_isTrialMode&&_trialRemaining()>0){
     _updateTrialBtn();return;
   }
-  // No session — show the auth modal
+  // No session — show sign-in button and auth modal
+  _updateTrialBtn();
   showAuthModal();
 }
 
@@ -1209,6 +1321,9 @@ async function _refreshTokenSilently(){
 }
 
 function showAuthModal(){
+  // Hide onboarding if it's visible — auth takes priority
+  const ob=document.getElementById('onboard-overlay');
+  if(ob)ob.style.display='none';
   document.getElementById('auth-overlay').style.display='flex';
   showAuthStage('providers');
   switchAuthTab('signin');
@@ -1819,6 +1934,7 @@ async function send(){
   const inp=document.getElementById('cin');
   const text=(inp.value||'').trim();if(!text)return;
   inp.value='';inp.style.height='auto';
+  if(window.innerWidth<=767)setMobPanel('chat');
   chat('user',text);
   const lo=text.toLowerCase();
 
@@ -2166,20 +2282,15 @@ async function launchRun(){
   if(S.running||!S.file)return;
   if(!S.analyzed){chat('ai','Let me analyze first...');await runDiscover(S.hint||'');return}
   if(C.demo){await runPreview();return}
-  // Trial mode gate
-  if(_isTrialMode){
-    if(_trialRemaining()<=0){
-      chat('ai','You\'ve used all 3 free experiments. Sign up to keep going — it\'s free!');
+  // Auth gate — require login or own API key
+  if(!_authUser){
+    if(!C.key)C.key=gk(C.provider);
+    if(!C.key){
+      chat('ai','Sign in to run experiments — or add your own API key in Settings.');
       showAuthModal();return;
     }
-    _useTrialSlot();
-    if(_trialRemaining()===0) chat('sys','Last free experiment. Sign up to run unlimited experiments.');
   }
   if(!C.key)C.key=gk(C.provider);
-  // If no key but server has Bedrock for trial — server handles it, proceed
-  if(!C.key&&!_serverConfig.has_bedrock){
-    try{const pr=await apiFetch(`${BASE}/api/provider-status`);if(pr.ok){const pj=await pr.json();if(!pj.server_key_available&&!pj.cached_key_available){chat('ai','Need an API key to run experiments. Add one in Settings or sign in.');showKeyPrompt();return}}}catch(_){}
-  }
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
   setBadge('RUNNING','run');setProg(5);
@@ -3480,19 +3591,32 @@ async function loadExplainability(){
     const j=await r.json();
     if(!j.ok){el.innerHTML=`<div class="explain-card"><h3>Explainability</h3><p style="color:var(--text-3);font-size:12px">${esc(j.error||'Could not explain this model')}</p></div>`;return}
     let h='';
-    // Feature importance
+    const methodBadge=`<span class="shap-method-badge">${esc(j.method)}</span>`;
+    // SHAP Beeswarm (if SHAP was available)
+    if(j.shap_beeswarm){
+      h+=`<div class="explain-card"><h3>SHAP Summary ${methodBadge} <span style="font-weight:400;color:var(--text-3);font-size:11px">${j.model_type} · ${j.shap_beeswarm.features.length} features · ${j.shap_beeswarm.shap_values[0]?.length||0} samples</span></h3>`;
+      h+=renderSHAPBeeswarm(j.shap_beeswarm);
+      h+=`<div class="shap-legend"><div class="shap-legend-grad"></div><span>Feature value: Low → High</span></div>`;
+      h+=`</div>`;
+    }
+    // Feature importance bar chart
     if(j.feature_importance&&j.feature_importance.length){
       const maxImp=Math.max(...j.feature_importance.map(f=>Math.abs(f.importance)));
-      h+=`<div class="explain-card"><h3>Feature Importance <span style="font-weight:400;color:var(--text-3);font-size:11px">(${esc(j.method)} · ${j.model_type})</span></h3>`;
+      h+=`<div class="explain-card"><h3>Feature Importance ${j.method==='shap'?'':methodBadge} <span style="font-weight:400;color:var(--text-3);font-size:11px">${j.model_type}</span></h3>`;
       j.feature_importance.forEach(f=>{
         const pct=maxImp>0?(Math.abs(f.importance)/maxImp*100):0;
         h+=`<div class="fi-bar"><div class="fi-name" title="${esc(f.feature)}">${esc(f.feature)}</div><div class="fi-track"><div class="fi-fill" style="width:${pct}%"></div></div><div class="fi-val">${f.importance.toFixed(4)}</div></div>`;
       });
       h+=`</div>`;
     }
+    // SHAP artifact image (if engine.py generated one)
+    if(S.runId&&S.artifacts&&S.artifacts.shap_png){
+      const imgUrl=`${BASE}/api/run/${S.runId}/artifact/shap_png`;
+      h+=`<div class="explain-card"><h3>SHAP Plot <span style="font-weight:400;color:var(--text-3);font-size:11px">generated by engine</span></h3><img src="${imgUrl}" style="width:100%;border-radius:6px;display:block" alt="SHAP plot" loading="lazy"></div>`;
+    }
     // Partial dependence plots
     if(j.partial_dependence&&Object.keys(j.partial_dependence).length){
-      h+=`<div class="explain-card"><h3>Partial Dependence</h3>`;
+      h+=`<div class="explain-card"><h3>Partial Dependence <span style="font-weight:400;color:var(--text-3);font-size:11px">top 3 features</span></h3>`;
       for(const[feat,data]of Object.entries(j.partial_dependence)){
         h+=`<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px">${esc(feat)}</div>`;
         h+=renderPDPChart(feat,data);
@@ -3536,6 +3660,65 @@ function renderPDPChart(feat,data){
   }
   svg+=`</svg>`;
   return`<div class="pdp-chart">${svg}</div>`;
+}
+function renderSHAPBeeswarm(bs){
+  // bs = {features, shap_values[feat_i][sample_i], feature_values[feat_i][sample_i]}
+  const feats=bs.features||[];const nFeats=feats.length;if(!nFeats)return'';
+  const ROW=22,PL=130,PR=16,PT=14,PB=26;
+  const W=560,H=PT+nFeats*ROW+PB;
+  const allShap=bs.shap_values.flat();
+  const absMax=Math.max(...allShap.map(Math.abs),0.0001);
+  const xScale=v=>PL+((v+absMax)/(2*absMax))*(W-PL-PR);
+  const yRow=i=>PT+i*ROW+ROW*0.5;
+  // Color: blue (low feat val) → red (high feat val)
+  function dotColor(norm){
+    // norm 0→1; blue at 0, red at 1, white at .5
+    const r=norm>0.5?Math.round(200+(norm-0.5)*2*55):Math.round(59+(norm)*2*(200-59));
+    const g=norm>0.5?Math.round(130-(norm-0.5)*2*130):Math.round(130+norm*2*(130-130));
+    const b=norm>0.5?Math.round(246-(norm-0.5)*2*(246-59)):Math.round(59+norm*2*(246-59));
+    // Simplified: interpolate blue(59,130,246)→white(200,200,200)→red(239,68,68)
+    let nr,ng,nb;
+    if(norm<0.5){const t=norm*2;nr=Math.round(59+t*(220-59));ng=Math.round(130+t*(70));nb=Math.round(246+t*(200-246));}
+    else{const t=(norm-0.5)*2;nr=Math.round(220+t*(239-220));ng=Math.round(200+t*(68-200));nb=Math.round(200+t*(68-200));}
+    return`rgb(${nr},${ng},${nb})`;
+  }
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="font-family:inherit">`;
+  // Zero line
+  const x0=xScale(0);
+  svg+=`<line x1="${x0}" y1="${PT-4}" x2="${x0}" y2="${H-PB}" stroke="#3f3f46" stroke-width="1"/>`;
+  svg+=`<text x="${x0}" y="${H-PB+10}" font-size="7" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace">0</text>`;
+  // Axis labels
+  const ticks=[-absMax,-absMax*0.5,absMax*0.5,absMax];
+  ticks.forEach(t=>{
+    const tx=xScale(t);
+    svg+=`<line x1="${tx}" y1="${PT-4}" x2="${tx}" y2="${H-PB}" stroke="#27272a" stroke-width="0.5" stroke-dasharray="2,2"/>`;
+    svg+=`<text x="${tx}" y="${H-PB+10}" font-size="7" fill="#52525b" text-anchor="middle" font-family="JetBrains Mono,monospace">${t.toFixed(3)}</text>`;
+  });
+  // Rows: feature name + dots
+  feats.forEach((feat,fi)=>{
+    const cy=yRow(fi);
+    // Feature label
+    svg+=`<text x="${PL-6}" y="${cy+3}" font-size="10" fill="#a1a1aa" text-anchor="end" font-family="sans-serif" clip-path="url(#cp)">${esc(feat.length>18?feat.slice(0,16)+'…':feat)}</text>`;
+    // Jitter dots
+    const shapRow=bs.shap_values[fi]||[];
+    const featValRow=bs.feature_values[fi]||[];
+    // Group by x-bin to jitter y
+    const bins={};
+    shapRow.forEach((sv,si)=>{
+      const bx=Math.round(xScale(sv)*2);
+      bins[bx]=(bins[bx]||0)+1;
+      const jitter=(bins[bx]-1)*2.2;
+      const dotY=cy+(jitter%2===0?1:-1)*Math.ceil(jitter/2)*2.2;
+      const col=dotColor(featValRow[si]||0);
+      svg+=`<circle cx="${xScale(sv).toFixed(1)}" cy="${Math.max(cy-ROW*0.4,Math.min(cy+ROW*0.4,dotY)).toFixed(1)}" r="2.4" fill="${col}" opacity="0.85"/>`;
+    });
+    // Row separator
+    if(fi<nFeats-1)svg+=`<line x1="${PL}" y1="${cy+ROW*0.5}" x2="${W-PR}" y2="${cy+ROW*0.5}" stroke="#27272a" stroke-width="0.4"/>`;
+  });
+  // X axis label
+  svg+=`<text x="${PL+(W-PL-PR)/2}" y="${H-2}" font-size="9" fill="#71717a" text-anchor="middle" font-family="sans-serif">SHAP value (impact on model output)</text>`;
+  svg+=`</svg>`;
+  return`<div class="shap-beeswarm">${svg}</div>`;
 }
 
 // ═══════════════════════════════════════════
@@ -3733,6 +3916,8 @@ async function handleFile(f,preloadedText){
   } else {
     msg+=`<br><br>What would you like to do with this data?`;
   }
+  // On mobile: show workspace so user sees data preview, then switch to chat for the AI message
+  if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),600);}
   chat('ai',msg);
   autoDiscover();
 }
@@ -3749,7 +3934,144 @@ initMonaco();
 ['p-exp','p-art','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
 // Render persisted run history immediately so sidebar isn't empty on reload
 renderRunHistory();
-_loadServerConfig().then(()=>initAuth());
+_loadServerConfig().then(()=>initAuth().then(()=>{
+  // Show onboarding on first visit (no dataset loaded, no prior run, not already in auth flow)
+  const authVisible=document.getElementById('auth-overlay')?.style.display!=='none';
+  if(!S.csv&&!S.runId&&!localStorage.getItem('19labs_onboarded')&&!authVisible){
+    setTimeout(showOnboarding,600);
+  }
+}));
+
+// ═══════════════════════════════════════════
+// ONBOARDING MODAL + SAMPLE DATASET
+// ═══════════════════════════════════════════
+function showOnboarding(){
+  const el=document.getElementById('onboard-overlay');
+  if(el)el.style.display='flex';
+}
+function closeOnboarding(){
+  const el=document.getElementById('onboard-overlay');
+  if(el)el.style.display='none';
+  localStorage.setItem('19labs_onboarded','1');
+}
+
+// Titanic dataset (100 representative rows)
+const TITANIC_CSV=`PassengerId,Survived,Pclass,Name,Sex,Age,SibSp,Parch,Ticket,Fare,Cabin,Embarked
+1,0,3,"Braund, Mr. Owen Harris",male,22,1,0,A/5 21171,7.25,,S
+2,1,1,"Cumings, Mrs. John Bradley (Florence Briggs Thayer)",female,38,1,0,PC 17599,71.2833,C85,C
+3,1,3,"Heikkinen, Miss. Laina",female,26,0,0,STON/O2. 3101282,7.925,,S
+4,1,1,"Futrelle, Mrs. Jacques Heath (Lily May Peel)",female,35,1,0,113803,53.1,C123,S
+5,0,3,"Allen, Mr. William Henry",male,35,0,0,373450,8.05,,S
+6,0,3,"Moran, Mr. James",male,,0,0,330877,8.4583,,Q
+7,0,1,"McCarthy, Mr. Timothy J",male,54,0,0,17463,51.8625,E46,S
+8,0,3,"Palsson, Master. Gosta Leonard",male,2,3,1,349909,21.075,,S
+9,1,3,"Johnson, Mrs. Oscar W (Elisabeth Vilhelmina Berg)",female,27,0,2,347742,11.1333,,S
+10,1,2,"Nasser, Mrs. Nicholas (Adele Achem)",female,14,1,0,237736,30.0708,,C
+11,1,3,"Sandstrom, Miss. Marguerite Rut",female,4,1,1,PP 9549,16.7,G6,S
+12,1,1,"Bonnell, Miss. Elizabeth",female,58,0,0,113783,26.55,C103,S
+13,0,3,"Saundercock, Mr. William Henry",male,20,0,0,A/5. 2151,8.05,,S
+14,0,3,"Andersson, Mr. Anders Johan",male,39,1,5,347082,31.275,,S
+15,0,3,"Vestrom, Miss. Hulda Amanda Adolfina",female,14,0,0,350406,7.8542,,S
+16,1,2,"Hewlett, Mrs. (Mary D Kingcome)",female,55,0,0,248706,16,,S
+17,0,3,"Rice, Master. Eugene",male,2,4,1,382652,29.125,,Q
+18,1,2,"Williams, Mr. Charles Eugene",male,,0,0,244373,13,,S
+19,0,3,"Vander Planke, Mrs. Julius (Emelia Maria Vandemoortele)",female,31,1,0,345763,18,,S
+20,1,3,"Masselmani, Mrs. Fatima",female,,0,0,2649,7.225,,C
+21,0,2,"Fynney, Mr. Joseph J",male,35,0,0,239865,26,,S
+22,1,2,"Beesley, Mr. Lawrence",male,34,0,0,248698,13,D56,S
+23,1,3,"McGowan, Miss. Anna 'Annie'",female,15,0,0,330923,8.0292,,Q
+24,1,1,"Sloper, Mr. William Thompson",male,28,0,0,113788,35.5,A6,S
+25,0,3,"Palsson, Miss. Torborg Danira",female,8,3,1,349909,21.075,,S
+26,1,3,"Asplund, Mrs. Carl Oscar (Selma Augusta Emilia Johansson)",female,38,1,5,347077,31.3875,,S
+27,0,3,"Emir, Mr. Farred Chehab",male,,0,0,2631,7.225,,C
+28,0,1,"Fortune, Mr. Charles Alexander",male,19,3,2,19950,263,C23 C25 C27,S
+29,1,3,"O'Dwyer, Miss. Ellen 'Nellie'",female,,0,0,330959,7.8792,,Q
+30,0,3,"Todoroff, Mr. Lalio",male,,0,0,349216,7.8958,,S
+31,0,1,"Uruchurtu, Don. Manuel E",male,40,0,0,PC 17601,27.7208,,C
+32,1,1,"Spencer, Mrs. William Augustus (Marie Eugenie)",female,,1,0,PC 17569,146.5208,B78,C
+33,1,3,"Glynn, Miss. Mary Agatha",female,,0,0,335677,7.75,,Q
+34,0,2,"Wheadon, Mr. Edward H",male,66,0,0,C.A. 24579,10.5,,S
+35,0,1,"Meyer, Mr. Edgar Joseph",male,28,1,0,PC 17604,82.1708,,C
+36,0,1,"Holverson, Mr. Alexander Oskar",male,42,1,0,113789,52,,S
+37,1,3,"Mamee, Mr. Hanna",male,,0,0,2677,7.2292,,C
+38,0,3,"Cann, Mr. Ernest Charles",male,21,0,0,A./5. 2152,8.05,,S
+39,0,3,"Vander Planke, Miss. Augusta Maria",female,18,2,0,345764,18,,S
+40,1,3,"Nicola-Yarred, Miss. Jamila",female,14,1,0,2651,11.2417,,C
+41,0,3,"Ahlin, Mrs. Johan (Johanna Persdotter Larsson)",female,40,1,0,7546,9.475,,S
+42,0,2,"Turpin, Mrs. William John Robert (Dorothy Ann Wonnacott)",female,27,1,0,11668,21,,S
+43,0,3,"Kraeff, Mr. Theodor",male,,0,0,349253,7.8958,,C
+44,1,2,"Laroche, Miss. Simonne Marie Anne Andree",female,3,1,2,SC/Paris 2123,41.5792,,C
+45,1,3,"Devaney, Miss. Margaret Delia",female,19,0,0,330958,7.8792,,Q
+46,0,3,"Rogers, Mr. William John",male,,0,0,S.C./A.S. 3109,8.05,,S
+47,0,3,"Lennon, Mr. Denis",male,,1,0,370371,15.5,,Q
+48,1,3,"O'Driscoll, Miss. Bridget",female,,0,0,14311,7.75,,Q
+49,0,3,"Samaan, Mr. Youssef",male,,2,0,2662,21.6792,,C
+50,0,3,"Arnold-Franchi, Mrs. Josef (Josefine Franchi)",female,18,1,0,349237,17.8,,S
+51,0,3,"Panula, Master. Juha Niilo",male,7,4,1,3101295,39.6875,,S
+52,0,3,"Nosworthy, Mr. Richard Cater",male,21,0,0,A/4. 39886,7.8,,S
+53,1,1,"Harper, Mrs. Henry Sleeper (Myna Haxton)",female,49,1,0,PC 17572,76.7292,D33,C
+54,1,2,"Faunthorpe, Mrs. Lizzie (Elizabeth Anne Wilkinson)",female,29,1,0,2926,26,,S
+55,0,1,"Ostby, Mr. Engelhart Cornelius",male,65,0,1,113509,61.9792,B30,C
+56,1,1,"Woolner, Mr. Hugh",male,,0,0,19947,35.5,C52,S
+57,1,2,"Rugg, Miss. Emily",female,21,0,0,C.A. 31026,10.5,,S
+58,0,3,"Novel, Mr. Mansouer",male,28,0,0,2697,7.2292,,C
+59,1,2,"West, Miss. Constance Mirium",female,5,1,2,C.A. 34651,27.75,,S
+60,0,3,"Goodwin, Master. William Frederick",male,11,5,2,CA 2144,46.9,,S
+61,0,1,"Simonius-Blumer, Col. Oberst Alfons",male,56,0,0,13213,35.5,A26,C
+62,1,1,"Icard, Miss. Amelie",female,38,0,0,113572,80,B28,S
+63,0,1,"Harris, Mr. Henry Birkhardt",male,45,1,0,36973,83.475,C83,S
+64,0,3,"Skoog, Master. Harald",male,4,3,2,347088,27.9,,S
+65,0,1,"Stewart, Mr. Albert A",male,,0,0,PC 17605,27.7208,,C
+66,1,3,"Moubarek, Master. Gerios",male,,1,1,2661,15.2458,,C
+67,1,2,"Nye, Mrs. (Mary Dow)",female,29,0,0,C.A. 29395,10.5,F33,S
+68,0,1,"Crease, Mr. Ernest James",male,54,0,0,28403,14,,S
+69,1,3,"Andersson, Miss. Erna Alexandra",female,17,4,2,3101281,7.925,,S
+70,0,3,"Kink, Mr. Vincenz",male,26,2,0,315151,8.6625,,S
+71,0,2,"Jenkin, Mr. Stephen Curnow",male,32,0,0,SC/PARIS 2131,15.05,,S
+72,0,3,"Goodwin, Miss. Lillian Amy",female,16,5,2,CA 2144,46.9,,S
+73,0,2,"Hood, Mr. Ambrose Jr",male,21,0,0,S.O.C. 14879,73.5,,S
+74,0,3,"Chronopoulos, Mr. Apostolos",male,26,1,0,2680,14.4542,,C
+75,1,3,"Bing, Mr. Lee",male,32,0,0,1601,56.4958,,S
+76,0,3,"Moen, Mr. Sigurd Hansen",male,25,0,0,348123,7.65,F G73,S
+77,0,3,"Staneff, Mr. Ivan",male,,0,0,349208,7.8958,,S
+78,0,3,"Moutal, Mr. Rahamin Haim",male,,0,0,374746,8.05,,S
+79,1,2,"Caldwell, Mrs. Albert Francis (Sylvia Mae Harbaugh)",female,22,1,1,248738,29,,S
+80,1,3,"Maisner, Mr. Simon",male,,0,0,A/S 2816,8.05,,S
+81,0,3,"Petroff, Mr. Nedelio",male,19,0,0,349212,7.8958,,S
+82,0,3,"Slemen, Mr. Richard James",male,35,0,0,28206,10.5,,S
+83,1,3,"Asplund, Miss. Lillian Gertrud",female,5,4,2,347077,31.3875,,S
+84,0,1,"Pears, Mr. Thomas Clinton",male,29,1,0,113776,66.6,C2,S
+85,1,2,"Ilett, Miss. Bertha",female,17,0,0,SO/C 14885,10.5,,S
+86,0,3,"Backstrom, Mr. Karl Alfred",male,32,1,0,3101278,15.85,,S
+87,0,3,"Ford, Mr. William Neal",male,16,1,3,W./C. 6608,34.375,,S
+88,0,3,"Slocovski, Mr. Selman Francis",male,,0,0,SOTON/OQ 392086,8.05,,S
+89,1,1,"Fortune, Miss. Mabel Helen",female,23,3,2,19950,263,C23 C25 C27,S
+90,0,3,"Celotti, Mr. Francesco",male,24,0,0,343275,8.05,,S
+91,0,3,"Christmann, Mr. Emil",male,29,0,0,343276,8.05,,S
+92,0,3,"Andreasson, Mr. Paul Edvin",male,20,0,0,347466,7.8542,,S
+93,0,1,"Chaffee, Mr. Herbert Fuller",male,46,1,0,W.E.P. 5734,61.175,E31,S
+94,0,3,"Dean, Mr. Bertram Frank",male,26,1,2,C.A. 2315,20.575,,S
+95,0,3,"Coxon, Mr. Daniel",male,59,0,0,364500,7.25,,S
+96,0,3,"Shorney, Mr. Charles Joseph",male,,0,0,374910,8.05,,S
+97,0,1,"Goldschmidt, Mr. George B",male,71,0,0,PC 17754,34.6542,A5,C
+98,1,1,"Greenfield, Mrs. Leo David (Blanche Dickinson)",female,45,0,1,PC 17759,63.3583,D35 E24,C
+99,1,2,"Doling, Mrs. John T (Ada Julia Bone)",female,34,0,1,231919,23,,S
+100,0,2,"Kantor, Mr. Sinai",male,34,1,0,244367,26,,S`;
+
+async function loadSampleDataset(){
+  closeOnboarding();
+  toast('Loading Titanic dataset...','info',2000);
+  // Build a File-like object from the embedded CSV
+  const blob=new Blob([TITANIC_CSV],{type:'text/csv'});
+  const file=new File([blob],'titanic.csv',{type:'text/csv',lastModified:Date.now()});
+  await handleFile(file,TITANIC_CSV);
+  // Pre-fill goal
+  setTimeout(()=>{
+    const cin=document.getElementById('cin');
+    if(cin&&!cin.value)cin.value='Predict passenger survival. Target: Survived';
+    toast('Titanic dataset loaded! Hit Enter or click Send to start training.','ok',5000);
+  },400);
+}
 </script>
 </body>
 </html>
