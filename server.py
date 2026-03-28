@@ -141,6 +141,19 @@ def _init_db():
         error TEXT,
         result_json TEXT
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT DEFAULT '',
+        password_hash TEXT NOT NULL,
+        created REAL NOT NULL
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        created REAL NOT NULL,
+        expires REAL NOT NULL
+    )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS user_api_keys (
         user_id TEXT NOT NULL,
         provider TEXT NOT NULL,
@@ -151,57 +164,102 @@ def _init_db():
     conn.close()
 
 # ── AUTH HELPERS ──────────────────────────────────────────────
+# JWT secret strategy (priority order):
+#   1. JWT_SECRET env var (explicit override)
+#   2. Derived from API key env vars (deterministic, survives restarts with no extra config)
+#   3. Persisted in SQLite app_config (survives restarts when DB is on a persistent volume)
+#   4. Random (dev only — tokens invalidated on restart, warns loudly)
+def _get_or_create_jwt_secret() -> str:
+    import sys as _sys
+    for var in ("JWT_SECRET", "ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "OPENAI_API_KEY", "ACCESS_PASSWORD"):
+        val = os.environ.get(var, "").strip()
+        if val:
+            secret = hashlib.sha256(f"19labs-jwt-v1:{val}".encode()).hexdigest()
+            print(f"[auth] JWT secret derived from {var}", file=_sys.stderr, flush=True)
+            return secret
+    # Try to load/persist in DB
+    try:
+        conn = DBConn()
+        row = conn.execute("SELECT value FROM app_config WHERE key='jwt_secret'").fetchone()
+        if row and row[0]:
+            conn.close()
+            print("[auth] JWT secret loaded from database", file=_sys.stderr, flush=True)
+            return row[0]
+        secret = _secrets.token_hex(32)
+        conn.execute(
+            "INSERT INTO app_config (key, value) VALUES ('jwt_secret', ?) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (secret,))
+        conn.commit()
+        conn.close()
+        print("[auth] JWT secret generated and stored in database", file=_sys.stderr, flush=True)
+        return secret
+    except Exception:
+        pass
+    print("[auth] WARNING: no stable JWT secret source — tokens will be invalidated on restart", file=_sys.stderr, flush=True)
+    return _secrets.token_hex(32)
 
-def _verify_supabase_jwt(token: str) -> dict | None:
-    """Verify a Supabase-issued JWT using SUPABASE_JWT_SECRET."""
-    secret = os.environ.get("SUPABASE_JWT_SECRET", "").strip()
-    if not secret:
-        return None
+_JWT_SECRET = _get_or_create_jwt_secret()
+
+def _make_jwt(user_id: str, email: str, name: str) -> str:
+    h = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b'=').decode()
+    p = base64.urlsafe_b64encode(json.dumps({"sub": user_id, "email": email, "name": name, "exp": int(time.time()) + 365*24*3600}).encode()).rstrip(b'=').decode()
+    sig = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
+    return f"{h}.{p}.{sig}"
+
+def _verify_jwt(token: str) -> dict | None:
     try:
         parts = token.split('.')
         if len(parts) != 3:
             return None
         h, p, s = parts
-        pad = lambda x: x + '=' * (4 - len(x) % 4)
-        # Supabase JWT secret may be plain text or base64-encoded — try both
-        secret_bytes = secret.encode()
-        expected = base64.urlsafe_b64encode(
-            _hmac.new(secret_bytes, f"{h}.{p}".encode(), hashlib.sha256).digest()
-        ).rstrip(b'=').decode()
+        expected = base64.urlsafe_b64encode(_hmac.new(_JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
         if not _hmac.compare_digest(s, expected):
-            # Try decoding secret as base64
-            try:
-                secret_bytes = base64.b64decode(secret + '==')
-                expected = base64.urlsafe_b64encode(
-                    _hmac.new(secret_bytes, f"{h}.{p}".encode(), hashlib.sha256).digest()
-                ).rstrip(b'=').decode()
-                if not _hmac.compare_digest(s, expected):
-                    return None
-            except Exception:
-                return None
-        data = json.loads(base64.urlsafe_b64decode(pad(p)))
+            return None
+        data = json.loads(base64.urlsafe_b64decode(p + '=' * (4 - len(p) % 4)))
         if data.get('exp', 0) < time.time():
             return None
         return data
     except Exception:
         return None
 
+def _hash_pw(pw: str) -> str:
+    salt = _secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 260000)
+    return f"{salt}:{h.hex()}"
+
+def _verify_pw(pw: str, stored: str) -> bool:
+    try:
+        salt, h = stored.split(':', 1)
+        return hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 260000).hex() == h
+    except Exception:
+        return False
+
 def _get_user(token: str) -> dict | None:
     if not token:
         return None
-    data = _verify_supabase_jwt(token)
-    if not data:
+    # JWT first — stateless, survives container restarts
+    data = _verify_jwt(token)
+    if data:
+        return {"id": data["sub"], "email": data["email"], "name": data.get("name", "")}
+    # Fallback: DB session (for old tokens)
+    try:
+        conn = DBConn()
+        row = conn.execute(
+            "SELECT u.id, u.email, u.name FROM users u "
+            "JOIN user_sessions s ON u.id=s.user_id "
+            "WHERE s.token=? AND s.expires>?",
+            (token, time.time())
+        ).fetchone()
+        conn.close()
+        return {"id": row[0], "email": row[1], "name": row[2]} if row else None
+    except Exception:
         return None
-    meta = data.get('user_metadata') or {}
-    name = meta.get('full_name') or meta.get('name') or data.get('email', '').split('@')[0]
-    return {"id": data["sub"], "email": data.get("email", ""), "name": name}
 
 def _token_from_request(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     return auth.replace("Bearer ", "").strip()
 
 def _get_user_api_key(user_id: str, provider: str) -> str:
-    """Return the user's own stored API key only — never server credentials."""
     try:
         conn = DBConn()
         row = conn.execute(
@@ -213,17 +271,45 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
             return row[0]
     except Exception:
         pass
-    return ""
+    # Fallback: env vars (useful when Railway DB is fresh after redeploy)
+    if provider == "bedrock":
+        ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        if ak and sk:
+            return json.dumps({"access_key": ak, "secret_key": sk, "region": region})
+        return ""
+    _env_fallbacks = {
+        "claude": os.environ.get("ANTHROPIC_API_KEY", ""),
+        "openai": os.environ.get("OPENAI_API_KEY", ""),
+        "gemini": os.environ.get("GEMINI_API_KEY", ""),
+    }
+    return _env_fallbacks.get(provider, "")
 
 _init_db()
 
 def _save_run_to_db(run_id: str, run: dict):
-    """Persist run summary to DB."""
+    """Persist run summary (and full result JSON) to DB."""
     try:
         result = run.get("result") or {}
         best = result.get("best") or {}
         tu = result.get("token_usage") or {}
         diag = result.get("diagnostics") or {}
+        # Serialize result_json — strip CSV/binary blobs, cap at 4 MB
+        result_json_str = None
+        if result:
+            try:
+                serialized = json.dumps(result)
+                if len(serialized) <= 4 * 1024 * 1024:  # 4 MB cap
+                    result_json_str = serialized
+                else:
+                    # Strip large fields and try again
+                    slim = {k: v for k, v in result.items() if k not in ("plots", "csv_data")}
+                    slim_serialized = json.dumps(slim)
+                    if len(slim_serialized) <= 4 * 1024 * 1024:
+                        result_json_str = slim_serialized
+            except Exception:
+                pass
         conn = DBConn()
         conn.execute("""INSERT INTO runs
             (id, status, filename, provider, started, finished, hint, budget,
@@ -236,7 +322,7 @@ def _save_run_to_db(run_id: str, run: dict):
               best_metric_val=EXCLUDED.best_metric_val, total_experiments=EXCLUDED.total_experiments,
               token_input=EXCLUDED.token_input, token_output=EXCLUDED.token_output,
               token_calls=EXCLUDED.token_calls, yc_score=EXCLUDED.yc_score,
-              error=EXCLUDED.error""",
+              error=EXCLUDED.error, result_json=EXCLUDED.result_json""",
             (run_id, run.get("status", "done"),
              Path(run.get("csv", "")).name if run.get("csv") else "",
              run.get("provider", "claude"),
@@ -253,7 +339,7 @@ def _save_run_to_db(run_id: str, run: dict):
              tu.get("calls", 0),
              diag.get("yc_readiness_score"),
              run.get("error"),
-             None))  # Don't store full result_json for now (too large)
+             result_json_str))
         conn.commit()
         conn.close()
     except Exception:
@@ -282,16 +368,7 @@ CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 TRIAL_RUN_LIMIT = int(os.environ.get("TRIAL_RUN_LIMIT", "3"))
 
 def _server_has_bedrock() -> bool:
-    ak = os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID")
-    sk = os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
-    return bool(ak and sk)
-
-def _bedrock_creds() -> dict:
-    return {
-        "access_key": (os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID", "")).strip(),
-        "secret_key": (os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY", "")).strip(),
-        "region": (os.environ.get("BEDROCK_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")).strip(),
-    }
+    return bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
 
 def _trial_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For", "")
@@ -495,6 +572,8 @@ def _download_linux():
     return RedirectResponse(_gh_release_url(_APP_VERSION, f"19Labs-{_APP_VERSION}.AppImage"), status_code=302)
 
 # ── AUTH ENDPOINTS ────────────────────────────────────────────
+# In-memory CSRF state store for Google OAuth (short-lived)
+_OAUTH_STATES: dict[str, float] = {}
 
 def _validate_provider_key(provider: str, api_key: str) -> tuple[bool, str]:
     """Validate an API key by calling the provider. Returns (valid, display_name)."""
@@ -527,6 +606,257 @@ def _validate_provider_key(provider: str, api_key: str) -> tuple[bool, str]:
         return True, provider.title()
     return False, ""
 
+def _upsert_provider_user(user_id: str, email: str, name: str, provider: str, api_key: str):
+    """Create or update a user record and save their API key."""
+    conn = DBConn()
+    conn.execute(
+        "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+        "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
+        (user_id, email, name, "", time.time())
+    )
+    norm = "claude" if provider == "anthropic" else provider
+    conn.execute(
+        "INSERT INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?) "
+        "ON CONFLICT (user_id, provider) DO UPDATE SET api_key=EXCLUDED.api_key",
+        (user_id, norm, api_key)
+    )
+    conn.commit()
+    conn.close()
+
+@app.post("/auth/provider-login")
+async def provider_login(request: Request):
+    """Sign in / sign up using an AI provider API key. The key is the credential."""
+    data = await request.json()
+    provider = (data.get("provider") or "").strip().lower()
+    api_key = (data.get("api_key") or "").strip()
+    if provider not in ("claude", "anthropic", "openai", "gemini"):
+        raise HTTPException(400, "provider must be claude, openai, or gemini")
+    if not api_key:
+        raise HTTPException(400, "api_key is required")
+
+    valid, display = _validate_provider_key(provider, api_key)
+    if not valid:
+        raise HTTPException(401, "API key rejected by the provider. Check it and try again.")
+
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:20]
+    norm = "claude" if provider == "anthropic" else provider
+    user_id = f"{norm}:{key_hash}"
+    email = f"{key_hash[:10]}@{norm}.key"
+    name = display or norm.title()
+
+    _upsert_provider_user(user_id, email, name, norm, api_key)
+    token = _make_jwt(user_id, email, name)
+    return {"token": token, "user": {"id": user_id, "email": email, "name": name, "provider": norm}}
+
+@app.get("/auth/google")
+async def google_auth_start(request: Request):
+    """Redirect to Google OAuth. Requires GOOGLE_CLIENT_ID env var."""
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    if not client_id:
+        raise HTTPException(501, "Google sign-in is not configured on this server.")
+    state = _secrets.token_hex(16)
+    _OAUTH_STATES[state] = time.time()
+    # Clean up old states (>10 min)
+    old = [k for k, t in _OAUTH_STATES.items() if time.time() - t > 600]
+    for k in old:
+        del _OAUTH_STATES[k]
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = urllib.parse.quote(f"{base}/auth/google/callback", safe="")
+    scope = urllib.parse.quote("openid email profile", safe="")
+    url = (f"https://accounts.google.com/o/oauth2/v2/auth"
+           f"?client_id={client_id}&redirect_uri={redirect_uri}"
+           f"&response_type=code&scope={scope}&state={state}&prompt=select_account")
+    return RedirectResponse(url, status_code=302)
+
+@app.get("/auth/github")
+async def github_auth_start(request: Request):
+    """Redirect to GitHub OAuth. Requires GITHUB_CLIENT_ID env var."""
+    client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+    if not client_id:
+        raise HTTPException(501, "GitHub sign-in is not configured on this server.")
+    state = _secrets.token_hex(16)
+    _OAUTH_STATES[state] = time.time()
+    old = [k for k, t in _OAUTH_STATES.items() if time.time() - t > 600]
+    for k in old:
+        del _OAUTH_STATES[k]
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = urllib.parse.quote(f"{base}/auth/github/callback", safe="")
+    url = (f"https://github.com/login/oauth/authorize"
+           f"?client_id={client_id}&redirect_uri={redirect_uri}"
+           f"&scope=user:email&state={state}")
+    return RedirectResponse(url, status_code=302)
+
+@app.get("/auth/github/callback")
+async def github_auth_callback(code: str = "", state: str = "", error: str = "", request: Request = None):
+    """Handle GitHub OAuth callback."""
+    if error or not code:
+        return HTMLResponse("<script>window.location='/app?auth_error=cancelled'</script>")
+    if state not in _OAUTH_STATES:
+        return HTMLResponse("<script>window.location='/app?auth_error=invalid_state'</script>")
+    del _OAUTH_STATES[state]
+
+    client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "").strip()
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/auth/github/callback"
+
+    try:
+        # Exchange code → access token
+        token_data = urllib.parse.urlencode({
+            "code": code, "client_id": client_id, "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+        }).encode()
+        req = urllib.request.Request("https://github.com/login/oauth/access_token", data=token_data,
+                                     headers={"Content-Type": "application/x-www-form-urlencoded",
+                                              "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            token_resp = json.loads(r.read())
+
+        access_token = token_resp.get("access_token", "")
+        if not access_token:
+            raise ValueError(f"No access token returned: {token_resp}")
+
+        # Fetch user info
+        ui_req = urllib.request.Request("https://api.github.com/user",
+                                        headers={"Authorization": f"Bearer {access_token}",
+                                                 "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(ui_req, timeout=10) as r:
+            info = json.loads(r.read())
+
+        # GitHub may not expose email — fetch emails list
+        email = info.get("email") or ""
+        if not email:
+            em_req = urllib.request.Request("https://api.github.com/user/emails",
+                                            headers={"Authorization": f"Bearer {access_token}",
+                                                     "Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(em_req, timeout=10) as r:
+                emails = json.loads(r.read())
+            primary = next((e["email"] for e in emails if e.get("primary") and e.get("verified")), None)
+            email = primary or (emails[0]["email"] if emails else f"gh_{info['id']}@github.local")
+
+        name = info.get("name") or info.get("login") or email.split("@")[0]
+        user_id = f"github:{info['id']}"
+
+        conn = DBConn()
+        conn.execute(
+            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+            "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
+            (user_id, email, name, "", time.time()))
+        conn.commit()
+        conn.close()
+
+        token = _make_jwt(user_id, email, name)
+        safe_token = token.replace("'", "")
+        return HTMLResponse(
+            f"<script>localStorage.setItem('19labs_auth_token','{safe_token}');"
+            f"window.location.href='/app';</script>"
+        )
+    except Exception as e:
+        return HTMLResponse(f"<script>window.location='/app?auth_error={urllib.parse.quote(str(e))}'</script>")
+
+@app.get("/auth/google/callback")
+async def google_auth_callback(code: str = "", state: str = "", error: str = "", request: Request = None):
+    """Handle Google OAuth callback."""
+    if error or not code:
+        return HTMLResponse("<script>window.location='/app?auth_error=cancelled'</script>")
+    if state not in _OAUTH_STATES:
+        return HTMLResponse("<script>window.location='/app?auth_error=invalid_state'</script>")
+    del _OAUTH_STATES[state]
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/auth/google/callback"
+
+    try:
+        # Exchange code → tokens
+        token_data = urllib.parse.urlencode({
+            "code": code, "client_id": client_id, "client_secret": client_secret,
+            "redirect_uri": redirect_uri, "grant_type": "authorization_code"
+        }).encode()
+        req = urllib.request.Request("https://oauth2.googleapis.com/token", data=token_data,
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            tokens = json.loads(r.read())
+
+        # Fetch user info
+        ui_req = urllib.request.Request("https://www.googleapis.com/oauth2/v3/userinfo",
+                                        headers={"Authorization": f"Bearer {tokens['access_token']}"})
+        with urllib.request.urlopen(ui_req, timeout=10) as r:
+            info = json.loads(r.read())
+
+        email = info.get("email", "")
+        name = info.get("name", email.split("@")[0])
+        user_id = f"google:{info.get('sub', hashlib.sha256(email.encode()).hexdigest()[:16])}"
+
+        conn = DBConn()
+        conn.execute(
+            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+            "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
+            (user_id, email, name, "", time.time()))
+        conn.commit()
+        conn.close()
+
+        token = _make_jwt(user_id, email, name)
+        safe_token = token.replace("'", "")
+        return HTMLResponse(
+            f"<script>localStorage.setItem('19labs_auth_token','{safe_token}');"
+            f"window.location.href='/app';</script>"
+        )
+    except Exception as e:
+        return HTMLResponse(f"<script>window.location='/app?auth_error={urllib.parse.quote(str(e))}'</script>")
+
+def _email_user_id(email: str) -> str:
+    """Deterministic user ID from email — survives DB wipes."""
+    return "u:" + hashlib.sha256(email.lower().strip().encode()).hexdigest()[:24]
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    data = await request.json()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    name = (data.get("name", "") or email.split("@")[0]).strip()
+    if not email or "@" not in email:
+        raise HTTPException(400, "Invalid email address")
+    if len(password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    # Deterministic user_id — same email always maps to the same ID even after DB wipe
+    user_id = _email_user_id(email)
+    conn = DBConn()
+    row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
+    if row:
+        # Account exists — treat signup as login attempt (idempotent)
+        if _verify_pw(password, row[3]):
+            conn.close()
+            token = _make_jwt(row[0], row[1], row[2])
+            return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
+        conn.close()
+        raise HTTPException(409, "An account with this email already exists. Please sign in with your existing password.")
+    conn.execute("INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?)",
+                 (user_id, email, name, _hash_pw(password), time.time()))
+    conn.commit()
+    conn.close()
+    token = _make_jwt(user_id, email, name)
+    return {"token": token, "user": {"id": user_id, "email": email, "name": name}}
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    data = await request.json()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    if not email or not password:
+        raise HTTPException(400, "Email and password required")
+    user_id = _email_user_id(email)
+    conn = DBConn()
+    row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(401, "No account found with this email. If you had an account before, the server may have reset — please create a new account (your API keys are saved in your browser).")
+    if not _verify_pw(password, row[3]):
+        raise HTTPException(401, "Incorrect password. Please check and try again.")
+    token = _make_jwt(row[0], row[1], row[2])
+    return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
+
 @app.get("/auth/me")
 async def auth_me(request: Request):
     user = _get_user(_token_from_request(request))
@@ -534,15 +864,30 @@ async def auth_me(request: Request):
         raise HTTPException(401, "Not authenticated")
     return user
 
+@app.post("/auth/refresh")
+async def auth_refresh(request: Request):
+    """Issue a fresh token for a still-valid session (extends expiry)."""
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    token = _make_jwt(user["id"], user["email"], user.get("name", ""))
+    return {"token": token, "user": user}
+
 @app.post("/auth/logout")
-async def auth_logout():
+async def auth_logout(request: Request):
+    token = _token_from_request(request)
+    if token:
+        conn = DBConn()
+        conn.execute("DELETE FROM user_sessions WHERE token=?", (token,))
+        conn.commit()
+        conn.close()
     return {"ok": True}
 
 @app.get("/auth/keys")
 async def auth_get_keys(request: Request):
     user = _get_user(_token_from_request(request))
     if not user:
-        return {}  # Not authenticated — return empty, don't hard-fail
+        raise HTTPException(401, "Not authenticated")
     conn = DBConn()
     rows = conn.execute(
         "SELECT provider, api_key FROM user_api_keys WHERE user_id=?", (user["id"],)
@@ -558,7 +903,7 @@ async def auth_get_keys(request: Request):
 async def auth_save_keys(request: Request):
     user = _get_user(_token_from_request(request))
     if not user:
-        return {"ok": True}  # Silently ignore — JWT invalid, can't save keys
+        raise HTTPException(401, "Not authenticated")
     data = await request.json()
     conn = DBConn()
     for provider, key in data.items():
@@ -725,18 +1070,10 @@ def _profile_media_dir(data_dir: Path) -> dict:
 @app.get("/api/config")
 async def get_config():
     """Public config — tells the frontend what's available server-side."""
-    _has_trial = bool(
-        _server_has_bedrock()
-        or os.environ.get("ANTHROPIC_API_KEY", "").strip()
-        or os.environ.get("OPENAI_API_KEY", "").strip()
-    )
     return {
         "has_bedrock": _server_has_bedrock(),
-        "has_trial": _has_trial,
         "trial_limit": TRIAL_RUN_LIMIT,
         "bedrock_model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
-        "supabase_url": os.environ.get("SUPABASE_URL", ""),
-        "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", ""),
     }
 
 @app.post("/api/upload-dataset")
@@ -820,29 +1157,9 @@ async def start_run(req: RunRequest, request: Request):
         if saved:
             req.api_key = saved
 
-    # No API key — use server credentials (Bedrock/Anthropic/OpenAI)
-    # Anonymous users are rate-limited by IP; authenticated users run freely
-    if not req.api_key:
-        _server_anthropic = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-        _server_openai = os.environ.get("OPENAI_API_KEY", "").strip()
-        if _server_has_bedrock() or _server_anthropic or _server_openai:
-            if not user:
-                # Rate-limit anonymous/trial users by IP
-                ip = _trial_ip(request)
-                allowed, used = _trial_check_and_increment(ip)
-                if not allowed:
-                    raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} free runs per day). Create a free account to continue.")
-            if _server_has_bedrock():
-                req.provider = "bedrock"
-                req.api_key = json.dumps(_bedrock_creds())
-            elif _server_anthropic:
-                req.provider = "claude"
-                req.api_key = _server_anthropic
-            else:
-                req.provider = "openai"
-                req.api_key = _server_openai
-        else:
-            raise HTTPException(401, "No API key configured. Add your key in Settings or sign in.")
+    # Require auth — anonymous users cannot use server credentials
+    if not req.api_key and not user:
+        raise HTTPException(401, "Sign in to run experiments. Create a free account at yc-able.com.")
 
     run_id = str(uuid.uuid4())[:12]
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
@@ -865,6 +1182,7 @@ async def start_run(req: RunRequest, request: Request):
         id=run_id, status="running", ws=str(ws),
         csv=str(csv_path), logs=[], result=None,
         started=time.time(), provider=req.provider,
+        hint=req.hint or "", budget=req.budget,
         cancel_event=cancel_event,
     )
 
@@ -881,8 +1199,10 @@ async def start_run(req: RunRequest, request: Request):
         try:
             _prov = (req.provider or "claude").lower()
             if not req.api_key and _prov == "bedrock":
-                creds = _bedrock_creds()
-                resolved_api_key = json.dumps(creds) if creds["access_key"] and creds["secret_key"] else ""
+                _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
+                _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+                _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+                resolved_api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg}) if _ak and _sk else ""
             else:
                 resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
             cb("sys", f"API key received: {'YES' if resolved_api_key else 'NO'} (length={len(resolved_api_key)}) | Provider: {req.provider or 'claude'}")
@@ -948,21 +1268,13 @@ async def validate_key(req: ValidateKeyRequest):
         return {"ok": False, "error": msg}
 
 @app.post("/api/discover")
-async def discover(req: DiscoverRequest, request: Request):
+async def discover(req: DiscoverRequest):
     ws = Path(tempfile.mkdtemp(prefix="19labs_discover_"))
     cleanup_ws = True
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent))
         from engine import discover_user_need, profile_dataset, profile_media_dataset
-
-        # Load saved key for authenticated users (same as /api/run)
-        if not req.api_key:
-            user = _get_user(_token_from_request(request))
-            if user:
-                saved = _get_user_api_key(user["id"], req.provider or "claude")
-                if saved:
-                    req.api_key = saved
 
         # Resolve data path — media dataset or CSV
         if req.dataset_id:
@@ -980,15 +1292,7 @@ async def discover(req: DiscoverRequest, request: Request):
             data_path = str(csv_path)
             profile = profile_dataset(data_path)
 
-        resolved_api_key = req.api_key
-        resolved_provider = req.provider or "claude"
-
-        if not resolved_api_key and _server_has_bedrock():
-            # Trial / no-key path — use server Bedrock (same as /api/run trial logic)
-            resolved_api_key = json.dumps(_bedrock_creds())
-            resolved_provider = "bedrock"
-        elif not resolved_api_key:
-            resolved_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
         if not resolved_api_key:
             fallback = _fallback_discovery(profile, req.hint)
@@ -996,20 +1300,9 @@ async def discover(req: DiscoverRequest, request: Request):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        import asyncio
-        from functools import partial
-        loop = asyncio.get_event_loop()
-        _fn = partial(discover_user_need, data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=resolved_provider, model=req.model or None)
-        try:
-            result = await asyncio.wait_for(loop.run_in_executor(None, _fn), timeout=90)
-            result["used_fallback"] = False
-            return {"ok": True, **result}
-        except Exception as ai_err:
-            print(f"[discover] AI call failed ({resolved_provider}): {ai_err} — falling back to static discovery", flush=True)
-            fallback = _fallback_discovery(profile, req.hint)
-            fallback["ok"] = True
-            fallback["used_fallback"] = True
-            return fallback
+        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None)
+        result["used_fallback"] = False
+        return {"ok": True, **result}
     except Exception as e:
         import traceback as _tb
         tb = _tb.format_exc()
@@ -1167,6 +1460,46 @@ async def stream_logs(run_id: str):
 @app.get("/api/run/{run_id}/status")
 def get_status(run_id: str):
     if run_id not in RUNS:
+        # Try to reconstruct from DB
+        try:
+            conn = DBConn()
+            row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            conn.close()
+            if row:
+                result = json.loads(row["result_json"]) if row["result_json"] else None
+                elapsed = round((row["finished"] or time.time()) - (row["started"] or time.time()), 1)
+                out = dict(
+                    status=row["status"],
+                    log_count=0,
+                    elapsed=elapsed,
+                    from_db=True,
+                    hint=row["hint"],
+                    filename=row["filename"],
+                )
+                if result:
+                    out["best"]           = result.get("best")
+                    out["objective"]      = result.get("objective")
+                    out["history"]        = result.get("history")
+                    out["report"]         = result.get("report")
+                    out["deploy_path"]    = result.get("deploy_path")
+                    out["diagnostics"]    = result.get("diagnostics")
+                    out["executive_brief"]= result.get("executive_brief")
+                    out["artifacts"]      = result.get("artifacts")
+                    out["total_experiments"] = result.get("total_experiments", len(result.get("history", [])))
+                    out["continuous_mode"]= result.get("continuous_mode", False)
+                    out["token_usage"]    = result.get("token_usage", {})
+                elif row["best_model"]:
+                    # No full result_json but we have summary fields
+                    out["best"] = {
+                        "model": row["best_model"],
+                        "metric_name": row["best_metric_name"],
+                        "metric_val": row["best_metric_val"],
+                    }
+                if row["error"]:
+                    out["error"] = row["error"]
+                return out
+        except Exception:
+            pass
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
     result = run.get("result")
@@ -1592,25 +1925,8 @@ def _compute_chart_data(df, spec):
 @app.post("/api/run/{run_id}/create-api")
 async def create_api_server(run_id: str, request: Request):
     body = await request.json()
-    api_key = body.get("api_key") or ""
-    provider = body.get("provider") or ""
-
-    # Fall back to server credentials if no key provided (same logic as /api/run)
-    if not api_key:
-        user = _get_user(_token_from_request(request))
-        if user:
-            saved = _get_user_api_key(user["id"], provider or "claude")
-            if saved:
-                api_key = saved
-                if not provider:
-                    provider = "claude"
-    if not api_key:
-        if _server_has_bedrock():
-            api_key = json.dumps(_bedrock_creds())
-            provider = "bedrock"
-        else:
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            provider = provider or "claude"
+    api_key = body.get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    provider = body.get("provider", "claude")
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
@@ -1984,34 +2300,15 @@ async def explain_model(run_id: str):
             if hasattr(model, "predict"):
                 explainer = shap.Explainer(model, sample, feature_names=feature_names)
                 shap_vals = explainer(sample)
-                raw = shap_vals.values
-                # Handle multi-output (classification): use class 1 or average
-                if len(raw.shape) == 3:
-                    raw = raw[:, :, 1] if raw.shape[2] == 2 else raw.mean(axis=2)
                 # Mean absolute SHAP values per feature
-                mean_shap = np.abs(raw).mean(axis=0)
+                mean_shap = np.abs(shap_vals.values).mean(axis=0)
+                if len(mean_shap.shape) > 1:
+                    mean_shap = mean_shap.mean(axis=1)
                 importance = {feature_names[i]: float(mean_shap[i]) for i in range(min(len(feature_names), len(mean_shap)))}
-                # Sort by importance to find top features for beeswarm
-                top_idx = np.argsort(mean_shap)[::-1][:15]
-                top_feats = [feature_names[i] for i in top_idx]
-                # Build per-sample data for beeswarm (top 15 features × up to 100 samples)
-                beeswarm = {
-                    "features": top_feats,
-                    "shap_values": [],   # list of lists: shap_values[sample_i][feat_j]
-                    "feature_values": [], # normalized 0-1 feature value for coloring
-                }
-                feat_vals_arr = sample.values  # shape (n_samples, n_features)
-                for fi in top_idx:
-                    feat_col = feat_vals_arr[:, fi].astype(float)
-                    col_min, col_max = feat_col.min(), feat_col.max()
-                    col_range = col_max - col_min if col_max != col_min else 1
-                    normed = ((feat_col - col_min) / col_range).tolist()
-                    beeswarm["shap_values"].append([float(v) for v in raw[:, fi]])
-                    beeswarm["feature_values"].append(normed)
+                # Top feature interactions
                 shap_values_data = {
                     "sample_size": len(sample),
-                    "method": "shap",
-                    "beeswarm": beeswarm,
+                    "method": "shap"
                 }
         except Exception:
             pass  # SHAP not available or failed
@@ -2054,7 +2351,6 @@ async def explain_model(run_id: str):
             "ok": True,
             "feature_importance": [{"feature": k, "importance": v} for k, v in top_features],
             "partial_dependence": pdp_data,
-            "shap_beeswarm": shap_values_data.get("beeswarm") if shap_values_data else None,
             "method": shap_values_data.get("method", "builtin") if shap_values_data else "builtin",
             "model_type": type(model).__name__,
             "n_features": len(feature_names),
@@ -2252,25 +2548,6 @@ def favicon():
 @app.get("/health")
 def health():
     return {"status": "ok", "runs": len(RUNS)}
-
-@app.get("/api/test-bedrock")
-async def test_bedrock():
-    """Debug endpoint — tests server Bedrock credentials."""
-    creds = _bedrock_creds()
-    masked = {"access_key": creds["access_key"][:6]+"…" if creds["access_key"] else "MISSING",
-              "secret_key": "SET" if creds["secret_key"] else "MISSING",
-              "region": creds["region"] or "MISSING"}
-    if not _server_has_bedrock():
-        return {"ok": False, "error": "Bedrock creds not detected in env vars", "creds": masked}
-    try:
-        import sys; sys.path.insert(0, str(Path(__file__).parent))
-        from engine import _init_client, ask
-        import asyncio
-        _init_client(json.dumps(creds), provider="bedrock")
-        result = await asyncio.get_event_loop().run_in_executor(None, lambda: ask("Say OK.", "OK", max_tokens=5))
-        return {"ok": True, "response": result, "creds": masked}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "error_type": type(e).__name__, "creds": masked}
 
 @app.get("/api/provider-status")
 def provider_status():

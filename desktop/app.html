@@ -8,7 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -59,8 +58,6 @@ body.desktop-mac .topbar{padding-left:84px}
 .badge.ok{color:var(--accent);border-color:rgba(59,130,246,.3);background:var(--accent-soft)}
 .badge.err{color:var(--red);border-color:rgba(239,68,68,.3);background:var(--red-soft)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-/* Hide provider/settings controls for trial users */
-body.trial-mode #tb-prov,body.trial-mode button[onclick="openCmd()"]{display:none!important}
 .tbtn{font-size:12px;padding:5px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:all var(--t);font-family:var(--sans)}
 .tbtn:hover{border-color:var(--border-2);color:var(--text)}
 .tbtn.active{color:var(--accent);border-color:rgba(59,130,246,.4);background:var(--accent-soft)}
@@ -270,7 +267,7 @@ input[type=file]{display:none}
 .we-n{font-size:56px;opacity:.06;font-family:var(--mono);font-weight:900}
 .we-t{font-size:15px;font-weight:600;color:var(--text-2)}
 .we-s{font-size:13px;color:var(--text-3);max-width:340px;line-height:1.7}
-.we-sample{margin-top:8px;background:var(--surface-2);border:1px solid var(--border-2);color:var(--text-2);font-size:12px;font-family:var(--sans);font-weight:500;padding:8px 18px;border-radius:var(--r);cursor:pointer;transition:all var(--t);letter-spacing:.01em}.we-sample:hover{border-color:rgba(99,102,241,.5);color:#a5b4fc;background:rgba(99,102,241,.08)}
+.we-sample{margin-top:4px;background:none;border:1px solid var(--border-2);color:var(--text-3);font-size:12px;font-family:var(--sans);padding:6px 14px;border-radius:var(--r);cursor:pointer;transition:all var(--t)}.we-sample:hover{border-color:var(--border);color:var(--text-2);background:var(--surface-2)}
 
 /* Data preview table */
 .dp{padding:16px;overflow-x:auto;max-width:100%}
@@ -352,7 +349,7 @@ input[type=file]{display:none}
 .cm-chart svg{width:100%;display:block}
 
 /* Narration messages */
-.cm.narrate{background:linear-gradient(135deg,rgba(59,130,246,.04),rgba(167,139,250,.04));border:1px solid rgba(59,130,246,.12);align-self:stretch;font-size:12px;color:var(--text-2);padding:8px 12px}
+.cm.narrate{background:linear-gradient(135deg,rgba(59,130,246,.04),rgba(167,139,250,.04));border:1px solid rgba(59,130,246,.12);align-self:flex-start;font-size:12px;color:var(--text-2);padding:8px 12px}
 .cm.narrate .cl{color:var(--purple);font-size:8px}
 
 /* Experiment plot thumbnails */
@@ -364,33 +361,15 @@ input[type=file]{display:none}
 .exp-plot-modal img{max-width:90vw;max-height:90vh;border-radius:8px;border:1px solid var(--border)}
 
 /* Best banner */
-.bb{margin:12px 16px 16px;background:linear-gradient(135deg,rgba(59,130,246,.06),rgba(167,139,250,.04));border:1px solid rgba(59,130,246,.25);border-radius:16px;animation:si .4s ease;overflow:hidden}
-.bb-header{padding:14px 18px 12px;border-bottom:1px solid rgba(59,130,246,.12);display:flex;align-items:center;justify-content:space-between}
-.bb-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}
-.bb-grade{font-size:9px;font-weight:700;padding:3px 8px;border-radius:999px;letter-spacing:.8px}
-.bb-grade.excellent{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
-.bb-grade.good{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
-.bb-grade.fair{background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3)}
-.bb-grade.weak{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
-.bb-body{padding:16px 18px}
-.bb-model{font-size:18px;font-weight:800;color:var(--text);margin-bottom:14px;line-height:1.3}
-.bb-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.bb-metric-card{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
-.bb-metric-card.primary{background:rgba(59,130,246,.06);border-color:rgba(59,130,246,.25);grid-column:1/-1}
-.bb-metric-name{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-bottom:3px}
-.bb-metric-val{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--text);line-height:1}
-.bb-metric-card.primary .bb-metric-val{font-size:22px;color:var(--accent)}
-.bb-metric-sub{font-size:10px;color:var(--text-3);margin-top:3px;font-family:var(--mono)}
-.bb-bar{height:4px;background:var(--surface-3);border-radius:2px;margin-top:8px;overflow:hidden}
-.bb-bar-fill{height:100%;border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1)}
-.bb-insight{background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.15);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--text-2);line-height:1.5}
-.bb-insight-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--purple);margin-bottom:4px}
-.bb-context{font-size:11px;color:var(--text-3);margin-bottom:14px}
-.bb-actions{display:flex;gap:8px;flex-wrap:wrap;padding:14px 18px;border-top:1px solid rgba(59,130,246,.1);background:rgba(0,0,0,.15)}
+.bb{margin:16px;padding:20px;background:linear-gradient(135deg,rgba(59,130,246,.05),rgba(167,139,250,.03));border:1px solid rgba(59,130,246,.2);border-radius:var(--rl);animation:si .4s ease}
+.bb-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-3);margin-bottom:8px}
+.bb-m{font-size:22px;font-weight:800;color:var(--text);margin-bottom:4px}
+.bb-s{font-family:var(--mono);font-size:13px;color:var(--accent);margin-bottom:12px}
+.bb-d{font-size:12px;color:var(--text-3);margin-bottom:16px}
+.bb-a{display:flex;gap:8px;flex-wrap:wrap}
 .abtn{padding:8px 14px;font-size:12px;font-weight:600;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:all var(--t);font-family:var(--sans)}
 .abtn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
-.abtn.p{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.3)}
-.abtn.p:hover{background:var(--accent-2)}
+.abtn.p{background:var(--accent);border-color:var(--accent);color:#fff}
 .abtn.p:hover{background:var(--accent-2)}
 
 /* Artifacts */
@@ -404,14 +383,7 @@ input[type=file]{display:none}
 
 /* Report */
 .rpt{padding:16px}
-.rpt-body{font-size:13px;line-height:1.8;color:var(--text-2);background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:20px;max-height:600px;overflow-y:auto}
-.rpt-body h1,.rpt-body h2{font-size:15px;font-weight:700;color:var(--text);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
-.rpt-body h3{font-size:13px;font-weight:700;color:var(--text);margin:12px 0 6px}
-.rpt-body strong{font-weight:700;color:var(--text)}
-.rpt-body code{font-family:var(--mono);font-size:11px;background:var(--surface-3);padding:1px 5px;border-radius:3px;color:var(--accent)}
-.rpt-body ul{padding-left:16px;margin:6px 0}
-.rpt-body li{margin-bottom:3px}
-.rpt-body .rpt-metric{display:inline-block;font-family:var(--mono);font-size:11px;background:rgba(59,130,246,.1);color:var(--accent);padding:1px 6px;border-radius:4px;margin:1px}
+.rpt-body{font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--text-2);white-space:pre-wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;max-height:500px;overflow-y:auto}
 
 /* Logs */
 .logs{padding:12px;font-family:var(--mono);font-size:11px;color:var(--text-3);line-height:1.8;white-space:pre-wrap;overflow-y:auto}
@@ -425,11 +397,11 @@ input[type=file]{display:none}
 .chat-dot.ok{background:var(--accent)}
 .chat-msgs{flex:1;min-height:0;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:6px}
 
-.cm{padding:10px 14px;border-radius:var(--rl);font-size:13px;line-height:1.65;animation:si .2s ease;max-width:100%}
-.cm.ai{background:var(--surface-2);border:1px solid var(--border);align-self:stretch}
-.cm.user{background:var(--accent);color:#fff;align-self:flex-end;max-width:82%}
-.cm.sys{background:var(--surface-3);color:var(--text-2);font-size:12px;border:1px solid var(--border);align-self:stretch}
-.cm.err{background:var(--red-soft);color:var(--red);font-size:12px;border:1px solid rgba(239,68,68,.2);align-self:stretch}
+.cm{padding:10px 14px;border-radius:var(--rl);font-size:13px;line-height:1.65;animation:si .2s ease;max-width:92%}
+.cm.ai{background:var(--surface-2);border:1px solid var(--border);align-self:flex-start}
+.cm.user{background:var(--accent);color:#fff;align-self:flex-end}
+.cm.sys{background:var(--surface-3);color:var(--text-2);font-size:12px;border:1px solid var(--border);align-self:flex-start}
+.cm.err{background:var(--red-soft);color:var(--red);font-size:12px;border:1px solid rgba(239,68,68,.2);align-self:flex-start}
 .cm .cl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;opacity:.5}
 .cm.ai .cl{color:var(--accent)}
 .cm code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px}
@@ -880,8 +852,15 @@ input[type=file]{display:none}
       </div>
     </div>
 
-    <!-- auth-stage-key removed: API key setup now handled through keys panel after login -->
-    <div id="auth-stage-key" style="display:none"></div>
+    <!-- Hidden key stage (post-login API key setup) -->
+    <div id="auth-stage-key" style="display:none">
+      <div class="auth-field">
+        <label id="auth-key-label">API Key</label>
+        <input type="password" id="auth-apikey-input" placeholder="sk-ant-api03-…" autocomplete="off" onkeydown="if(event.key==='Enter')doProviderLogin()">
+      </div>
+      <div class="auth-err" id="auth-err"></div>
+      <button class="auth-btn" id="auth-provider-login-btn" onclick="doProviderLogin()">Save & Continue →</button>
+    </div>
   </div>
 </div>
 
@@ -977,9 +956,8 @@ input[type=file]{display:none}
     <div class="badge" id="badge">IDLE</div>
     <button class="tbtn" onclick="openCmd()" data-tip="Command Palette (⌘K)">⌘K</button>
     <button class="tbtn" id="tb-prov" onclick="openSettings()" data-tip="Provider settings (⌘,)">Claude</button>
-    <!-- Auth buttons — shown when not logged in -->
-    <button class="tbtn" id="signin-btn" style="display:none" onclick="showAuthModal()">Sign In</button>
-    <button class="tbtn-start" id="trial-btn" style="display:none" onclick="startTrial()">Start Free</button>
+    <!-- Trial / auth button — shown when not logged in -->
+    <button class="tbtn-start" id="trial-btn" style="display:none" onclick="showAuthModal()">Start Free</button>
     <div style="position:relative">
       <div class="user-btn" id="user-btn" onclick="toggleUserMenu()" style="display:none">
         <div class="user-avatar" id="user-avatar">?</div>
@@ -1225,16 +1203,10 @@ function gm(p){return localStorage.getItem(`19labs_model_${p}`)||''}
 const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',model:'',demo:false};
 C.key=gk(C.provider);C.model=gm(C.provider);
 let _serverConfig={has_bedrock:false,trial_limit:3,bedrock_model:'anthropic.claude-sonnet-4-6'};
-let _supabase = null;
 async function _loadServerConfig(){
   try{
     const r=await fetch(`${BASE}/api/config`);
-    if(r.ok){
-      _serverConfig=await r.json();
-      if(_serverConfig.supabase_url && _serverConfig.supabase_anon_key){
-        _supabase=window.supabase.createClient(_serverConfig.supabase_url, _serverConfig.supabase_anon_key);
-      }
-    }
+    if(r.ok)_serverConfig=await r.json();
   }catch(_){}
 }
 const _apiMeta=document.querySelector('meta[name="api-base"]');
@@ -1265,10 +1237,6 @@ let _authTab = 'signin';
 const TRIAL_LIMIT = 3;
 let _trialCount = parseInt(localStorage.getItem('19labs_trial_count')||'0',10);
 let _isTrialMode = localStorage.getItem('19labs_trial_started')==='1';
-// Clear stale bedrock provider setting from old trial sessions
-if(localStorage.getItem('19labs_provider')==='bedrock'&&!localStorage.getItem('19labs_auth_token')){
-  localStorage.removeItem('19labs_provider');
-}
 
 function _trialRemaining(){ return Math.max(0, TRIAL_LIMIT - _trialCount); }
 function _useTrialSlot(){
@@ -1278,27 +1246,13 @@ function _useTrialSlot(){
 }
 function _updateTrialBtn(){
   const btn=document.getElementById('trial-btn');
-  const si=document.getElementById('signin-btn');
   if(!btn)return;
-  if(_authUser){
-    btn.style.display='none';
-    if(si)si.style.display='none';
-    document.body.classList.remove('trial-mode');
-    return;
-  }
-  const rem=_trialRemaining();
-  if(_isTrialMode){
-    btn.textContent=rem>0?`${rem} run${rem===1?'':'s'} left`:'Sign Up Free';
+  if(!_authUser){
+    btn.textContent='Sign In';
     btn.style.display='inline-block';
-    btn.onclick=rem>0?null:showAuthModal;
-    if(si)si.style.display='none';
-    document.body.classList.add('trial-mode');
+    btn.onclick=showAuthModal;
   } else {
-    btn.textContent='Start Free';
-    btn.style.display='inline-block';
-    btn.onclick=startTrial;
-    if(si)si.style.display='';
-    document.body.classList.add('trial-mode');
+    btn.style.display='none';
   }
 }
 function startTrial(){
@@ -1306,45 +1260,64 @@ function startTrial(){
   localStorage.setItem('19labs_trial_started','1');
   hideAuthModal();
   _updateTrialBtn();
-  // Show Titanic/onboarding prompt if no dataset loaded yet
-  if(!S.csv&&!S.runId)setTimeout(showOnboarding,150);
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
 function _authHeader(){return _authToken?{'Authorization':`Bearer ${_authToken}`}:{}}
 
+/** Decode JWT payload client-side — no server roundtrip, no signature check needed for UI.
+ *  Server still validates sig on every API call. Returns null if expired or malformed. */
+function _decodeJwt(token){
+  try{
+    const parts=token.split('.');
+    if(parts.length!==3)return null;
+    const pad=s=>s.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(s.length/4)*4,'=');
+    const payload=JSON.parse(atob(pad(parts[1])));
+    // Treat as expired if less than 60 seconds remain (clock skew buffer)
+    if(payload.exp&&payload.exp<(Date.now()/1000)+60)return null;
+    return payload;
+  }catch(e){return null;}
+}
+
 async function initAuth(){
-  if(!_supabase){
-    // Supabase not configured — just show topbar buttons, no modal
+  if(_authToken){
+    // Decode JWT locally — survives server restarts, zero latency
+    const payload=_decodeJwt(_authToken);
+    if(payload){
+      _authUser={id:payload.sub,email:payload.email||'',name:payload.name||''};
+      hideAuthModal();onAuthSuccess();
+      // Silently refresh user info from server in background (non-blocking)
+      fetch(`${BASE}/auth/me`,{headers:_authHeader()}).then(r=>{
+        if(r.ok)r.json().then(u=>{_authUser=u;});
+      }).catch(()=>{});
+      return;
+    }
+    // Token expired — clear it
+    _authToken='';localStorage.removeItem('19labs_auth_token');
+  }
+  // Has API key but no account token — continue in key-only mode
+  const hasKey=gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
+  if(hasKey){
+    _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
+  }
+  // Already in trial mode with slots left — stay in app
+  if(_isTrialMode&&_trialRemaining()>0){
     _updateTrialBtn();return;
   }
-  // Listen for auth state changes (handles OAuth redirects, session restore, signout)
-  _supabase.auth.onAuthStateChange((event, session)=>{
-    if(session){
-      _authToken=session.access_token;
-      _authUser={id:session.user.id,email:session.user.email,name:session.user.user_metadata?.full_name||session.user.email.split('@')[0]};
-      localStorage.setItem('19labs_auth_token',_authToken);
-      hideAuthModal();
-      onAuthSuccess();
-    } else if(event==='SIGNED_OUT'||event==='USER_DELETED'){
-      _authToken='';_authUser=null;
-      localStorage.removeItem('19labs_auth_token');
-      _isTrialMode=false;
-      localStorage.removeItem('19labs_trial_started');
-      _updateTrialBtn();
-      // Don't auto-show modal — user can click Sign In when ready
-    }
-  });
-  // Check existing session
-  const {data:{session}}=await _supabase.auth.getSession();
-  if(session){
-    _authToken=session.access_token;
-    _authUser={id:session.user.id,email:session.user.email,name:session.user.user_metadata?.full_name||session.user.email.split('@')[0]};
-    localStorage.setItem('19labs_auth_token',_authToken);
-    hideAuthModal();onAuthSuccess();return;
-  }
-  // No session — just show topbar buttons, let user decide
+  // No session — show sign-in button and auth modal
   _updateTrialBtn();
+  showAuthModal();
+}
+
+async function _refreshTokenSilently(){
+  if(!_authToken)return;
+  try{
+    const r=await fetch(`${BASE}/auth/refresh`,{method:'POST',headers:_authHeader()});
+    if(r.ok){
+      const d=await r.json();
+      if(d.token){_authToken=d.token;localStorage.setItem('19labs_auth_token',d.token);}
+    }
+  }catch(_){}
 }
 
 function showAuthModal(){
@@ -1392,17 +1365,18 @@ function switchAuthTab(tab){
 }
 
 async function startGoogleAuth(){
-  if(!_supabase){return;}
   const btn=document.getElementById('auth-google-btn');
-  btn.disabled=true;btn.innerHTML='<span style="opacity:.6">Redirecting…</span>';
-  await _supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}});
+  const err=document.getElementById('auth-google-err');
+  err.textContent='';btn.disabled=true;
+  btn.innerHTML='<span style="opacity:.6">Redirecting…</span>';
+  window.location.href=`${BASE}/auth/google`;
 }
 
 async function startGithubAuth(){
-  if(!_supabase){return;}
   const btn=document.getElementById('auth-github-btn');
-  btn.disabled=true;btn.innerHTML='<span style="opacity:.6">Redirecting…</span>';
-  await _supabase.auth.signInWithOAuth({provider:'github',options:{redirectTo:window.location.origin}});
+  btn.disabled=true;
+  btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.483 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.342-3.369-1.342-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/></svg><span style="opacity:.6">Redirecting…</span>';
+  window.location.href=`${BASE}/auth/github`;
 }
 
 function toggleEmailAuth(){
@@ -1414,7 +1388,6 @@ function toggleEmailAuth(){
 }
 
 async function doAuth(){
-  if(!_supabase){return;}
   const tab=_authTab;
   const email=document.getElementById('auth-email').value.trim();
   const password=document.getElementById('auth-password').value;
@@ -1422,41 +1395,66 @@ async function doAuth(){
   const btn=document.getElementById('auth-btn');
   const err=document.getElementById('auth-err-account');
   err.textContent='';
-  if(!email||!email.includes('@')){err.textContent='Please enter a valid email.';return;}
-  if(!password||password.length<6){err.textContent='Password must be at least 6 characters.';return;}
+  // Field validation
+  if(!email){err.textContent='Please enter your email address.';document.getElementById('auth-email').focus();return;}
+  if(!email.includes('@')){err.textContent='Please enter a valid email address.';document.getElementById('auth-email').focus();return;}
+  if(!password){err.textContent='Please enter your password.';document.getElementById('auth-password').focus();return;}
+  if(tab==='signup'&&password.length<6){err.textContent='Password must be at least 6 characters.';document.getElementById('auth-password').focus();return;}
+  const origText=btn.textContent;
   btn.disabled=true;btn.textContent=tab==='signin'?'Signing in…':'Creating account…';
   try{
-    let result;
+    const url=tab==='signin'?`${BASE}/auth/login`:`${BASE}/auth/signup`;
+    const body=tab==='signin'?{email,password}:{email,password,name};
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await r.json();
+    if(!r.ok){
+      let msg=data.detail||'Something went wrong. Please try again.';
+      if(r.status===409){
+        err.innerHTML=msg+' <a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signin\');return false">Sign in instead →</a>';
+      } else if(r.status===401){
+        err.textContent=msg.includes('No account')||msg.includes('not found')
+          ? msg+' '
+          : 'Incorrect email or password. Please check and try again.';
+        if(msg.includes('No account')||msg.includes('not found')){
+          err.innerHTML=err.textContent+'<a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signup\');return false">Create account →</a>';
+        }
+      } else {
+        err.textContent=msg;
+      }
+      btn.disabled=false;btn.textContent=origText;return;
+    }
+    _authToken=data.token;_authUser=data.user;
+    localStorage.setItem('19labs_auth_token',_authToken);
+    localStorage.setItem('19labs_last_email',email);
+    _isTrialMode=false;
+    hideAuthModal();onAuthSuccess();
     if(tab==='signup'){
-      result=await _supabase.auth.signUp({email,password,options:{data:{full_name:name||email.split('@')[0]}}});
+      toast(`Welcome! Add your API key to get started.`,'ok');
+      setTimeout(()=>openKeys(),600);
     } else {
-      result=await _supabase.auth.signInWithPassword({email,password});
+      loadSavedKeys();
     }
-    const {data,error}=result;
-    if(error){
-      err.textContent=error.message;
-      btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';
-      return;
-    }
-    if(tab==='signup'&&data.user&&!data.session){
-      // Email confirmation required
-      err.style.color='#a3e635';
-      err.textContent='Check your email to confirm your account.';
-      btn.disabled=false;btn.textContent='Create account';
-      return;
-    }
-    // onAuthStateChange fires automatically — no need to call onAuthSuccess here
-  }catch(e){err.textContent='Network error. Please try again.';btn.disabled=false;btn.textContent=tab==='signin'?'Sign in':'Create account';}
+  }catch(e){err.textContent='Network error — please check your connection and try again.';btn.disabled=false;btn.textContent=origText;}
 }
 
-async function handleForgotPassword(){
-  const email=document.getElementById('auth-email').value.trim();
+function handleForgotPassword(){
   const err=document.getElementById('auth-err-account');
-  if(!email||!email.includes('@')){err.textContent='Enter your email first.';return;}
-  if(!_supabase){return;}
-  const {error}=await _supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});
-  if(error){err.textContent=error.message;}
-  else{err.style.color='#a3e635';err.textContent='Password reset email sent. Check your inbox.';}
+  err.innerHTML='To reset your password, contact <a href="mailto:support@19labs.ai" style="color:var(--accent)">support@19labs.ai</a>';
+}
+
+async function doProviderLogin(){
+  const key=document.getElementById('auth-apikey-input').value.trim();
+  const err=document.getElementById('auth-err');
+  const btn=document.getElementById('auth-provider-login-btn');
+  err.textContent='';
+  if(!key){err.textContent='Paste your API key.';return;}
+  btn.disabled=true;btn.textContent='Saving…';
+  localStorage.setItem('19labs_api_key_claude',key);
+  localStorage.setItem('19labs_provider','claude');
+  C.key=key;C.provider='claude';
+  hideAuthModal();
+  btn.disabled=false;btn.textContent='Save & Continue →';
+  toast('API key saved','ok');
 }
 
 function onAuthSuccess(){
@@ -1468,7 +1466,6 @@ function onAuthSuccess(){
   document.getElementById('ump-email-full').textContent=user.email||'';
   document.getElementById('user-btn').style.display='flex';
   document.getElementById('trial-btn').style.display='none';
-  const si=document.getElementById('signin-btn');if(si)si.style.display='none';
   _isTrialMode=false;
   localStorage.removeItem('19labs_trial_started');
   // Upload any locally-stored keys to server (in case they were set before login)
@@ -1538,8 +1535,12 @@ async function _syncLocalKeysToServer(){
 
 async function doLogout(){
   closeUserMenu();
-  if(_supabase)await _supabase.auth.signOut();
-  // onAuthStateChange SIGNED_OUT fires automatically
+  await fetch(`${BASE}/auth/logout`,{method:'POST',headers:_authHeader()}).catch(()=>{});
+  _authToken='';_authUser=null;_savedKeys={};
+  localStorage.removeItem('19labs_auth_token');
+  // Keep API keys in localStorage — user should not have to re-enter them after re-login
+  document.getElementById('user-btn').style.display='none';
+  showAuthModal();
 }
 
 function toggleUserMenu(){
@@ -1635,8 +1636,6 @@ const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,
 // SETTINGS
 // ═══════════════════════════════════════════
 function openSettings(){
-  // Block settings access in trial mode — no API config exposed to anonymous users
-  if(_isTrialMode&&!_authUser){toast('Sign in to configure your AI provider','warn',3000);showAuthModal();return;}
   document.getElementById('key-input').value=C.provider==='bedrock'?'':C.key;
   document.getElementById('access-token-input').value=ACCESS_TOKEN;
   document.getElementById('server-url').value=localStorage.getItem('19labs_server')||'http://localhost:8019';
@@ -1644,13 +1643,17 @@ function openSettings(){
   document.getElementById('budget-val').textContent=S.budget;
   setRM(S.rmode,true);
   spUI(C.provider);
+  // Pre-fill Bedrock fields from saved creds
   if(C.provider==='bedrock'){
+    const saved=gk('bedrock');
+    let creds={};
+    try{if(saved&&saved.startsWith('{'))creds=JSON.parse(saved);}catch(_){}
     const a=document.getElementById('bedrock-access');
     const s=document.getElementById('bedrock-secret');
     const r=document.getElementById('bedrock-region');
-    if(a)a.value=''; // never pre-fill credentials
-    if(s)s.value='';
-    if(r)r.value='us-east-1';
+    if(a)a.value=creds.access_key||'';
+    if(s)s.value=''; // never pre-fill secret for security
+    if(r&&creds.region)r.value=creds.region;
   }
   document.getElementById('settings').style.display='flex';
 }
@@ -2206,15 +2209,15 @@ async function runDiscover(hint){
   if(!S.file)return;
   typing(true);setBadge('ANALYZING','run');
   sbUpdate({status:'Analyzing...',running:true});
-  // Trial mode: send no key and no provider — server picks Bedrock automatically
-  const _isTrial=(_isTrialMode&&!_authUser);
-  const _discKey=_isTrial?undefined:(C.key||gk(C.provider)||undefined);
-  const _discProv=_isTrial?undefined:C.provider;
+  let key=C.key||gk(C.provider);
   try{
+    // Include the current objective so the LLM can interpret corrections in context
+    // e.g. agent proposed "predict shipped_weight", user says "no revenue forecast"
+    // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
     const _prevObj = S.discovery?.objective || null;
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:_discProv,model:_isTrial?undefined:C.model||undefined}
-      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:_discKey,provider:_discProv,model:_isTrial?undefined:C.model||undefined};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
@@ -2279,23 +2282,15 @@ async function launchRun(){
   if(S.running||!S.file)return;
   if(!S.analyzed){chat('ai','Let me analyze first...');await runDiscover(S.hint||'');return}
   if(C.demo){await runPreview();return}
-  // Trial gate
-  if(_isTrialMode&&!_authUser){
-    if(_trialRemaining()<=0){
-      chat('ai','You\'ve used all free experiments. Sign up to keep going — it\'s free!');
+  // Auth gate — require login or own API key
+  if(!_authUser){
+    if(!C.key)C.key=gk(C.provider);
+    if(!C.key){
+      chat('ai','Sign in to run experiments — or add your own API key in Settings.');
       showAuthModal();return;
     }
-    _useTrialSlot();
-    if(_trialRemaining()===0)chat('sys','Last free experiment. Sign up to run unlimited experiments.');
-  } else if(!_authUser){
-    if(!C.key)C.key=gk(C.provider);
-    if(!C.key){chat('ai','Click Start Free to try it — or sign in.');showAuthModal();return;}
   }
-  // Trial: send no key, no provider — server uses Bedrock automatically
-  const _trialRun=(_isTrialMode&&!_authUser);
-  const _apiKey=_trialRun?undefined:(C.key||gk(C.provider)||undefined);
-  const _runProv=_trialRun?undefined:C.provider;
-  const _runModel=_trialRun?undefined:C.model||undefined;
+  if(!C.key)C.key=gk(C.provider);
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};
   setBadge('RUNNING','run');setProg(5);
@@ -2311,8 +2306,8 @@ async function launchRun(){
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
   try{
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:_runProv,model:_runModel,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:_apiKey,provider:_runProv,model:_runModel,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();
@@ -2473,15 +2468,13 @@ async function launchRun(){
 function procMsg(d){
   const msg=d.msg,tag=d.tag;
 
-  // Narration messages → single updating bubble (no spam)
+  // Narration messages → show as special chat bubbles
   if(tag==='narrate'){
-    const c=document.getElementById('msgs');
-    const last=c.lastElementChild;
-    let el=(last&&last.classList.contains('narrate'))?last:null;
-    if(!el){el=document.createElement('div');el.className='cm narrate';c.appendChild(el);}
+    const el=document.createElement('div');el.className='cm narrate';
     el.innerHTML=`<div class="cl">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
+    const c=document.getElementById('msgs');
     const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
-    if(atBottom)c.scrollTop=c.scrollHeight;
+    c.appendChild(el);if(atBottom)c.scrollTop=c.scrollHeight;
     return;
   }
 
@@ -2605,116 +2598,23 @@ function classifyFail(exp){
 // ═══════════════════════════════════════════
 // RESULTS
 // ═══════════════════════════════════════════
-function _gradeMetric(name,val,dir){
-  const lo=dir==='lower_is_better';
-  const n=name.toLowerCase();
-  if(n==='auc'||n==='roc_auc'){
-    if(val>=.99)return{g:'EXCELLENT',c:'excellent',t:'Near-perfect discriminative power',b:99,biz:'Model correctly ranks 99%+ of cases — exceptional reliability for production.'};
-    if(val>=.95)return{g:'EXCELLENT',c:'excellent',t:'Excellent predictive power',b:Math.round(val*100),biz:'Strong business signal — trustworthy for automated decision-making.'};
-    if(val>=.90)return{g:'VERY GOOD',c:'good',t:'Strong performance',b:Math.round(val*100),biz:'Reliable model — suitable for high-stakes use cases with human oversight.'};
-    if(val>=.80)return{g:'GOOD',c:'good',t:'Good performance',b:Math.round(val*100),biz:'Useful model — deploy with monitoring and periodic retraining.'};
-    return{g:'FAIR',c:'fair',t:'Room for improvement',b:Math.round(val*100),biz:'Consider more features, data cleaning, or larger training set.'};
-  }
-  if(n==='accuracy'){
-    if(val>=.97)return{g:'EXCELLENT',c:'excellent',t:'Near-perfect accuracy',b:Math.round(val*100),biz:`Correctly classifies ${(val*100).toFixed(1)}% of cases — production-ready.`};
-    if(val>=.90)return{g:'VERY GOOD',c:'good',t:'High accuracy',b:Math.round(val*100),biz:`${(val*100).toFixed(1)}% accurate — strong baseline for deployment.`};
-    if(val>=.80)return{g:'GOOD',c:'good',t:'Solid accuracy',b:Math.round(val*100),biz:`${(val*100).toFixed(1)}% accurate — good for non-critical decisions.`};
-    return{g:'FAIR',c:'fair',t:'Moderate accuracy',b:Math.round(val*100),biz:'May need more data or feature engineering.'};
-  }
-  if(n==='f1'||n==='f1_score'){
-    if(val>=.95)return{g:'EXCELLENT',c:'excellent',t:'Outstanding balance',b:Math.round(val*100),biz:'Near-perfect precision/recall tradeoff — ideal for imbalanced problems.'};
-    if(val>=.85)return{g:'VERY GOOD',c:'good',t:'Strong F1 score',b:Math.round(val*100),biz:'Well-balanced model — handles class imbalance effectively.'};
-    if(val>=.70)return{g:'GOOD',c:'good',t:'Solid balance',b:Math.round(val*100),biz:'Acceptable precision/recall tradeoff for most business applications.'};
-    return{g:'FAIR',c:'fair',t:'Unbalanced predictions',b:Math.round(val*100),biz:'Consider class weights or resampling strategies.'};
-  }
-  if(n==='r2'||n==='r2_score'){
-    if(val>=.95)return{g:'EXCELLENT',c:'excellent',t:'Explains 95%+ of variance',b:Math.round(val*100),biz:'Model captures nearly all predictable patterns in the data.'};
-    if(val>=.85)return{g:'VERY GOOD',c:'good',t:'Explains most variance',b:Math.round(val*100),biz:`Accounts for ${(val*100).toFixed(0)}% of variance — strong regression model.`};
-    if(val>=.70)return{g:'GOOD',c:'good',t:'Good explanatory power',b:Math.round(val*100),biz:'Useful predictions — consider ensemble methods for improvement.'};
-    return{g:'FAIR',c:'fair',t:'Limited explanatory power',b:Math.round(val*100),biz:'Significant unexplained variance — explore additional features.'};
-  }
-  if(lo){// RMSE, MAE, MAPE — lower is better
-    return{g:'–',c:'good',t:'Lower is better',b:70,biz:'Compare against business baseline to assess impact.'};
-  }
-  return{g:'–',c:'good',t:'',b:70,biz:''};
-}
-
 function showBest(best,obj,runId){
   const ex=document.getElementById('bb-el');if(ex)ex.remove();
-  const c=document.getElementById('p-exp');
-  const e=document.createElement('div');e.className='bb';e.id='bb-el';
+  const c=document.getElementById('p-exp');const e=document.createElement('div');e.className='bb';e.id='bb-el';
   const am=best.all_metrics||{};
   const pk=best.metric_name||'metric';
-  const dir=S.discovery?.objective?.direction||'higher_is_better';
-  const pv=am['test_'+pk]??am[pk]??best.metric_val;
-  const grade=_gradeMetric(pk,pv,dir);
+  const ttPrimary=fmtTrainTest(am,pk);
+  const primaryLine=`<strong>${esc(pk.toUpperCase())}</strong>: ${ttPrimary||Number(best.metric_val).toFixed(4)}`;
+  const extraKeys=['rmse','mape','mae','r2','nse'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null));
+  const secLines=extraKeys.map(k=>{const tt=fmtTrainTest(am,k);return tt?`${k.toUpperCase()}: ${tt}`:null}).filter(Boolean);
+  const secHtml=secLines.length?`<div class="bb-s" style="font-size:12px;color:var(--text-2);margin-top:4px">${secLines.join(' · ')}</div>`:'';
   const summary=`${best.model} — ${pk.toUpperCase()} = ${Number(best.metric_val).toFixed(4)}`;
-
-  // Secondary metrics
-  const secKeys=['auc','roc_auc','accuracy','f1','precision','recall','r2','rmse','mae','mape'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null)).slice(0,4);
-  const secCards=secKeys.map(k=>{
-    const v=am['test_'+k]??am[k];
-    const tv=am['train_'+k]!=null?`<span style="color:var(--text-3)"> train ${Number(am['train_'+k]).toFixed(3)}</span>`:'';
-    return`<div class="bb-metric-card"><div class="bb-metric-name">${k.toUpperCase()}</div><div class="bb-metric-val" style="font-size:15px">${Number(v).toFixed(4)}</div>${tv}</div>`;
-  }).join('');
-
-  const trainVal=am['train_'+pk];
-  const trainHtml=trainVal!=null?`<span style="color:var(--text-3);font-size:12px"> · train ${Number(trainVal).toFixed(4)}</span>`:'';
-
-  e.innerHTML=`
-<div class="bb-header">
-  <div class="bb-label">⭐ Best Model</div>
-  <div style="display:flex;gap:8px;align-items:center">
-    ${grade.g!=='–'?`<span class="bb-grade ${grade.c}">${grade.g}</span>`:''}
-    <button class="cp-btn" onclick="copyText(\`${esc(summary)}\`,this)" style="font-size:9px">Copy</button>
-  </div>
-</div>
-<div class="bb-body">
-  <div class="bb-model">${esc(best.model)}</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-    <div class="bb-metric-card primary" style="grid-column:1/-1">
-      <div class="bb-metric-name">${pk.toUpperCase()} (primary metric)</div>
-      <div style="display:flex;align-items:baseline;gap:8px">
-        <div class="bb-metric-val">${Number(pv).toFixed(4)}</div>${trainHtml}
-      </div>
-      ${grade.t?`<div class="bb-metric-sub">${grade.t}</div>`:''}
-      <div class="bb-bar"><div class="bb-bar-fill" style="width:${grade.b}%;background:${grade.c==='excellent'?'#22c55e':grade.c==='good'?'#3b82f6':grade.c==='fair'?'#f59e0b':'#ef4444'}"></div></div>
-    </div>
-    ${secCards}
-  </div>
-  ${grade.biz?`<div class="bb-insight"><div class="bb-insight-label">💡 Business Interpretation</div>${grade.biz}</div>`:''}
-  <div class="bb-context">${esc([obj?.domain,obj?.task,obj?.target?'Target: '+obj.target:''].filter(Boolean).join(' · '))}</div>
-</div>
-<div class="bb-actions">
-  <button class="abtn p" onclick="deployAsAPI('${runId}')">🚀 Deploy as API</button>
-  <button class="abtn" onclick="dlDeploy('${runId}')">Download Model</button>
-  <button class="abtn" onclick="dlPack('${runId}')">Project Pack</button>
-  <button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button>
-  <button class="share-btn" onclick="shareResults('${runId}')">Share</button>
-</div>
-<div id="share-url-container" style="padding:0 18px 12px"></div>`;
+  e.innerHTML=`<div class="bb-l">Best Model <button class="cp-btn" onclick="copyText(\`${esc(summary)}\`,this)">Copy</button></div><div class="bb-m">${esc(best.model)}</div><div class="bb-s">${primaryLine}</div>${secHtml}<div class="bb-d">${esc((obj?.domain||'')+' · '+(obj?.task||'')+' · target: '+(obj?.target||''))}</div><div class="bb-a"><button class="abtn p" onclick="dlDeploy('${runId}')">Download Model</button><button class="abtn" onclick="dlPack('${runId}')">Project Pack</button><button class="abtn" onclick="genHandoff('${runId}')">Handoff</button><button class="share-btn" onclick="shareResults('${runId}')">Share</button></div><div id="share-url-container"></div>`;
   c.insertBefore(e,c.firstChild);
 }
-
-function _renderMd(txt){
-  // Basic markdown → HTML
-  return txt
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/^#{3}\s+(.+)$/gm,'<h3>$1</h3>')
-    .replace(/^#{2}\s+(.+)$/gm,'<h2>$1</h2>')
-    .replace(/^#{1}\s+(.+)$/gm,'<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
-    .replace(/^[-*]\s+(.+)$/gm,'<li>$1</li>')
-    .replace(/(<li>.*<\/li>(\n|$))+/g,'<ul>$&</ul>')
-    .replace(/\n{2,}/g,'</p><p>')
-    .replace(/^(?!<[hul])/gm,'')
-    .replace(/\n/g,'<br>');
-}
-
 function showRpt(rpt){
   clearEmpty('p-rpt');
-  document.getElementById('p-rpt').innerHTML=`<div class="rpt"><div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="cp-btn" onclick="copyText(document.querySelector('.rpt-body').innerText,this)">Copy</button></div><div class="rpt-body">${_renderMd(rpt)}</div></div>`;
+  document.getElementById('p-rpt').innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="cp-btn" onclick="copyText(document.querySelector('.rpt-body').textContent,this)">Copy</button></div><div class="rpt-body">${esc(rpt)}</div>`;
   const t=document.querySelector('.tab[data-t="rpt"]');if(t&&!t.querySelector('.tab-badge'))t.innerHTML='Report <span class="tab-badge">1</span>';
 }
 function showArts(runId,arts){
@@ -3239,10 +3139,7 @@ function renderMetricChart(){
   });
 
   svg+=`</svg>`;
-  const bestFinal=runBest[runBest.length-1];
-  const improvement=lower?(vals[0]-bestFinal)/Math.abs(vals[0]||1):(bestFinal-vals[0])/Math.abs(vals[0]||1);
-  const improveTxt=isFinite(improvement)&&Math.abs(improvement)>.001?`${improvement>0?'↑':'↓'} ${(Math.abs(improvement)*100).toFixed(1)}% from exp #1`:'';
-  el.innerHTML=`<div class="metric-chart-h"><div class="metric-chart-title">${esc(pk.toUpperCase())} Progress</div><div class="metric-chart-subtitle">${n} experiments · ${lower?'lower':'higher'} is better ${improveTxt?'· <span style="color:#22c55e">'+improveTxt+'</span>':''}</div></div>${svg}<div class="metric-chart-legend"><div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Running best</div><div class="legend-item"><div class="legend-dot" style="background:#71717a"></div>Each experiment</div></div>`;
+  el.innerHTML=`<div class="metric-chart-h"><div class="metric-chart-title">${esc(pk.toUpperCase())} Progress</div><div class="metric-chart-subtitle">${n} experiments · ${lower?'lower':'higher'} is better</div></div>${svg}<div class="metric-chart-legend"><div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Running best</div><div class="legend-item"><div class="legend-dot" style="background:#71717a"></div>Each experiment</div></div>`;
 }
 
 // ═══════════════════════════════════════════
@@ -3270,20 +3167,11 @@ function renderComparison(){
   const worstVal=top[top.length-1].metric_val;
   const range=Math.abs(bestVal-worstVal)||1;
 
-  const grade=_gradeMetric(pk,sorted[0].metric_val,dir);
-  let h=`<div class="metric-chart-h"><div class="metric-chart-title">Model Leaderboard</div><div class="metric-chart-subtitle">Top ${top.length} of ${successful.length} models · ${pk.toUpperCase()} ${lower?'↓ lower':'↑ higher'} is better${grade.g!=='–'?` · <span style="color:${grade.c==='excellent'?'#22c55e':grade.c==='good'?'#60a5fa':'#f59e0b'}">${grade.g}</span>`:''}</div></div>`;
+  let h=`<div class="metric-chart-h"><div class="metric-chart-title">Model Comparison</div><div class="metric-chart-subtitle">Top ${top.length} models · sorted by ${pk}</div></div>`;
   top.forEach((e,i)=>{
     const pct=lower?100-((e.metric_val-bestVal)/range*80):((e.metric_val-worstVal)/range*80)+20;
-    const isWinner=i===0;
-    const barColor=isWinner?'#22c55e':i<3?'#3b82f6':'#52525b';
-    const delta=i===0?'':(lower?(((e.metric_val-bestVal)/Math.abs(bestVal||1))*100).toFixed(1)+'%':(((bestVal-e.metric_val)/Math.abs(bestVal||1))*100).toFixed(1)+'%');
-    h+=`<div class="comparison-bar">
-      <div class="comparison-label">
-        <span class="comparison-label-name">${isWinner?'🏆 ':''}<strong>#${e.num}</strong> ${esc(e.model)}</span>
-        <span class="comparison-label-val">${Number(e.metric_val).toFixed(4)}${delta?` <span style="color:#71717a;font-size:10px">+${delta}</span>`:''}</span>
-      </div>
-      <div class="comparison-track"><div class="comparison-fill" style="width:${Math.max(4,pct)}%;background:${barColor};border-radius:2px"></div></div>
-    </div>`;
+    const cls=i===0?'best':(e.success?'ok':'fail');
+    h+=`<div class="comparison-bar"><div class="comparison-label"><span class="comparison-label-name">#${e.num} ${esc(e.model)}</span><span class="comparison-label-val">${Number(e.metric_val).toFixed(4)}</span></div><div class="comparison-track"><div class="comparison-fill ${cls}" style="width:${Math.max(8,pct)}%"></div></div></div>`;
   });
   el.innerHTML=h;
 }
@@ -4172,23 +4060,17 @@ const TITANIC_CSV=`PassengerId,Survived,Pclass,Name,Sex,Age,SibSp,Parch,Ticket,F
 
 async function loadSampleDataset(){
   closeOnboarding();
-  // Auto-start trial if visitor isn't logged in
-  if(!_authUser&&!_isTrialMode){
-    _isTrialMode=true;
-    localStorage.setItem('19labs_trial_started','1');
-    _updateTrialBtn();
-  }
+  toast('Loading Titanic dataset...','info',2000);
+  // Build a File-like object from the embedded CSV
   const blob=new Blob([TITANIC_CSV],{type:'text/csv'});
   const file=new File([blob],'titanic.csv',{type:'text/csv',lastModified:Date.now()});
   await handleFile(file,TITANIC_CSV);
-  // Set goal and launch directly — no chat messages, no plan confirmation step
-  const hint='Predict passenger survival. Target: Survived';
-  S.hint=hint;
-  S.confirmed=true;
-  setTimeout(async()=>{
-    await runDiscover(hint);
-    if(S.analyzed)await launchRun();
-  },500);
+  // Pre-fill goal
+  setTimeout(()=>{
+    const cin=document.getElementById('cin');
+    if(cin&&!cin.value)cin.value='Predict passenger survival. Target: Survived';
+    toast('Titanic dataset loaded! Hit Enter or click Send to start training.','ok',5000);
+  },400);
 }
 </script>
 </body>
