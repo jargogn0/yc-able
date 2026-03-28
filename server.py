@@ -1592,8 +1592,25 @@ def _compute_chart_data(df, spec):
 @app.post("/api/run/{run_id}/create-api")
 async def create_api_server(run_id: str, request: Request):
     body = await request.json()
-    api_key = body.get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-    provider = body.get("provider", "claude")
+    api_key = body.get("api_key") or ""
+    provider = body.get("provider") or ""
+
+    # Fall back to server credentials if no key provided (same logic as /api/run)
+    if not api_key:
+        user = _get_user(_token_from_request(request))
+        if user:
+            saved = _get_user_api_key(user["id"], provider or "claude")
+            if saved:
+                api_key = saved
+                if not provider:
+                    provider = "claude"
+    if not api_key:
+        if _server_has_bedrock():
+            api_key = json.dumps(_bedrock_creds())
+            provider = "bedrock"
+        else:
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            provider = provider or "claude"
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
