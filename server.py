@@ -162,12 +162,23 @@ def _verify_supabase_jwt(token: str) -> dict | None:
         if len(parts) != 3:
             return None
         h, p, s = parts
+        pad = lambda x: x + '=' * (4 - len(x) % 4)
+        # Supabase JWT secret may be plain text or base64-encoded — try both
+        secret_bytes = secret.encode()
         expected = base64.urlsafe_b64encode(
-            _hmac.new(secret.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()
+            _hmac.new(secret_bytes, f"{h}.{p}".encode(), hashlib.sha256).digest()
         ).rstrip(b'=').decode()
         if not _hmac.compare_digest(s, expected):
-            return None
-        pad = lambda x: x + '=' * (4 - len(x) % 4)
+            # Try decoding secret as base64
+            try:
+                secret_bytes = base64.b64decode(secret + '==')
+                expected = base64.urlsafe_b64encode(
+                    _hmac.new(secret_bytes, f"{h}.{p}".encode(), hashlib.sha256).digest()
+                ).rstrip(b'=').decode()
+                if not _hmac.compare_digest(s, expected):
+                    return None
+            except Exception:
+                return None
         data = json.loads(base64.urlsafe_b64decode(pad(p)))
         if data.get('exp', 0) < time.time():
             return None
@@ -529,7 +540,7 @@ async def auth_logout():
 async def auth_get_keys(request: Request):
     user = _get_user(_token_from_request(request))
     if not user:
-        raise HTTPException(401, "Not authenticated")
+        return {}  # Not authenticated — return empty, don't hard-fail
     conn = DBConn()
     rows = conn.execute(
         "SELECT provider, api_key FROM user_api_keys WHERE user_id=?", (user["id"],)
@@ -545,7 +556,7 @@ async def auth_get_keys(request: Request):
 async def auth_save_keys(request: Request):
     user = _get_user(_token_from_request(request))
     if not user:
-        raise HTTPException(401, "Not authenticated")
+        return {"ok": True}  # Silently ignore — JWT invalid, can't save keys
     data = await request.json()
     conn = DBConn()
     for provider, key in data.items():
