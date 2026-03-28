@@ -288,9 +288,9 @@ def _server_has_bedrock() -> bool:
 
 def _bedrock_creds() -> dict:
     return {
-        "access_key": os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID", ""),
-        "secret_key": os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-        "region": os.environ.get("BEDROCK_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+        "access_key": (os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID", "")).strip(),
+        "secret_key": (os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY", "")).strip(),
+        "region": (os.environ.get("BEDROCK_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")).strip(),
     }
 
 def _trial_ip(request: Request) -> str:

@@ -2448,13 +2448,17 @@ async function launchRun(){
 function procMsg(d){
   const msg=d.msg,tag=d.tag;
 
-  // Narration messages → show as special chat bubbles
+  // Narration messages → single updating bubble (no spam)
   if(tag==='narrate'){
-    const el=document.createElement('div');el.className='cm narrate';
-    el.innerHTML=`<div class="cl">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
     const c=document.getElementById('msgs');
+    let el=c.querySelector('.cm.narrate:last-child');
+    if(!el){
+      el=document.createElement('div');el.className='cm narrate';
+      c.appendChild(el);
+    }
+    el.innerHTML=`<div class="cl">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
     const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
-    c.appendChild(el);if(atBottom)c.scrollTop=c.scrollHeight;
+    if(atBottom)c.scrollTop=c.scrollHeight;
     return;
   }
 
