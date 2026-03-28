@@ -59,6 +59,8 @@ body.desktop-mac .topbar{padding-left:84px}
 .badge.ok{color:var(--accent);border-color:rgba(59,130,246,.3);background:var(--accent-soft)}
 .badge.err{color:var(--red);border-color:rgba(239,68,68,.3);background:var(--red-soft)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+/* Hide provider/settings controls for trial users */
+body.trial-mode #tb-prov,body.trial-mode button[onclick="openCmd()"]{display:none!important}
 .tbtn{font-size:12px;padding:5px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:all var(--t);font-family:var(--sans)}
 .tbtn:hover{border-color:var(--border-2);color:var(--text)}
 .tbtn.active{color:var(--accent);border-color:rgba(59,130,246,.4);background:var(--accent-soft)}
@@ -1256,21 +1258,22 @@ function _updateTrialBtn(){
   if(_authUser){
     btn.style.display='none';
     if(si)si.style.display='none';
+    document.body.classList.remove('trial-mode');
     return;
   }
   const rem=_trialRemaining();
   if(_isTrialMode){
-    // In trial — show slot counter, hide Sign In (cleaner)
     btn.textContent=rem>0?`${rem} run${rem===1?'':'s'} left`:'Sign Up Free';
     btn.style.display='inline-block';
     btn.onclick=rem>0?null:showAuthModal;
     if(si)si.style.display='none';
+    document.body.classList.add('trial-mode');
   } else {
-    // Not yet in trial — show both Sign In and Start Free
     btn.textContent='Start Free';
     btn.style.display='inline-block';
     btn.onclick=startTrial;
     if(si)si.style.display='';
+    document.body.classList.add('trial-mode');
   }
 }
 function startTrial(){
@@ -1609,6 +1612,8 @@ const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,
 // SETTINGS
 // ═══════════════════════════════════════════
 function openSettings(){
+  // Block settings access in trial mode — no API config exposed to anonymous users
+  if(_isTrialMode&&!_authUser){toast('Sign in to configure your AI provider','warn',3000);showAuthModal();return;}
   document.getElementById('key-input').value=C.provider==='bedrock'?'':C.key;
   document.getElementById('access-token-input').value=ACCESS_TOKEN;
   document.getElementById('server-url').value=localStorage.getItem('19labs_server')||'http://localhost:8019';
@@ -1616,17 +1621,13 @@ function openSettings(){
   document.getElementById('budget-val').textContent=S.budget;
   setRM(S.rmode,true);
   spUI(C.provider);
-  // Pre-fill Bedrock fields from saved creds
   if(C.provider==='bedrock'){
-    const saved=gk('bedrock');
-    let creds={};
-    try{if(saved&&saved.startsWith('{'))creds=JSON.parse(saved);}catch(_){}
     const a=document.getElementById('bedrock-access');
     const s=document.getElementById('bedrock-secret');
     const r=document.getElementById('bedrock-region');
-    if(a)a.value=creds.access_key||'';
-    if(s)s.value=''; // never pre-fill secret for security
-    if(r&&creds.region)r.value=creds.region;
+    if(a)a.value=''; // never pre-fill credentials
+    if(s)s.value='';
+    if(r)r.value='us-east-1';
   }
   document.getElementById('settings').style.display='flex';
 }

@@ -190,6 +190,7 @@ def _token_from_request(request: Request) -> str:
     return auth.replace("Bearer ", "").strip()
 
 def _get_user_api_key(user_id: str, provider: str) -> str:
+    """Return the user's own stored API key only — never server credentials."""
     try:
         conn = DBConn()
         row = conn.execute(
@@ -201,20 +202,7 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
             return row[0]
     except Exception:
         pass
-    # Fallback: env vars (useful when Railway DB is fresh after redeploy)
-    if provider == "bedrock":
-        ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
-        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-        if ak and sk:
-            return json.dumps({"access_key": ak, "secret_key": sk, "region": region})
-        return ""
-    _env_fallbacks = {
-        "claude": os.environ.get("ANTHROPIC_API_KEY", ""),
-        "openai": os.environ.get("OPENAI_API_KEY", ""),
-        "gemini": os.environ.get("GEMINI_API_KEY", ""),
-    }
-    return _env_fallbacks.get(provider, "")
+    return ""
 
 _init_db()
 
