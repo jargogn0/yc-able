@@ -271,7 +271,17 @@ CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 TRIAL_RUN_LIMIT = int(os.environ.get("TRIAL_RUN_LIMIT", "3"))
 
 def _server_has_bedrock() -> bool:
-    return bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
+    return bool(
+        (os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID"))
+        and (os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY"))
+    )
+
+def _bedrock_creds() -> dict:
+    return {
+        "access_key": os.environ.get("BEDROCK_ACCESS_KEY_ID") or os.environ.get("AWS_ACCESS_KEY_ID", ""),
+        "secret_key": os.environ.get("BEDROCK_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+        "region": os.environ.get("BEDROCK_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+    }
 
 def _trial_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For", "")
@@ -810,10 +820,7 @@ async def start_run(req: RunRequest, request: Request):
             raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} free runs per day). Create a free account to continue.")
         if _server_has_bedrock():
             req.provider = "bedrock"
-            _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
-            _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
-            _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-            req.api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg})
+            req.api_key = json.dumps(_bedrock_creds())
         elif _server_anthropic:
             req.provider = "claude"
             req.api_key = _server_anthropic
@@ -860,10 +867,8 @@ async def start_run(req: RunRequest, request: Request):
         try:
             _prov = (req.provider or "claude").lower()
             if not req.api_key and _prov == "bedrock":
-                _ak = os.environ.get("AWS_ACCESS_KEY_ID", "")
-                _sk = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
-                _rg = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-                resolved_api_key = json.dumps({"access_key": _ak, "secret_key": _sk, "region": _rg}) if _ak and _sk else ""
+                creds = _bedrock_creds()
+                resolved_api_key = json.dumps(creds) if creds["access_key"] and creds["secret_key"] else ""
             else:
                 resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
             cb("sys", f"API key received: {'YES' if resolved_api_key else 'NO'} (length={len(resolved_api_key)}) | Provider: {req.provider or 'claude'}")
@@ -958,11 +963,7 @@ async def discover(req: DiscoverRequest):
 
         if not resolved_api_key and _server_has_bedrock():
             # Trial / no-key path — use server Bedrock (same as /api/run trial logic)
-            resolved_api_key = json.dumps({
-                "access_key": os.environ.get("AWS_ACCESS_KEY_ID", ""),
-                "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-                "region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-            })
+            resolved_api_key = json.dumps(_bedrock_creds())
             resolved_provider = "bedrock"
         elif not resolved_api_key:
             resolved_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
