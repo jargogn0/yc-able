@@ -1734,10 +1734,6 @@ def download_project_pack(run_id: str):
 
 @app.get("/api/run/{run_id}/artifact/{artifact_name}")
 def download_artifact(run_id: str, artifact_name: str):
-    if run_id not in RUNS:
-        raise HTTPException(404, "Run not found")    run = RUNS[run_id]
-    result = run.get("result") or {}
-    artifacts = _augment_artifacts(run, result.get("artifacts"))
     allowed = {
         "program_md":              "program.md",
         "prepare_py":              "prepare.py",
@@ -1756,26 +1752,59 @@ def download_artifact(run_id: str, artifact_name: str):
         "train_py":                "train.py",
         "final_report_md":         "final_report.md",
     }
-    # Also allow per-experiment plots like exp_01_predictions_png
     is_exp_plot = artifact_name.startswith("exp_")
     if artifact_name not in allowed and not is_exp_plot:
         raise HTTPException(404, "Unknown artifact")
+
+    # Resolve run + workspace — support both in-memory and post-restart DB lookups
+    run = RUNS.get(run_id)
+    ws_str = ""
+    if run:
+        result = run.get("result") or {}
+        ws_str = run.get("ws", "")
+        artifacts = _augment_artifacts(run, result.get("artifacts"))
+    else:
+        # Server restarted — load from DB
+        try:
+            conn = DBConn()
+            row = conn.execute("SELECT result_json FROM runs WHERE id=?", (run_id,)).fetchone()
+            conn.close()
+        except Exception:
+            row = None
+        if not row:
+            raise HTTPException(404, "Run not found")
+        result = json.loads(row["result_json"]) if row["result_json"] else {}
+        # Reconstruct workspace path: prefix was 19labs_{run_id}_  in tempdir
+        import glob as _glob, tempfile as _tmp
+        ws_candidates = _glob.glob(str(Path(_tmp.gettempdir()) / f"19labs_{run_id}_*"))
+        if ws_candidates:
+            ws_str = ws_candidates[0]
+        else:
+            # Try deriving from artifact paths stored in result
+            for v in (result.get("artifacts") or {}).values():
+                if v and Path(v).parent.exists():
+                    ws_str = str(Path(v).parent)
+                    break
+        artifacts = _augment_artifacts({"ws": ws_str}, result.get("artifacts"))
+
     p = artifacts.get(artifact_name)
     if not p:
-        run = RUNS[run_id]
-        ws = Path(run.get("ws", ""))
-        fallback_name = allowed.get(artifact_name, "")
-        # For exp_ plots, derive filename from key (e.g. exp_01_timeseries_png → exp_01_timeseries.png)
-        if not fallback_name and is_exp_plot:
-            fallback_name = artifact_name.replace("_png", ".png").replace("_py", ".py")
-        fallback_path = ws / fallback_name if ws.exists() and fallback_name else None
-        if fallback_path and fallback_path.exists():
-            p = str(fallback_path)
-        else:
+        # Final fallback: look directly in workspace by filename
+        ws_path = Path(ws_str) if ws_str else None
+        fname = allowed.get(artifact_name, "")
+        if not fname and is_exp_plot:
+            fname = artifact_name.replace("_png", ".png").replace("_py", ".py")
+        if ws_path and ws_path.exists() and fname:
+            candidate = ws_path / fname
+            if candidate.exists():
+                p = str(candidate)
+        if not p:
             raise HTTPException(404, "Artifact not available")
+
     fp = Path(p)
     if not fp.exists() or not fp.is_file():
         raise HTTPException(404, "Artifact file missing")
+
     media = "application/octet-stream"
     if artifact_name == "analysis_ipynb":
         media = "application/x-ipynb+json"
@@ -1787,7 +1816,7 @@ def download_artifact(run_id: str, artifact_name: str):
         media = "text/x-python"
     elif artifact_name.endswith("_tsv"):
         media = "text/tab-separated-values"
-    # Use allowed filename if available, else derive from artifact_name
+
     dl_filename = allowed.get(artifact_name) or artifact_name.replace("_png", ".png").replace("_py", ".py").replace("_md", ".md")
     return FileResponse(str(fp), filename=dl_filename, media_type=media)
 
