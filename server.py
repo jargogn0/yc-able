@@ -345,13 +345,18 @@ def _save_run_to_db(run_id: str, run: dict):
     except Exception:
         pass  # Non-critical -- don't block the run
 
-def _load_run_history_from_db():
-    """Load recent runs from DB for the /api/runs endpoint."""
+def _load_run_history_from_db(user_id: str | None = None):
+    """Load recent runs from DB for the /api/runs endpoint, filtered by owner."""
     try:
         conn = DBConn()
-        rows = conn.execute(
-            "SELECT * FROM runs ORDER BY started DESC LIMIT 100"
-        ).fetchall()
+        if user_id:
+            rows = conn.execute(
+                "SELECT * FROM runs WHERE user_id=? ORDER BY started DESC LIMIT 100",
+                (user_id,)
+            ).fetchall()
+        else:
+            # Anonymous / no user — return nothing (don't expose other users' runs)
+            rows = []
         conn.close()
         return list(rows)
     except Exception:
@@ -1385,10 +1390,15 @@ async def cancel_run(run_id: str):
 
 # ── LIST RUNS ──────────────────────────────────────────────────
 @app.get("/api/runs")
-def list_runs():
+def list_runs(request: Request):
+    user = _current_user(request)
+    user_id = user["id"] if user else None
     out = []
-    # In-memory runs (current session)
+    # In-memory runs — only show runs owned by this user
     for rid, run in sorted(RUNS.items(), key=lambda x: x[1].get("started", 0), reverse=True):
+        owner = run.get("owner_id")
+        if owner and owner != user_id:
+            continue  # belongs to someone else
         out.append({
             "id": rid,
             "status": run["status"],
@@ -1398,9 +1408,9 @@ def list_runs():
             "best_model": (run.get("result") or {}).get("best", {}).get("model"),
             "best_metric": (run.get("result") or {}).get("best", {}).get("metric_val"),
         })
-    # Historical runs from DB (not in memory)
+    # Historical runs from DB — filtered by user_id at the query level
     in_memory_ids = set(RUNS.keys())
-    for row in _load_run_history_from_db():
+    for row in _load_run_history_from_db(user_id=user_id):
         if row["id"] not in in_memory_ids:
             out.append({
                 "id": row["id"],
@@ -1410,7 +1420,7 @@ def list_runs():
                 "provider": row.get("provider", "claude"),
                 "best_model": row.get("best_model"),
                 "best_metric": row.get("best_metric_val"),
-                "historical": True,  # flag that workspace is gone
+                "historical": True,
             })
     out.sort(key=lambda x: x.get("started") or 0, reverse=True)
     return {"runs": out[:100]}
