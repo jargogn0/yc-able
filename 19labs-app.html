@@ -2680,6 +2680,12 @@ async function launchRun(){
     addRunHistory(S.runId,'done',`${S.best?.model||''}`.trim()||S.file?.name||'Done');
     toast(`Research complete — ${kept}/${totalExp} experiments kept`,'ok',6000);
     sbUpdate({status:'Done',running:false,stopTimer:true,tokens:tu.input?`${((tu.input+tu.output)/1000).toFixed(1)}k (~${costStr})`:''});
+    // Auto-load results table and badge the tab
+    if(S.runId){
+      loadForecastTable(S.runId);
+      const resTab=document.querySelector('.tab[data-t="results"]');
+      if(resTab&&!resTab.querySelector('.tab-badge'))resTab.innerHTML='Results <span class="tab-badge">!</span>';
+    }
     // Enable predict panel + explain panel
     showPredictPanel();
     loadExplainability();

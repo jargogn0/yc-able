@@ -1009,10 +1009,34 @@ HYPOTHESES:
         return m.group(1).strip() if m else ""
 
     tc = profile["target_candidates"]
+    task_inferred = g("TASK") or "Regression"
+    metric_from_llm = (g("METRIC") or "").strip().lower()
+
+    # SMART METRIC OVERRIDE — don't let the LLM blindly pick RMSE for time series.
+    # If user explicitly named a metric in their hint, that wins always.
+    hint_lo = (hint or "").lower()
+    user_metric = None
+    for _m in ["mape","smape","wape","mae","rmse","nse","r2","auc","f1","accuracy","logloss","precision","recall"]:
+        if re.search(rf'\b{_m}\b', hint_lo):
+            user_metric = _m
+            break
+
+    if user_metric:
+        metric = user_metric  # User explicitly asked → always honour
+    elif "timeseries" in task_inferred.lower() or "forecast" in task_inferred.lower():
+        # For time series, MAPE is the business-standard metric.
+        # Only keep RMSE if LLM gave a strong reason AND user didn't mention MAPE.
+        metric = "mape"
+    elif metric_from_llm:
+        metric = metric_from_llm
+    else:
+        metric = _smart_default_metric(task_inferred, hint)
+
+    tc = profile["target_candidates"]
     return dict(domain=g("DOMAIN") or "General",
-        task   =g("TASK")   or "Regression",
+        task   =task_inferred,
         target =g("TARGET") or (tc[0] if tc else profile["headers"][-1]),
-        metric =g("METRIC") or _smart_default_metric(g("TASK"), hint),
+        metric =metric,
         direction=g("DIRECTION") or "lower_is_better",
         confidence=_safe_float(g("CONFIDENCE"), 0.7),
         reasoning =g("REASONING") or "",
@@ -1398,21 +1422,32 @@ KARPATHY DISCIPLINE (MANDATORY):
 - Robust preprocessing (nulls, categoricals, datetime).
 - Deterministic behavior (set random seeds).
 - Save model via `joblib.dump(model, 'model.pkl')`.
-- ALL output goes to stdout. Final line MUST be `print(json.dumps(metrics))` where metrics is a dict with these keys:
-  REQUIRED:
-  - "model": string naming the algorithm (e.g. "Ridge", "XGBoost", "LightGBM")
-  - "{obj.get('metric', 'rmse')}": float — the PRIMARY metric on TEST set
-  ALWAYS INCLUDE (compute all on TEST set):
-  - "train_rmse": float, "test_rmse": float — train vs test RMSE (ALWAYS include both)
-  - "train_mape": float, "test_mape": float — train vs test MAPE
-  - "train_r2": float, "test_r2": float — train vs test R²
-  - "rmse": float, "mape": float, "mae": float, "r2": float, "nse": float — test set values
-  - "nse": float — Nash-Sutcliffe efficiency on test set
+- PRIMARY METRIC: {obj.get('metric','rmse').upper()} — optimize for THIS, not RMSE.
+  Use as eval_metric in LightGBM/XGBoost/CatBoost. Use as scoring in cross_val_score.
+- MANDATORY predictions.csv — ALWAYS save this file after fitting, no exceptions:
+  ```python
+  import pandas as pd
+  _pred_df_rows = []
+  for i, (act, pred) in enumerate(zip(y_test, y_pred)):
+      row = {{'actual': float(act), 'predicted': float(pred)}}
+      # If you have a date column, add it:  row['date'] = str(test_dates.iloc[i]) if hasattr(test_dates,'iloc') else str(i)
+      _pred_df_rows.append(row)
+  pd.DataFrame(_pred_df_rows).to_csv('predictions.csv', index=False)
+  ```
+  This table is shown to the user in the Results tab — it MUST exist.
+- ALL output goes to stdout. Final line MUST be `print(json.dumps(metrics))` where metrics is a dict:
+  REQUIRED keys:
+  - "model": string (e.g. "LightGBM")
+  - "{obj.get('metric', 'mape')}": float — PRIMARY metric, TEST set
+  ALWAYS INCLUDE:
+  - "train_{obj.get('metric','mape')}": float, "test_{obj.get('metric','mape')}": float
+  - "train_rmse": float, "test_rmse": float
+  - "train_mape": float, "test_mape": float
+  - "train_r2": float, "test_r2": float
+  - "rmse": float, "mape": float, "mae": float, "r2": float, "nse": float
   - "what_worked": string
-  IMPORTANT: Always split data into train/test, compute metrics on BOTH, and report both.
-  The primary metric value MUST be computed on the TEST set, never the training set.
-  Example: print(json.dumps({{"model": "XGBoost", "rmse": 4500.0, "train_rmse": 3200.0, "test_rmse": 4500.0, "train_r2": 0.97, "test_r2": 0.91, "r2": 0.91, "mape": 8.2, "nse": 0.91, "what_worked": "feature engineering"}}))
-  NEVER use try/except to print fallback metrics. Let exceptions crash — the system handles recovery.
+  Example for MAPE primary: print(json.dumps({{"model":"LightGBM","mape":0.12,"train_mape":0.08,"test_mape":0.12,"rmse":4500.0,"train_rmse":3200.0,"test_rmse":4500.0,"r2":0.91,"train_r2":0.97,"test_r2":0.91,"mae":2100.0,"nse":0.89,"what_worked":"lag features"}}))
+  NEVER catch exceptions around the metrics print.
 - GENERATE PLOTS: After training, save ALL of the following plots using matplotlib (Agg backend).
   Apply this dark style before any plot:
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
@@ -1556,13 +1591,18 @@ TRAIN.PY HARD RULES (Karpathy discipline):
   - The primary metric value MUST be the key "{(obj or {}).get('metric', 'rmse')}" in your final JSON
 - Final line: print(json.dumps(metrics)) — MUST include "model" key PLUS train_ and test_ prefixed metrics.
   Required keys: "{(obj or {}).get('metric', 'rmse')}" (primary, test set), "train_{(obj or {}).get('metric', 'rmse')}", "test_{(obj or {}).get('metric', 'rmse')}", "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse", "r2", and any applicable: mape, mae, nse.
-- SAVE PREDICTIONS CSV: After training, ALWAYS save a CSV with actual vs predicted values:
-  import pandas as pd
-  pred_df = pd.DataFrame({{'actual': y_test.values if hasattr(y_test,'values') else y_test, 'predicted': y_pred}})
-  # If a date column exists, prepend it:
-  # pred_df.insert(0, 'date', test_dates.values)
-  pred_df.to_csv('predictions.csv', index=False)
-  This is MANDATORY — it enables the forecast table in the UI.
+- MANDATORY predictions.csv — save this BEFORE the final print(), no exceptions:
+  try:
+    _rows = []
+    for i in range(len(y_test)):
+      _r = {{'actual': float(y_test.iloc[i] if hasattr(y_test,'iloc') else y_test[i]),
+             'predicted': float(y_pred[i])}}
+      # Add date if you have it: _r['date'] = str(test_dates.iloc[i])
+      # Add customer/group if multi-series: _r['customer'] = str(test_group[i])
+      _rows.append(_r)
+    import pandas as _pd2; _pd2.DataFrame(_rows).to_csv('predictions.csv', index=False)
+  except Exception: pass
+  This file powers the Results tab showing actuals vs predicted to the user.
 - GENERATE PLOTS (matplotlib, Agg backend). Same 5 plots as always:
     BG='#09090b'; BLUE='#3b82f6'; RED='#ef4444'; DIM='#27272a'
     plt.rcParams.update({{'figure.facecolor':BG,'axes.facecolor':BG,'axes.spines.top':False,
@@ -3621,14 +3661,24 @@ Output ONLY a complete ```python block.""", 4200)
         # Good-enough threshold: stop in any mode
         thresh = GOOD_ENOUGH.get(metric_name) or GOOD_ENOUGH.get(metric_name.lower())
         ge_str = obj.get("good_enough", "")
-        ge_nums = re.findall(r'[\d,]+\.?\d*', ge_str.replace(',', ''))
-        if ge_nums:
-            try:
-                parsed_t = float(ge_nums[0])
-                if parsed_t > 0:
-                    thresh = parsed_t
-            except ValueError:
-                pass
+        # Only apply LLM's good_enough if it mentions the same metric we're tracking
+        # AND is stricter than our built-in. This prevents "RMSE < 25000" from stopping
+        # a MAPE-optimized run after 1 experiment.
+        if ge_str and metric_name.lower() in ge_str.lower():
+            ge_nums = re.findall(r'[\d,]+\.?\d*', ge_str.replace(',', ''))
+            if ge_nums:
+                try:
+                    parsed_t = float(ge_nums[0])
+                    if parsed_t > 0:
+                        # Only replace if stricter (lower for lower_is_better, higher for higher_is_better)
+                        if thresh is None:
+                            thresh = parsed_t
+                        elif lower and parsed_t < thresh:
+                            thresh = parsed_t
+                        elif not lower and parsed_t > thresh:
+                            thresh = parsed_t
+                except ValueError:
+                    pass
         if keep and thresh and ((lower and metric_val <= thresh) or ((not lower) and metric_val >= thresh)):
             narrate(log_callback, "good_enough", metric=metric_name, val=metric_val)
             log.engine(f"Hit good-enough threshold ({thresh}) on {metric_name}. Mission accomplished.")
