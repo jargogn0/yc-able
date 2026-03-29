@@ -572,12 +572,17 @@ input[type=file]{display:none}
 .stop-btn:hover{background:var(--red);color:#fff;border-color:var(--red)}
 
 /* Run history */
-.rh-item{display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;transition:background 120ms;font-size:12px}
+.rh-item{display:flex;align-items:center;gap:9px;padding:5px 14px;cursor:pointer;transition:background 120ms;font-size:12px;position:relative}
 .rh-item:hover{background:rgba(255,255,255,.03)}
+.rh-item:hover .rh-actions{opacity:1;pointer-events:auto}
 .rh-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:1px}
 .rh-dot.done{background:#34d399}.rh-dot.err{background:#f87171}.rh-dot.run{background:var(--accent);animation:pulse 1.5s infinite}
-.rh-id{font-family:var(--mono);color:#3f3f46;font-size:10px;font-weight:500}
+.rh-id{font-family:var(--mono);color:#3f3f46;font-size:9px;font-weight:500;white-space:nowrap}
 .rh-label{flex:1;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.rh-actions{opacity:0;pointer-events:none;display:flex;gap:1px;flex-shrink:0;transition:opacity 120ms}
+.rh-btn{background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px 5px;border-radius:4px;font-size:11px;line-height:1;transition:all 100ms}
+.rh-btn:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.rh-btn.del:hover{color:#f87171}
 
 /* ── TOAST NOTIFICATIONS ── */
 .toast-stack{position:fixed;bottom:16px;right:16px;z-index:3000;display:flex;flex-direction:column-reverse;gap:6px;pointer-events:none;max-width:380px}
@@ -3453,12 +3458,47 @@ function addRunHistory(id,status,label){
 function renderRunHistory(){
   const el=document.getElementById('run-history');
   if(!runHistory.length){el.innerHTML='';return}
+  const isAuth=_authUser&&_authUser.id&&_authUser.id!=='local';
   let h='<div class="side-sec">Recent Runs</div>';
-  runHistory.slice(0,10).forEach(r=>{
+  runHistory.slice(0,20).forEach(r=>{
     const dotCls=r.status==='done'?'done':r.status==='error'?'err':'run';
-    h+=`<div class="rh-item" onclick="loadRunStatus('${r.id}')"><div class="rh-dot ${dotCls}"></div><div class="rh-label">${esc(r.label)}</div><div class="rh-id">${r.id}</div></div>`;
+    const actions=isAuth?`<div class="rh-actions">
+      <button class="rh-btn" title="Rename" onclick="event.stopPropagation();rhRename('${r.id}')">✎</button>
+      <button class="rh-btn del" title="Delete" onclick="event.stopPropagation();rhDelete('${r.id}')">✕</button>
+    </div>`:'';
+    h+=`<div class="rh-item" onclick="loadRunStatus('${r.id}')">
+      <div class="rh-dot ${dotCls}"></div>
+      <div style="flex:1;min-width:0">
+        <div class="rh-label">${esc(r.label)}</div>
+        <div class="rh-id">${r.id}</div>
+      </div>
+      ${actions}
+    </div>`;
   });
   el.innerHTML=h;
+}
+async function rhRename(id){
+  const run=runHistory.find(r=>r.id===id);
+  if(!run)return;
+  const newLabel=prompt('Rename run:',run.label);
+  if(!newLabel||newLabel.trim()===run.label)return;
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${id}/label`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:newLabel.trim()})});
+    if(!r.ok){toast('Rename failed','err');return;}
+    run.label=newLabel.trim();_rhSave();renderRunHistory();toast('Renamed','ok');
+  }catch(_){toast('Rename failed','err');}
+}
+async function rhDelete(id){
+  if(!confirm('Delete this run? This cannot be undone.'))return;
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${id}`,{method:'DELETE'});
+    if(!r.ok){toast('Delete failed','err');return;}
+    const idx=runHistory.findIndex(r=>r.id===id);
+    if(idx>-1)runHistory.splice(idx,1);
+    _rhSave();renderRunHistory();
+    if(S.runId===id){S.runId=null;localStorage.removeItem('19labs_last_run_id');}
+    toast('Run deleted','ok');
+  }catch(_){toast('Delete failed','err');}
 }
 async function loadRunStatus(id){
   try{

@@ -1404,6 +1404,70 @@ async def cancel_run(run_id: str):
     run["logs"].append({"tag": "sys", "msg": "Stopping after current experiment... Results will be preserved.", "ts": time.strftime("%H:%M:%S")})
     return {"ok": True, "msg": "Stopping gracefully — results from completed experiments will be kept"}
 
+# ── DELETE RUN ─────────────────────────────────────────────────
+@app.delete("/api/run/{run_id}")
+def delete_run(run_id: str, request: Request):
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(401, "Sign in to delete runs")
+    user_id = user["id"]
+    # Check ownership in memory
+    if run_id in RUNS:
+        if RUNS[run_id].get("owner_id") != user_id:
+            raise HTTPException(403, "Access denied")
+        del RUNS[run_id]
+    # Delete from DB
+    try:
+        conn = DBConn()
+        row = conn.execute("SELECT user_id FROM runs WHERE id=?", (run_id,)).fetchone()
+        if row:
+            if row["user_id"] != user_id:
+                conn.close()
+                raise HTTPException(403, "Access denied")
+            conn.execute("DELETE FROM runs WHERE id=?", (run_id,))
+            conn.commit()
+        conn.close()
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    return {"ok": True}
+
+# ── RENAME RUN ─────────────────────────────────────────────────
+class RenameRunRequest(BaseModel):
+    label: str
+
+@app.patch("/api/run/{run_id}/label")
+def rename_run(run_id: str, req: RenameRunRequest, request: Request):
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(401, "Sign in to rename runs")
+    user_id = user["id"]
+    label = req.label.strip()[:80]
+    if not label:
+        raise HTTPException(400, "Label cannot be empty")
+    # Update in memory
+    if run_id in RUNS:
+        if RUNS[run_id].get("owner_id") != user_id:
+            raise HTTPException(403, "Access denied")
+        RUNS[run_id]["label"] = label
+    # Update in DB — store in hint field prefix (reuse existing column)
+    try:
+        conn = DBConn()
+        row = conn.execute("SELECT user_id FROM runs WHERE id=?", (run_id,)).fetchone()
+        if row:
+            if row["user_id"] != user_id:
+                conn.close()
+                raise HTTPException(403, "Access denied")
+            conn.execute("UPDATE runs SET filename=? WHERE id=?", (label, run_id))
+            conn.commit()
+        conn.close()
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    return {"ok": True, "label": label}
+
 # ── LIST RUNS ──────────────────────────────────────────────────
 @app.get("/api/runs")
 def list_runs(request: Request):
