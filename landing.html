@@ -266,7 +266,7 @@ nav{
     Labs
   </a>
   <div class="nav-r">
-    <button class="btn-ghost" id="nav-signin" onclick="openAuthModal()">Sign in</button>
+    <button class="btn-ghost" id="nav-signin" onclick="window.location.href='/app'">Get started</button>
     <button class="btn-solid" id="nav-cta" onclick="openAuthModal()">Sign up</button>
   </div>
 </nav>
@@ -501,7 +501,7 @@ addEventListener('keydown',e=>{if(e.key==='Escape')closeAuthModal();});
     const cta=document.getElementById('nav-cta');
     const si=document.getElementById('nav-signin');
     if(cta){ cta.textContent='Open App →'; cta.classList.add('open-app'); cta.onclick=()=>location.href='/app'; }
-    if(si){ si.textContent='Dashboard'; si.onclick=()=>location.href='/app'; }
+    if(si){ si.textContent='My workspace'; si.onclick=()=>location.href='/app'; }
   }
 })();
 </script>
