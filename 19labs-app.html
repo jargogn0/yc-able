@@ -1828,6 +1828,12 @@ const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,
 // SETTINGS
 // ═══════════════════════════════════════════
 function openSettings(){
+  // Settings are only available to authenticated users
+  const isRealAccount = _authUser && _authUser.id && _authUser.id !== 'local';
+  if(!isRealAccount){
+    showAuthModal();
+    return;
+  }
   document.getElementById('key-input').value=C.provider==='bedrock'?'':C.key;
   document.getElementById('access-token-input').value=ACCESS_TOKEN;
   document.getElementById('server-url').value=localStorage.getItem('19labs_server')||'http://localhost:8019';
