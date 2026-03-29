@@ -145,8 +145,12 @@ def _init_db():
     # Add user_id column to existing runs tables that predate this migration
     try:
         conn.execute("ALTER TABLE runs ADD COLUMN user_id TEXT")
+        conn.commit()
     except Exception:
-        pass  # column already exists
+        try:
+            conn._conn.rollback()  # reset PG transaction state after duplicate-column error
+        except Exception:
+            pass
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
