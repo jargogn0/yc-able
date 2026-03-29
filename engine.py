@@ -1801,34 +1801,42 @@ def write_analysis_notebook(ws, profile, obj):
     return str(p)
 
 def _apply_dark_style(plt):
-    """Ultra-minimal editorial dark style — no chart junk."""
+    """Premium dark editorial style — high contrast, clean, publication-quality."""
     plt.rcParams.update({
-        "figure.facecolor":   "#09090b",
-        "axes.facecolor":     "#09090b",
-        "axes.spines.top":    False,
-        "axes.spines.right":  False,
-        "axes.spines.left":   False,
-        "axes.spines.bottom": True,
-        "axes.edgecolor":     "#27272a",
-        "axes.labelcolor":    "#71717a",
-        "xtick.color":        "#52525b",
-        "ytick.color":        "#52525b",
-        "text.color":         "#fafafa",
-        "axes.labelsize":     10,
-        "xtick.labelsize":    9,
-        "ytick.labelsize":    9,
-        "axes.grid":          True,
-        "axes.axisbelow":     True,
-        "grid.color":         "#18181b",
-        "grid.linewidth":     1.0,
-        "grid.alpha":         1.0,
-        "xtick.bottom":       False,
-        "ytick.left":         False,
-        "legend.facecolor":   "#09090b",
-        "legend.edgecolor":   "#27272a",
-        "legend.fontsize":    9,
-        "legend.framealpha":  1.0,
-        "font.family":        "sans-serif",
+        "figure.facecolor":       "#09090b",
+        "axes.facecolor":         "#09090b",
+        "axes.spines.top":        False,
+        "axes.spines.right":      False,
+        "axes.spines.left":       True,
+        "axes.spines.bottom":     True,
+        "axes.edgecolor":         "#27272a",
+        "axes.labelcolor":        "#a1a1aa",
+        "xtick.color":            "#52525b",
+        "ytick.color":            "#71717a",
+        "text.color":             "#e4e4e7",
+        "axes.labelsize":         10,
+        "xtick.labelsize":        9,
+        "ytick.labelsize":        9,
+        "xtick.major.size":       0,
+        "ytick.major.size":       3,
+        "xtick.major.pad":        6,
+        "ytick.major.pad":        5,
+        "axes.grid":              True,
+        "axes.axisbelow":         True,
+        "grid.color":             "#1c1c1f",
+        "grid.linewidth":         0.8,
+        "grid.alpha":             1.0,
+        "xtick.bottom":           True,
+        "ytick.left":             True,
+        "legend.facecolor":       "#111113",
+        "legend.edgecolor":       "#27272a",
+        "legend.fontsize":        9,
+        "legend.framealpha":      0.95,
+        "legend.borderpad":       0.6,
+        "legend.handlelength":    1.5,
+        "font.family":            "sans-serif",
+        "font.size":              10,
+        "figure.dpi":             160,
     })
 
 
@@ -1844,47 +1852,100 @@ def render_progress_png(ws, history, obj):
         return ""
 
     _apply_dark_style(plt)
-    BG   = "#09090b"
-    BLUE = "#3b82f6"
-    MUTED = "#3f3f46"
+    BG     = "#09090b"
+    BLUE   = "#3b82f6"
+    PURPLE = "#8b5cf6"
+    RED    = "#ef4444"
+    MUTED  = "#3f3f46"
 
     rows = [h for h in history if h.get("success")]
     if not rows:
-        fig, ax = plt.subplots(figsize=(10, 3))
+        fig, ax = plt.subplots(figsize=(11, 3.5))
         ax.text(0.5, 0.5, "Waiting for first result…",
                 ha="center", va="center", fontsize=13, color="#52525b")
-        ax.set_facecolor(BG); fig.set_facecolor(BG)
-        ax.axis("off")
-        plt.savefig(p, dpi=150, facecolor=BG, bbox_inches="tight"); plt.close(fig)
+        ax.set_facecolor(BG); fig.set_facecolor(BG); ax.axis("off")
+        plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight"); plt.close(fig)
         return str(p)
 
     metric = obj.get("metric", "metric")
     lower  = obj.get("direction", "lower_is_better") == "lower_is_better"
     xs     = [h["num"] for h in rows]
     ys     = [float(h["metric_val"]) for h in rows]
+    train_key = f"train_{metric}"
+    train_ys = [h.get("all_metrics", {}).get(train_key) for h in rows]
+    has_train = any(v is not None for v in train_ys)
+
     running, cur = [], None
     for y in ys:
         cur = y if cur is None else (min(cur, y) if lower else max(cur, y))
         running.append(cur)
 
-    fig, ax = plt.subplots(figsize=(11, 4))
-    ax.scatter(xs, ys, s=28, color=MUTED, zorder=3, linewidths=0)
-    ax.plot(xs, running, color=BLUE, linewidth=2.5, zorder=4, solid_capstyle="round")
-    bi = running.index(running[-1])
-    ax.scatter([xs[bi]], [running[bi]], s=60, color=BLUE, zorder=5, linewidths=0)
+    bi = running.index(min(running) if lower else max(running))
+    best_val = running[bi]
+    best_model = rows[bi].get("model", "")
 
-    best_val = running[-1]
-    fmt = f"{best_val:.4f}" if abs(best_val) < 100 else f"{best_val:,.0f}"
-    ax.set_title(
-        f"{metric.upper()}  ·  best {fmt}  ·  {len(rows)} experiments",
-        fontsize=12, fontweight="600", color="#fafafa", loc="left", pad=14,
+    fig, ax = plt.subplots(figsize=(12, 4.5))
+
+    # Gradient fill under running best (manual polygon)
+    ax.fill_between(xs, running, min(ys + running) - (max(ys + running) - min(ys + running)) * 0.2,
+                    color=BLUE, alpha=0.07, zorder=1)
+
+    # Train line (if available)
+    if has_train:
+        ty = [v if v is not None else float("nan") for v in train_ys]
+        ax.plot(xs, ty, color=PURPLE, linewidth=1.2, linestyle="--",
+                alpha=0.55, label="train", zorder=2, solid_capstyle="round")
+
+    # Individual experiment dots (colored by status)
+    discarded_xs = [xs[i] for i, h in enumerate(rows) if h.get("status") == "discard"]
+    discarded_ys = [ys[i] for i, h in enumerate(rows) if h.get("status") == "discard"]
+    kept_xs = [xs[i] for i, h in enumerate(rows) if h.get("status") != "discard"]
+    kept_ys = [ys[i] for i, h in enumerate(rows) if h.get("status") != "discard"]
+
+    if discarded_xs:
+        ax.scatter(discarded_xs, discarded_ys, s=22, color=RED, zorder=3,
+                   linewidths=0, alpha=0.4, label="discarded")
+    ax.scatter(kept_xs, kept_ys, s=28, color=MUTED, zorder=3, linewidths=0, label="kept")
+
+    # Running best line
+    ax.plot(xs, running, color=BLUE, linewidth=2.5, zorder=4,
+            solid_capstyle="round", label="best so far")
+
+    # Best experiment highlight
+    ax.scatter([xs[bi]], [best_val], s=80, color=BLUE, zorder=5, linewidths=0,
+               edgecolors="#09090b")
+    ax.scatter([xs[bi]], [best_val], s=200, color=BLUE, zorder=4, linewidths=0,
+               alpha=0.15)
+
+    # Annotate best value
+    v_range = max(ys + running) - min(ys + running) or abs(best_val) * 0.1 or 0.01
+    fmt = f"{best_val:.4f}" if abs(best_val) < 100 else f"{best_val:,.1f}"
+    ax.annotate(
+        f"  best: {fmt}\n  {best_model[:20]}",
+        (xs[bi], best_val),
+        xytext=(8, 12), textcoords="offset points",
+        fontsize=9, color=BLUE, fontweight="600",
+        va="bottom",
     )
-    ax.set_xlabel("experiment", labelpad=8)
-    ax.yaxis.set_visible(False)
-    ax.tick_params(axis="x", length=0, pad=6)
+
+    # Titles and axes
+    ax.set_title(
+        f"{metric.upper()}  ·  {len(rows)} experiments",
+        fontsize=13, fontweight="700", color="#fafafa", loc="left", pad=14,
+    )
+    ax.set_xlabel("experiment #", labelpad=8)
+    ax.spines["left"].set_color("#27272a")
     ax.spines["bottom"].set_color("#27272a")
-    plt.tight_layout(pad=1.6)
-    plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight"); plt.close(fig)
+    ax.tick_params(axis="x", length=0, pad=6, colors="#52525b")
+    ax.tick_params(axis="y", length=3, pad=5, colors="#71717a")
+    ax.yaxis.set_visible(True)
+
+    if len(rows) <= 15:
+        ax.set_xticks(xs)
+        ax.set_xticklabels([f"#{x}" for x in xs], fontsize=8, color="#52525b")
+    ax.legend(loc="upper right", frameon=True, fontsize=9)
+    plt.tight_layout(pad=1.8)
+    plt.savefig(p, dpi=180, facecolor=BG, bbox_inches="tight"); plt.close(fig)
     return str(p)
 
 
@@ -1912,9 +1973,9 @@ def render_final_plots(ws, history, obj, best):
     lower  = obj.get("direction", "lower_is_better") == "lower_is_better"
 
     def _save(fig, name):
-        plt.tight_layout(pad=1.8)
+        plt.tight_layout(pad=2.0)
         p = ws / name
-        plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+        plt.savefig(p, dpi=180, facecolor=BG, bbox_inches="tight")
         plt.close(fig)
         return str(p)
 
@@ -1934,34 +1995,58 @@ def render_final_plots(ws, history, obj, best):
         for y in test_vals:
             cur = y if cur is None else (min(cur, y) if lower else max(cur, y))
             running.append(cur)
+        bi = running.index(min(running) if lower else max(running))
 
-        fig, ax = plt.subplots(figsize=(12, 4))
+        fig, ax = plt.subplots(figsize=(13, 5))
+
+        # Fill under best line
+        baseline = min(test_vals + running) - (max(test_vals + running) - min(test_vals + running)) * 0.15
+        ax.fill_between(xs, running, baseline, color=BLUE, alpha=0.07, zorder=1)
+
         if has_train:
             tv = [v if v is not None else float("nan") for v in train_raw]
-            ax.plot(xs, tv, color=DIM, linewidth=1.2, linestyle="--", label="train")
+            ax.plot(xs, tv, color=PURPLE, linewidth=1.3, linestyle="--",
+                    alpha=0.55, label="train", zorder=2, solid_capstyle="round")
 
-        ax.scatter(xs, test_vals, s=22, color=MUTED, zorder=3, linewidths=0, label="test")
-        ax.plot(xs, running, color=BLUE, linewidth=2.5, zorder=4,
+        # Color dots: discarded=red, kept=dim, best=blue
+        for i, h in enumerate(rows):
+            is_best = (i == bi)
+            is_disc = h.get("status") == "discard"
+            col = BLUE if is_best else (RED if is_disc else MUTED)
+            alpha = 1.0 if is_best else (0.4 if is_disc else 0.7)
+            ax.scatter([xs[i]], [test_vals[i]], s=(80 if is_best else 28),
+                       color=col, zorder=4, linewidths=0, alpha=alpha)
+
+        ax.plot(xs, running, color=BLUE, linewidth=2.5, zorder=3,
                 solid_capstyle="round", label="best so far")
-        bi = running.index(running[-1])
-        ax.scatter([xs[bi]], [running[bi]], s=55, color=BLUE, zorder=5, linewidths=0)
 
         crashes = [h["num"] for h in history if not h.get("success")]
         if crashes:
-            ylim = ax.get_ylim()
-            ax.scatter(crashes, [ylim[0]] * len(crashes),
-                       marker="|", color=RED, s=40, zorder=5, label="failed")
+            ylim_min = min(test_vals + running) - abs(max(test_vals + running) - min(test_vals + running)) * 0.12
+            ax.scatter(crashes, [ylim_min] * len(crashes),
+                       marker="|", color=RED, s=60, zorder=5, label=f"failed ({len(crashes)})", alpha=0.7)
 
-        best_val = running[-1]
-        fmt = f"{best_val:.4f}" if abs(best_val) < 100 else f"{best_val:,.0f}"
+        best_val = running[bi]
+        best_model = rows[bi].get("model", "")
+        fmt = f"{best_val:.4f}" if abs(best_val) < 100 else f"{best_val:,.1f}"
         ax.set_title(
-            f"{metric.upper()}  ·  best {fmt}",
-            fontsize=12, fontweight="600", color="#fafafa", loc="left", pad=14,
+            f"{metric.upper()}  ·  best: {fmt}  ({best_model})",
+            fontsize=13, fontweight="700", color="#e4e4e7", loc="left", pad=16,
         )
-        ax.set_xlabel("experiment", labelpad=8)
-        ax.yaxis.set_visible(False)
+        ax.set_xlabel("experiment #", labelpad=8)
+        ax.spines["left"].set_color("#27272a")
+        ax.spines["bottom"].set_color("#27272a")
+        ax.yaxis.set_visible(True)
+        ax.tick_params(axis="y", colors="#71717a", length=3)
+        ax.tick_params(axis="x", length=0, pad=6)
+        if len(xs) <= 15:
+            ax.set_xticks(xs)
+            ax.set_xticklabels([f"#{x}" for x in xs], fontsize=8, color="#52525b")
+        legend_items = ["train", "best so far"] if has_train else ["best so far"]
+        if crashes:
+            legend_items.append(f"failed ({len(crashes)})")
         ax.legend(loc="upper right", frameon=True)
-        _clean_ax(ax)
+        plt.tight_layout(pad=2.0)
         generated["experiment_timeline_png"] = _save(fig, "experiment_timeline.png")
     except Exception:
         pass
@@ -1972,36 +2057,56 @@ def render_final_plots(ws, history, obj, best):
         model_best = OrderedDict()
         for h in rows:
             m = h.get("model", "?")
-            v = float(h["metric_val"])
+            v = float((h.get("all_metrics") or {}).get(f"test_{metric}") or h["metric_val"])
             if m not in model_best or (lower and v < model_best[m]) or (not lower and v > model_best[m]):
                 model_best[m] = v
 
         if model_best:
             sorted_m = sorted(model_best.items(), key=lambda x: x[1], reverse=not lower)
-            names  = [m[:30] for m, _ in sorted_m]
+            names  = [m[:32] for m, _ in sorted_m]
             vals   = [v for _, v in sorted_m]
-            colors = [BLUE] + [MUTED] * (len(names) - 1)
+            n_bars = len(names)
 
-            fig, ax = plt.subplots(figsize=(9, max(2.5, len(names) * 0.55 + 1.4)))
-            y_pos = np.arange(len(names))
-            ax.barh(y_pos, vals, color=colors, height=0.45, zorder=3)
+            # Color bars: best=blue, top3=indigo, rest=muted
+            colors = []
+            for i in range(n_bars):
+                if i == 0: colors.append(BLUE)
+                elif i <= 2: colors.append("#6366f1")
+                else: colors.append(MUTED)
 
-            best_v = vals[0]
-            label_fmt = f"{best_v:.4f}" if abs(best_v) < 100 else f"{best_v:,.0f}"
-            x_label = vals[0] * 0.97 if not lower else vals[0] * 1.02
-            ax.text(x_label, y_pos[0], label_fmt,
-                    va="center", ha="right" if not lower else "left",
-                    fontsize=10, fontweight="600", color="#fafafa")
+            fig, ax = plt.subplots(figsize=(10, max(3.0, n_bars * 0.6 + 1.5)))
+            y_pos = np.arange(n_bars)
+            bars = ax.barh(y_pos, vals, color=colors, height=0.5, zorder=3,
+                           edgecolor="none")
+
+            # Add a subtle highlight on the top half of each bar
+            for i, bar in enumerate(bars):
+                ax.barh(y_pos[i], bar.get_width(), height=0.25,
+                        color="white", alpha=0.05, zorder=4, edgecolor="none",
+                        align="edge")
+
+            # Value labels on each bar
+            for i, (name, v) in enumerate(zip(names, vals)):
+                fmt = f"{v:.4f}" if abs(v) < 100 else f"{v:,.1f}"
+                x_off = (max(vals) - min(vals)) * 0.01 if vals else 0
+                ax.text(v + x_off, y_pos[i], fmt,
+                        va="center", ha="left",
+                        fontsize=9, fontweight="700" if i == 0 else "400",
+                        color="#e4e4e7" if i == 0 else "#71717a")
 
             ax.set_yticks(y_pos)
-            ax.set_yticklabels(names, fontsize=10, color="#a1a1aa")
+            ax.set_yticklabels(names, fontsize=10,
+                               color=["#e4e4e7" if i == 0 else "#a1a1aa" for i in range(n_bars)])
             ax.set_title(
-                f"model comparison  ·  {metric.upper()}",
-                fontsize=12, fontweight="600", color="#fafafa", loc="left", pad=14,
+                f"model comparison  ·  {metric.upper()}  ({'lower better' if lower else 'higher better'})",
+                fontsize=13, fontweight="700", color="#e4e4e7", loc="left", pad=16,
             )
             ax.xaxis.set_visible(False)
             ax.spines["bottom"].set_visible(False)
+            ax.spines["left"].set_color("#27272a")
             ax.invert_yaxis()
+            ax.set_xlim(right=max(vals) * (1.15 if not lower else 1.15))
+            plt.tight_layout(pad=2.0)
             generated["model_comparison_png"] = _save(fig, "model_comparison.png")
     except Exception:
         pass
@@ -2010,7 +2115,7 @@ def render_final_plots(ws, history, obj, best):
     try:
         best_am = (best or {}).get("all_metrics", {})
         pairs = []
-        for base in ["rmse", "r2", "mape", "mae", "nse"]:
+        for base in ["rmse", "r2", "mape", "mae", "nse", "accuracy", "f1", "auc"]:
             tr = best_am.get(f"train_{base}")
             te = best_am.get(f"test_{base}") or best_am.get(base)
             if tr is not None and te is not None:
@@ -2019,37 +2124,55 @@ def render_final_plots(ws, history, obj, best):
         if pairs:
             model_name = (best or {}).get("model", "Best Model")
             n = len(pairs)
-            fig, axes = plt.subplots(1, n, figsize=(2.8 * n, 3.2))
+            fig, axes = plt.subplots(1, n, figsize=(max(8, 2.8 * n), 4.0))
             if n == 1:
                 axes = [axes]
-            fig.suptitle(model_name, fontsize=11, color="#71717a",
-                         fontweight="500", y=1.02, x=0.02, ha="left")
+            fig.suptitle(f"{model_name}  ·  train vs test metrics",
+                         fontsize=12, color="#a1a1aa", fontweight="500",
+                         y=1.04, x=0.0, ha="left")
 
             for i, (name, tr, te) in enumerate(pairs):
                 ax = axes[i]
-                ax.scatter([0], [tr], s=120, color=DIM,  zorder=3, linewidths=0)
-                ax.scatter([1], [te], s=120, color=BLUE, zorder=3, linewidths=0)
-                ax.plot([0, 1], [tr, te], color=DIM, linewidth=1.5, zorder=2)
+                overfit = abs(tr - te) / (max(abs(tr), abs(te), 1e-10)) > 0.2
+                tr_col = "#f59e0b" if overfit else DIM
+                te_col = BLUE
 
-                fmt_tr = f"{tr:.3f}" if abs(tr) < 100 else f"{tr:,.0f}"
-                fmt_te = f"{te:.3f}" if abs(te) < 100 else f"{te:,.0f}"
-                ax.text(0, tr, fmt_tr, ha="center", va="bottom",
-                        fontsize=9,  color="#71717a", fontweight="500")
-                ax.text(1, te, fmt_te, ha="center", va="bottom",
-                        fontsize=10, color="#fafafa", fontweight="600")
+                # Fill between
+                ax.fill_between([0, 1], [tr, te], alpha=0.07,
+                                color=RED if overfit else BLUE)
+                ax.plot([0, 1], [tr, te], color=MUTED, linewidth=1.2,
+                        zorder=2, alpha=0.7)
+                ax.scatter([0], [tr], s=140, color=tr_col, zorder=4,
+                           linewidths=0, edgecolors="#09090b")
+                ax.scatter([1], [te], s=140, color=te_col, zorder=4,
+                           linewidths=0, edgecolors="#09090b")
+
+                fmt_tr = f"{tr:.4f}" if abs(tr) < 10 else f"{tr:,.2f}"
+                fmt_te = f"{te:.4f}" if abs(te) < 10 else f"{te:,.2f}"
+                offset = (max(tr, te) - min(tr, te)) * 0.12 + 0.0001
+                ax.text(0, tr + offset, fmt_tr, ha="center", va="bottom",
+                        fontsize=9, color="#a1a1aa", fontweight="500")
+                ax.text(1, te + offset, fmt_te, ha="center", va="bottom",
+                        fontsize=10, color="#e4e4e7", fontweight="700")
+
+                if overfit:
+                    ax.text(0.5, (tr + te) / 2, "⚠", ha="center", va="center",
+                            fontsize=11, color=RED, alpha=0.7)
 
                 ax.set_xticks([0, 1])
-                ax.set_xticklabels(["train", "test"], fontsize=9, color="#52525b")
-                ax.set_title(name, fontsize=10, color="#a1a1aa", pad=10, fontweight="500")
+                ax.set_xticklabels(["train", "test"], fontsize=10, color="#71717a")
+                ax.set_title(name, fontsize=11, color="#a1a1aa", pad=12, fontweight="600")
                 ax.yaxis.set_visible(False)
-                ax.spines["bottom"].set_color(DIM)
+                ax.spines["bottom"].set_color("#27272a")
+                ax.spines["left"].set_visible(False)
                 ax.tick_params(length=0, pad=8)
-                margin = (max(tr, te) - min(tr, te)) * 0.4 + 0.0001
-                ax.set_ylim(min(tr, te) - margin * 2, max(tr, te) + margin * 3)
+                margin = (max(tr, te) - min(tr, te)) * 0.5 + 0.0001
+                ax.set_ylim(min(tr, te) - margin * 1.5, max(tr, te) + margin * 3)
+                ax.set_xlim(-0.4, 1.4)
 
-            plt.tight_layout(pad=1.6)
+            plt.tight_layout(pad=2.0)
             p = ws / "metrics_overview.png"
-            plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+            plt.savefig(p, dpi=180, facecolor=BG, bbox_inches="tight")
             plt.close(fig)
             generated["metrics_overview_png"] = str(p)
     except Exception:
@@ -2061,29 +2184,48 @@ def render_final_plots(ws, history, obj, best):
             ("train_rmse", "test_rmse", "RMSE"),
             ("train_r2",   "test_r2",   "R²"),
             ("train_mape", "test_mape", "MAPE"),
+            ("train_mae",  "test_mae",  "MAE"),
+            (f"train_{metric}", f"test_{metric}", metric.upper()),
         ] if any(h.get("all_metrics", {}).get(tk) is not None for h in rows)]
 
+        # Remove duplicates
+        seen_lbl = set()
+        avail = [x for x in avail if not (x[2] in seen_lbl or seen_lbl.add(x[2]))]
+
         if avail and len(rows) >= 2:
-            n_p = len(avail)
-            fig, axes = plt.subplots(1, n_p, figsize=(5 * n_p, 4))
+            n_p = min(len(avail), 3)
+            avail = avail[:n_p]
+            fig, axes = plt.subplots(1, n_p, figsize=(5.5 * n_p, 4.5))
             if n_p == 1:
                 axes = [axes]
             xs_idx = np.arange(len(rows))
-            w = 0.3
+            w = 0.35
 
             for i, (tk, vk, lbl) in enumerate(avail):
                 ax = axes[i]
                 trains = [h.get("all_metrics", {}).get(tk) or 0 for h in rows]
                 tests  = [h.get("all_metrics", {}).get(vk) or 0 for h in rows]
-                ax.bar(xs_idx - w/2, trains, w, color=DIM,  label="train", zorder=3)
-                ax.bar(xs_idx + w/2, tests,  w, color=BLUE, label="test",  zorder=3, alpha=0.9)
+
+                # Detect overfitting per experiment
+                overfits = [abs(tr - te) / (max(abs(te), 1e-10)) > 0.25 for tr, te in zip(trains, tests)]
+                bar_colors = [RED if ov else BLUE for ov in overfits]
+
+                ax.bar(xs_idx - w/2, trains, w, color=MUTED, label="train", zorder=3,
+                       edgecolor="none", alpha=0.85)
+                for j, (xi, te, col) in enumerate(zip(xs_idx, tests, bar_colors)):
+                    ax.bar(xi + w/2, te, w, color=col, zorder=3, edgecolor="none", alpha=0.9)
+
                 ax.set_xticks(xs_idx)
                 ax.set_xticklabels([f"#{h['num']}" for h in rows], fontsize=8, color="#52525b")
-                ax.set_title(lbl, fontsize=11, color="#a1a1aa", pad=10, fontweight="500")
-                ax.yaxis.set_visible(False)
-                ax.legend(loc="upper right")
-                ax.spines["bottom"].set_color(DIM)
-                ax.tick_params(length=0, pad=6)
+                ax.set_title(lbl, fontsize=12, color="#a1a1aa", pad=12, fontweight="600")
+                ax.yaxis.set_visible(True)
+                ax.tick_params(axis="y", colors="#71717a", length=3)
+                ax.tick_params(axis="x", length=0, pad=6)
+                ax.spines["left"].set_color("#27272a")
+                ax.spines["bottom"].set_color("#27272a")
+                from matplotlib.patches import Patch
+                ax.legend(handles=[Patch(color=MUTED, label="train"), Patch(color=BLUE, label="test")],
+                          loc="upper right", fontsize=9)
 
             generated["train_test_png"] = _save(fig, "train_test.png")
     except Exception:
@@ -2142,46 +2284,117 @@ def render_final_plots(ws, history, obj, best):
         try:
             import pandas as pd
             csv_files = list(ws.glob("*.csv")) + list(ws.glob("*.tsv"))
+            # Exclude small files (results/metrics) — prefer the actual data file
+            csv_files = sorted(csv_files, key=lambda f: -f.stat().st_size)
             if csv_files:
-                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=20000)
+                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=30000)
                 # Detect date column
                 date_col = None
                 for col in df.columns:
-                    if df[col].dtype == object or "date" in col.lower() or "time" in col.lower() or "period" in col.lower():
+                    if "date" in col.lower() or "time" in col.lower() or "period" in col.lower() or "month" in col.lower() or "year" in col.lower() or "week" in col.lower():
                         try:
                             parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
-                            if parsed.notna().mean() > 0.8:
+                            if parsed.notna().mean() > 0.7:
                                 df[col] = parsed
                                 date_col = col
                                 break
                         except Exception:
                             pass
+                if not date_col:
+                    for col in df.columns:
+                        if df[col].dtype == object:
+                            try:
+                                parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                                if parsed.notna().mean() > 0.8:
+                                    df[col] = parsed
+                                    date_col = col
+                                    break
+                            except Exception:
+                                pass
                 target = obj.get("target", "")
                 if date_col and target in df.columns:
                     df = df.sort_values(date_col).reset_index(drop=True)
                     split_idx = int(len(df) * 0.8)
                     dates = df[date_col]
-                    vals  = df[target]
+                    actuals = pd.to_numeric(df[target], errors="coerce")
 
-                    fig, ax = plt.subplots(figsize=(14, 4))
-                    ax.axvspan(dates.iloc[0], dates.iloc[split_idx], alpha=0.06, color=BLUE, label="train")
-                    ax.plot(dates.iloc[:split_idx+1], vals.iloc[:split_idx+1],
-                            color="#fafafa", lw=1.2, alpha=0.85, label="actual (train)")
-                    ax.plot(dates.iloc[split_idx:], vals.iloc[split_idx:],
-                            color="#a1a1aa", lw=1.2, alpha=0.75, label="actual (test)")
-                    ax.axvline(x=dates.iloc[split_idx], color=DIM, lw=1, linestyle=":")
-                    ax.set_title(
-                        f"{target}  ·  full history  ·  train | test split",
-                        fontsize=12, fontweight="600", color="#fafafa", loc="left", pad=14,
+                    # Try to load predictions saved by train.py
+                    pred_files = sorted(
+                        list(ws.glob("pred*.csv")) + list(ws.glob("*pred*.csv")) +
+                        list(ws.glob("*forecast*.csv")) + list(ws.glob("*output*.csv")),
+                        key=lambda f: f.stat().st_mtime, reverse=True
                     )
-                    ax.yaxis.set_visible(False)
-                    ax.spines["bottom"].set_color(DIM)
-                    ax.tick_params(axis="x", length=0, pad=6)
-                    ax.legend(loc="upper left", fontsize=9)
+                    pred_series = None
+                    if pred_files:
+                        try:
+                            pf = pd.read_csv(pred_files[0])
+                            # Look for predicted/forecast column
+                            for col in ["predicted", "forecast", "y_pred", "prediction", "pred"]:
+                                if col in pf.columns:
+                                    pred_series = pd.to_numeric(pf[col], errors="coerce")
+                                    break
+                            if pred_series is None and len(pf.columns) == 1:
+                                pred_series = pd.to_numeric(pf.iloc[:, 0], errors="coerce")
+                        except Exception:
+                            pass
+
+                    GREEN = "#34d399"
+                    fig, ax = plt.subplots(figsize=(15, 5))
+
+                    # Shade train region
+                    ax.axvspan(dates.iloc[0], dates.iloc[split_idx],
+                               alpha=0.05, color=BLUE, zorder=0)
+                    ax.axvline(x=dates.iloc[split_idx], color=DIM, lw=1.2,
+                               linestyle=":", zorder=2, alpha=0.8)
+
+                    # Actual values
+                    ax.plot(dates, actuals,
+                            color="#e4e4e7", lw=1.4, alpha=0.9, label="actual", zorder=3)
+
+                    # Predicted overlay on test set
+                    if pred_series is not None and len(pred_series) > 0:
+                        test_dates = dates.iloc[split_idx:split_idx + len(pred_series)]
+                        ax.plot(test_dates, pred_series.values[:len(test_dates)],
+                                color=BLUE, lw=2.8, alpha=0.95,
+                                label="predicted (test)", zorder=5, solid_capstyle="round")
+                        # Shade between actual and predicted on test
+                        min_len = min(len(test_dates), len(pred_series))
+                        ax.fill_between(
+                            test_dates[:min_len],
+                            actuals.iloc[split_idx:split_idx + min_len].values,
+                            pred_series.values[:min_len],
+                            alpha=0.08, color=BLUE, zorder=4
+                        )
+                    else:
+                        # No predictions available — just show test actual in blue
+                        ax.plot(dates.iloc[split_idx:], actuals.iloc[split_idx:],
+                                color=BLUE, lw=2.2, alpha=0.9, label="test", zorder=4)
+
+                    # Train/test region labels
+                    y_range = actuals.max() - actuals.min()
+                    y_top = actuals.max() + y_range * 0.04
+                    ax.text(dates.iloc[split_idx // 2], y_top, "TRAIN",
+                            fontsize=8, color="#52525b", ha="center", va="bottom",
+                            fontweight="600", alpha=0.7)
+                    ax.text(dates.iloc[split_idx + (len(dates) - split_idx) // 2], y_top, "TEST",
+                            fontsize=8, color="#52525b", ha="center", va="bottom",
+                            fontweight="600", alpha=0.7)
+
+                    ax.set_title(
+                        f"{target}  ·  actual vs predicted  ·  train | test split",
+                        fontsize=13, fontweight="700", color="#e4e4e7", loc="left", pad=16,
+                    )
+                    ax.set_xlabel(date_col, labelpad=8)
+                    ax.spines["left"].set_color("#27272a")
+                    ax.spines["bottom"].set_color("#27272a")
+                    ax.tick_params(axis="x", length=0, pad=6, colors="#52525b")
+                    ax.tick_params(axis="y", length=3, pad=5, colors="#71717a")
+                    ax.yaxis.set_visible(True)
+                    ax.legend(loc="upper left", fontsize=9, frameon=True)
                     ax.set_facecolor(BG); fig.set_facecolor(BG)
-                    plt.tight_layout(pad=1.6)
+                    plt.tight_layout(pad=2.0)
                     p = ws / "timeseries.png"
-                    plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+                    plt.savefig(p, dpi=180, facecolor=BG, bbox_inches="tight")
                     plt.close(fig)
                     generated["timeseries_png"] = str(p)
         except Exception:

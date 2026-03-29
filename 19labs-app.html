@@ -774,15 +774,15 @@ input[type=file]{display:none}
 .exp-row-detail.open{display:block}
 .exp-plots-inline{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 /* ── METRIC CHART v2 ── */
-.mc2{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;animation:si .3s ease}
-.mc2-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
-.mc2-title{font-size:13px;font-weight:700;color:var(--text)}
-.mc2-sub{font-size:10px;color:var(--text-3);font-family:var(--mono)}
-.mc2-annotation{font-size:10px;color:var(--text-3);margin-top:6px;padding:6px 8px;background:rgba(59,130,246,.05);border-left:2px solid var(--accent);border-radius:0 4px 4px 0}
-.mc2-legend{display:flex;gap:16px;margin-top:8px}
-.mc2-legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-3)}
+.mc2{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:18px 20px;margin-bottom:14px;animation:si .3s ease}
+.mc2-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:12px}
+.mc2-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.01em}
+.mc2-sub{font-size:10px;color:var(--text-3);font-family:var(--mono);margin-top:2px;line-height:1.5}
+.mc2-annotation{font-size:10px;color:var(--text-3);margin-top:8px;padding:6px 10px;background:rgba(59,130,246,.06);border-left:2px solid rgba(59,130,246,.4);border-radius:0 4px 4px 0}
+.mc2-legend{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap}
+.mc2-legend-item{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3)}
 .mc2-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.mc2-legend-line{width:16px;height:2px;border-radius:1px;flex-shrink:0}
+.mc2-legend-line{width:18px;height:2px;border-radius:1px;flex-shrink:0}
 /* ── COMPARISON v2 ── */
 .cmp2{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;animation:si .3s ease}
 .cmp2-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -3443,52 +3443,116 @@ function renderMetricChart(){
   const dir=S.discovery?.objective?.direction||'lower_is_better';
   const lower=dir==='lower_is_better';
   const vals=successful.map(e=>{const tv=(e.all_metrics||{})['test_'+pk];return tv!=null?tv:e.metric_val;});
+  const trainVals=successful.map(e=>(e.all_metrics||{})['train_'+pk]??null);
+  const hasTrain=trainVals.some(v=>v!=null);
   let runBest=[];let cur=lower?Infinity:-Infinity;
   for(const v of vals){cur=lower?Math.min(cur,v):Math.max(cur,v);runBest.push(cur);}
-  const W=520,H=170,P={l:52,r:24,t:22,b:30};
+  const bestIdx=runBest.indexOf(lower?Math.min(...runBest):Math.max(...runBest));
+  const bestExp=successful[bestIdx];
+  const W=600,H=200,P={l:62,r:20,t:28,b:34};
   const cW=W-P.l-P.r,cH=H-P.t-P.b;
   const n=successful.length;
-  const allV=[...vals,...runBest];
+  const allV=[...vals,...runBest,...trainVals.filter(v=>v!=null)];
   let minV=Math.min(...allV),maxV=Math.max(...allV);
   if(minV===maxV){minV-=0.01;maxV+=0.01;}
-  const range2=maxV-minV;minV-=range2*.10;maxV+=range2*.10;
-  const xf=i=>P.l+(i/(Math.max(n-1,1)))*cW;
+  const pad=Math.abs(maxV-minV)*0.14;minV-=pad;maxV+=pad;
+  const xf=i=>n===1?P.l+cW/2:P.l+(i/(n-1))*cW;
   const yf=v=>P.t+cH-((v-minV)/(maxV-minV))*cH;
-  const accentBlue='#3b82f6',gridColor='#27272a',labelColor='#52525b';
-  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-  svg+=`<defs><linearGradient id="bestFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${accentBlue}" stop-opacity="0.12"/><stop offset="100%" stop-color="${accentBlue}" stop-opacity="0"/></linearGradient></defs>`;
+  // Smooth catmull-rom spline helper
+  function curvePath(pts){
+    if(pts.length<2)return`M ${pts[0][0]} ${pts[0][1]}`;
+    let d=`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for(let i=0;i<pts.length-1;i++){
+      const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+      const cp1x=p1[0]+(p2[0]-p0[0])/6,cp1y=p1[1]+(p2[1]-p0[1])/6;
+      const cp2x=p2[0]-(p3[0]-p1[0])/6,cp2y=p2[1]-(p3[1]-p1[1])/6;
+      d+=` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)} ${cp2x.toFixed(1)} ${cp2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    }
+    return d;
+  }
+  const fmtV=v=>Math.abs(v)<0.001?v.toExponential(1):v<1?v.toFixed(3):v<10?v.toFixed(2):v<1000?v.toFixed(1):v.toFixed(0);
+  const BLUE='#3b82f6',PURPLE='#a78bfa',DIM='#3f3f46',GRID='#1f1f23',LABEL='#52525b',TEXT2='#a1a1aa';
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:auto">`;
+  // Defs: gradient fill
+  svg+=`<defs>
+    <linearGradient id="mfg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${BLUE}" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="${BLUE}" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tfg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${PURPLE}" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="${PURPLE}" stop-opacity="0"/>
+    </linearGradient>
+  </defs>`;
+  // Y-axis grid lines and labels
   const gridN=4;
   for(let i=0;i<=gridN;i++){
     const gv=minV+((maxV-minV)*i/gridN);const gy=yf(gv);
-    const fmt=Math.abs(gv)<.001?gv.toExponential(1):(gv<1?gv.toFixed(3):gv.toFixed(1));
-    svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="${gridColor}" stroke-width="${i===0?1:.5}"/>`;
-    svg+=`<text x="${P.l-5}" y="${gy+3.5}" font-size="8" fill="${labelColor}" text-anchor="end" font-family="JetBrains Mono,monospace">${fmt}</text>`;
+    const isZero=Math.abs(gv)<(maxV-minV)*0.02;
+    svg+=`<line x1="${P.l}" y1="${gy.toFixed(1)}" x2="${W-P.r}" y2="${gy.toFixed(1)}" stroke="${isZero?'#27272a':GRID}" stroke-width="${i===0?0.8:0.5}"/>`;
+    svg+=`<text x="${P.l-7}" y="${(gy+3.5).toFixed(1)}" font-size="9" fill="${LABEL}" text-anchor="end" font-family="ui-monospace,monospace">${fmtV(gv)}</text>`;
   }
+  // X-axis tick marks + labels
   successful.forEach((e,i)=>{
-    if(n<=10||i%Math.ceil(n/8)===0||i===n-1)
-      svg+=`<text x="${xf(i)}" y="${H-5}" font-size="8" fill="${labelColor}" text-anchor="middle" font-family="JetBrains Mono,monospace">#${e.num}</text>`;
+    if(n<=12||i===0||i===n-1||i%Math.ceil(n/8)===0||i===bestIdx){
+      const x=xf(i);
+      svg+=`<line x1="${x.toFixed(1)}" y1="${P.t+cH}" x2="${x.toFixed(1)}" y2="${P.t+cH+4}" stroke="${LABEL}" stroke-width="0.5"/>`;
+      svg+=`<text x="${x.toFixed(1)}" y="${H-3}" font-size="8" fill="${LABEL}" text-anchor="middle" font-family="ui-monospace,monospace">#${e.num}</text>`;
+    }
   });
-  let fillPath=`M ${xf(0)} ${yf(runBest[0])}`;
-  for(let i=1;i<n;i++)fillPath+=` L ${xf(i)} ${yf(runBest[i])}`;
-  fillPath+=` L ${xf(n-1)} ${P.t+cH} L ${P.l} ${P.t+cH} Z`;
-  svg+=`<path d="${fillPath}" fill="url(#bestFill)"/>`;
-  let bestPath=`M ${xf(0)} ${yf(runBest[0])}`;
-  for(let i=1;i<n;i++)bestPath+=` L ${xf(i)} ${yf(runBest[i])}`;
-  svg+=`<path d="${bestPath}" stroke="${accentBlue}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
-  let dotPath=`M ${xf(0)} ${yf(vals[0])}`;
-  for(let i=1;i<n;i++)dotPath+=` L ${xf(i)} ${yf(vals[i])}`;
-  svg+=`<path d="${dotPath}" stroke="#3f3f46" stroke-width="1" fill="none" stroke-dasharray="3 3"/>`;
+  // Area fill under running best
+  const bestPts=successful.map((e,i)=>[xf(i),yf(runBest[i])]);
+  const bestCurve=curvePath(bestPts);
+  const fillArea=bestCurve+` L ${xf(n-1).toFixed(1)} ${(P.t+cH).toFixed(1)} L ${P.l} ${(P.t+cH).toFixed(1)} Z`;
+  svg+=`<path d="${fillArea}" fill="url(#mfg)"/>`;
+  // Train values (if available) — light purple dots + curve
+  if(hasTrain){
+    const trainPts=successful.map((e,i)=>trainVals[i]!=null?[xf(i),yf(trainVals[i])]:null).filter(Boolean);
+    if(trainPts.length>=2){
+      const trainArea=curvePath(trainPts)+` L ${trainPts[trainPts.length-1][0].toFixed(1)} ${(P.t+cH).toFixed(1)} L ${trainPts[0][0].toFixed(1)} ${(P.t+cH).toFixed(1)} Z`;
+      svg+=`<path d="${trainArea}" fill="url(#tfg)"/>`;
+      svg+=`<path d="${curvePath(trainPts)}" stroke="${PURPLE}" stroke-width="1.2" fill="none" stroke-dasharray="4 3" opacity="0.6"/>`;
+    }
+  }
+  // Individual experiment dots
   successful.forEach((e,i)=>{
-    const cx=xf(i),cy=yf(vals[i]);const isBest=e.is_best;
-    const col=isBest?accentBlue:'#52525b';const r=isBest?4.5:2.5;
-    svg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${col}"><title>#${e.num} ${e.model}: ${vals[i].toFixed(4)}</title></circle>`;
-    if(isBest)svg+=`<circle cx="${cx}" cy="${cy}" r="8" fill="none" stroke="${accentBlue}" stroke-width="1" opacity="0.35"/>`;
+    const cx=xf(i),cy=yf(vals[i]);
+    const isDiscarded=e.status==='discard';
+    const col=isDiscarded?'#ef4444':i===bestIdx?BLUE:DIM;
+    const r=i===bestIdx?5:2.5;
+    svg+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="${col}" opacity="${isDiscarded?0.4:0.85}"><title>#${e.num} ${esc(e.model||'?')}: ${fmtV(vals[i])}</title></circle>`;
   });
+  // Running best line (on top)
+  svg+=`<path d="${bestCurve}" stroke="${BLUE}" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+  // Best point annotation
+  const bx=xf(bestIdx),by=yf(runBest[bestIdx]);
+  svg+=`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="5.5" fill="${BLUE}" stroke="#09090b" stroke-width="1.5"/>`;
+  svg+=`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="9" fill="none" stroke="${BLUE}" stroke-width="0.8" opacity="0.35"/>`;
+  // Best label above point
+  const labelY=by-14;const labelX=Math.max(P.l+4,Math.min(W-P.r-4,bx));
+  const bestFmt=fmtV(runBest[bestIdx]);
+  svg+=`<text x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="10" fill="${BLUE}" font-weight="700" text-anchor="middle" font-family="ui-monospace,monospace">${bestFmt}</text>`;
   svg+=`</svg>`;
+  // Improvement annotation
   let annotText='';
-  if(n>=2){const first=runBest[0],last=runBest[n-1];if(first!==0){const imp=lower?((first-last)/Math.abs(first)*100).toFixed(1):((last-first)/Math.abs(first)*100).toFixed(1);const dir2=parseFloat(imp)>=0?'improvement':'regression';annotText=`${parseFloat(imp)>=0?'+':''}${imp}% ${dir2} from experiment #1 to best`;}}
-  el.innerHTML=`<div class="mc2-head"><div><div class="mc2-title">${esc(pk.toUpperCase())} Progress</div><div class="mc2-sub">${n} experiment${n!==1?'s':''} · ${lower?'lower is better':'higher is better'}</div></div></div>${svg}${annotText?`<div class="mc2-annotation">${annotText}</div>`:''}
-  <div class="mc2-legend"><div class="mc2-legend-item"><div class="mc2-legend-line" style="background:${accentBlue}"></div>Running best</div><div class="mc2-legend-item"><div class="mc2-legend-dot" style="background:#52525b"></div>Each experiment</div></div>`;
+  if(n>=2){
+    const first=runBest[0],last=runBest[n-1];
+    if(Math.abs(first)>1e-10){
+      const imp=lower?((first-last)/Math.abs(first)*100):((last-first)/Math.abs(first)*100);
+      const improved=imp>=0;
+      annotText=`<span style="color:${improved?'#34d399':'#ef4444'}">${improved?'▲':'▼'} ${Math.abs(imp).toFixed(1)}% ${improved?'improvement':'regression'}</span> over ${n} experiments`;
+    }
+  }
+  const legendHtml=`<div class="mc2-legend">
+    <div class="mc2-legend-item"><div style="width:16px;height:2px;background:${BLUE};border-radius:1px"></div>Running best</div>
+    <div class="mc2-legend-item"><div style="width:8px;height:8px;border-radius:50%;background:${DIM}"></div>Each run</div>
+    ${hasTrain?`<div class="mc2-legend-item"><div style="width:16px;height:2px;background:${PURPLE};opacity:.6;border-radius:1px"></div>Train</div>`:''}
+  </div>`;
+  el.innerHTML=`<div class="mc2-head"><div>
+    <div class="mc2-title">${esc(pk.toUpperCase())} Progress</div>
+    <div class="mc2-sub">${n} experiment${n!==1?'s':''} · best: <strong style="color:var(--text)">${esc(bestExp?.model||'—')}</strong> · ${lower?'lower better':'higher better'}</div>
+  </div>${annotText?`<div style="font-size:11px;color:var(--text-3)">${annotText}</div>`:''}</div>
+  ${svg}${legendHtml}`;
 }
 
 // ═══════════════════════════════════════════
@@ -3508,22 +3572,49 @@ function renderComparison(){
   const pk=successful[0]?.metric_name||'metric';
   const dir=S.discovery?.objective?.direction||'lower_is_better';
   const lower=dir==='lower_is_better';
-  const sorted=[...successful].sort((a,b)=>lower?(a.metric_val-b.metric_val):(b.metric_val-a.metric_val));
-  const top=sorted.slice(0,8);
-  const best=top[0].metric_val;
-  const worst=top[top.length-1].metric_val;
-  const span=Math.abs(best-worst)||1e-9;
-  const gradeToFill={A:'rgba(52,211,153,.8)',B:'rgba(59,130,246,.8)',C:'rgba(245,158,11,.7)',D:'rgba(248,113,113,.7)',F:'rgba(239,68,68,.7)'};
-  let h=`<div class="mc2-head" style="margin-bottom:10px"><div class="mc2-title">Model Comparison</div><div class="mc2-sub">Top ${top.length} · sorted by ${esc(pk)}</div></div>`;
-  top.forEach((e,i)=>{
-    const norm=lower?(1-(e.metric_val-best)/span)*.76+.12:((e.metric_val-worst)/span)*.76+.12;
-    const pct=Math.round(norm*100);
-    const tv=(e.all_metrics||{})['test_'+pk]??e.metric_val;
-    const interp=interpretMetric(pk,tv,dir);
-    const fill=gradeToFill[interp.grade]||'rgba(99,102,241,.7)';
-    h+=`<div class="cmp2-row"><span class="cmp2-rank">${i+1}</span><span class="cmp2-name" title="${esc(e.model)}">#${e.num} ${esc(e.model)}</span><div class="cmp2-track"><div class="cmp2-fill" style="width:${pct}%;background:${fill}"></div></div><span class="cmp2-val">${Number(tv).toFixed(4)}</span><span class="cmp2-badge" style="color:${interp.color}">${interp.grade}</span></div>`;
+  // Deduplicate by model name — keep best score per model
+  const modelMap=new Map();
+  successful.forEach(e=>{
+    const mv=(e.all_metrics||{})['test_'+pk]??e.metric_val;
+    const prev=modelMap.get(e.model);
+    if(!prev||(lower?mv<prev.mv:mv>prev.mv))modelMap.set(e.model,{...e,mv});
   });
-  el.innerHTML=h;
+  const deduped=[...modelMap.values()].sort((a,b)=>lower?(a.mv-b.mv):(b.mv-a.mv)).slice(0,8);
+  const best=deduped[0].mv,worst=deduped[deduped.length-1].mv;
+  const span=Math.abs(best-worst)||Math.abs(best)*0.1||1e-9;
+  const fmtV=v=>Math.abs(v)<0.001?v.toExponential(2):v<1?v.toFixed(4):v<100?v.toFixed(2):v.toFixed(0);
+  const gradeColor={A:'#34d399',B:'#3b82f6',C:'#f59e0b',D:'#f87171',F:'#ef4444'};
+  const ROWH=28,PL=150,PR=90,PT=8,PB=8;
+  const W=580,H=PT+deduped.length*ROWH+PB;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:auto">`;
+  deduped.forEach((e,i)=>{
+    const interp=interpretMetric(pk,e.mv,dir);
+    const norm=lower?(1-(e.mv-best)/span):((e.mv-worst)/span);
+    const barW=Math.max(4,Math.round(norm*(W-PL-PR-16)));
+    const cy=PT+i*ROWH;
+    const barY=cy+4,barH=ROWH-10;
+    const isFirst=i===0;
+    const col=isFirst?'#3b82f6':i===1?'#6366f1':i<4?'#52525b':'#3f3f46';
+    // Row bg on hover area
+    svg+=`<rect x="0" y="${cy}" width="${W}" height="${ROWH}" fill="${isFirst?'rgba(59,130,246,.06)':'transparent'}" rx="4"/>`;
+    // Rank + model name
+    svg+=`<text x="${PL-8}" y="${cy+ROWH/2+4}" font-size="10" fill="${isFirst?'#a1a1aa':'#52525b'}" text-anchor="end" font-family="ui-monospace,monospace">${i+1}</text>`;
+    const modelShort=e.model.length>20?e.model.slice(0,18)+'…':e.model;
+    svg+=`<text x="${PL-18}" y="${cy+ROWH/2+4}" font-size="10" fill="${isFirst?'#e4e4e7':'#71717a'}" text-anchor="end" font-family="ui-sans-serif,sans-serif" font-weight="${isFirst?'600':'400'}">${esc(modelShort)}</text>`;
+    // Bar
+    svg+=`<rect x="${PL}" y="${barY}" width="${barW}" height="${barH}" rx="3" fill="${col}" opacity="${isFirst?0.9:0.55}"/>`;
+    if(isFirst)svg+=`<rect x="${PL}" y="${barY}" width="${barW}" height="${barH/2}" rx="3" fill="rgba(255,255,255,0.07)"/>`;
+    // Value label
+    svg+=`<text x="${PL+barW+8}" y="${cy+ROWH/2+4}" font-size="10" fill="${isFirst?'#e4e4e7':'#71717a'}" font-family="ui-monospace,monospace" font-weight="${isFirst?'700':'400'}">${fmtV(e.mv)}</text>`;
+    // Grade badge
+    const gc=gradeColor[interp.grade]||'#71717a';
+    svg+=`<text x="${W-8}" y="${cy+ROWH/2+4}" font-size="9" fill="${gc}" text-anchor="end" font-family="ui-sans-serif,sans-serif" font-weight="700">${interp.grade}</text>`;
+  });
+  svg+=`</svg>`;
+  el.innerHTML=`<div class="mc2-head" style="margin-bottom:12px">
+    <div class="mc2-title">Model Comparison</div>
+    <div class="mc2-sub">${deduped.length} unique models · sorted by ${esc(pk.toUpperCase())} · ${lower?'lower better':'higher better'}</div>
+  </div>${svg}`;
 }
 
 // ═══════════════════════════════════════════
@@ -3653,88 +3744,130 @@ function toggleExpCard(el){
 function renderInlineChart(spec){
   const d=spec.data||{};
   const labels=d.labels||[];const values=d.values||[];
-  if(!labels.length||!values.length)return'<div style="color:var(--text-3);font-size:11px">No data to chart.</div>';
+  if(!labels.length||!values.length)return'<div style="color:var(--text-3);font-size:11px;padding:8px 0">No data to display.</div>';
 
   const type=spec.chart_type||'bar';
-  const W=360,H=180,P={l:50,r:16,t:10,b:32};
+  const W=480,H=220,P={l:56,r:18,t:12,b:36};
   const cW=W-P.l-P.r,cH=H-P.t-P.b;
-
   const numericVals=values.map(v=>typeof v==='number'?v:parseFloat(v)||0);
+  const rawMin=Math.min(...numericVals);
   const maxV=Math.max(...numericVals,0.001);
-  const minV=Math.min(...numericVals,0);
+  const minV=type==='bar'||type==='histogram'?Math.min(0,rawMin):rawMin;
   const range=maxV-minV||1;
+  const fmtN=v=>Math.abs(v)>=1e6?(v/1e6).toFixed(1)+'M':Math.abs(v)>=1000?(v/1000).toFixed(1)+'k':Math.abs(v)<0.01?v.toExponential(1):v<1?v.toFixed(3):v.toFixed(1);
 
-  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-  // Background
-  svg+=`<rect x="${P.l}" y="${P.t}" width="${cW}" height="${cH}" fill="rgba(255,255,255,0.02)" rx="2"/>`;
+  // Smooth catmull-rom curve helper
+  function curve(pts){
+    if(pts.length<2)return`M${pts[0][0]} ${pts[0][1]}`;
+    let d=`M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for(let i=0;i<pts.length-1;i++){
+      const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+      const cp1x=p1[0]+(p2[0]-p0[0])/6,cp1y=p1[1]+(p2[1]-p0[1])/6;
+      const cp2x=p2[0]-(p3[0]-p1[0])/6,cp2y=p2[1]-(p3[1]-p1[1])/6;
+      d+=` C${cp1x.toFixed(1)} ${cp1y.toFixed(1)} ${cp2x.toFixed(1)} ${cp2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    }
+    return d;
+  }
+
+  const uid=Math.random().toString(36).slice(2,7);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:auto">`;
+  svg+=`<defs>
+    <linearGradient id="cg${uid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </linearGradient>
+  </defs>`;
+
+  // Chart area bg
+  svg+=`<rect x="${P.l}" y="${P.t}" width="${cW}" height="${cH}" fill="rgba(255,255,255,0.018)" rx="3"/>`;
+
+  // Y grid + labels
+  const gridN=4;
+  for(let i=0;i<=gridN;i++){
+    const gv=minV+(range*i/gridN);
+    const gy=P.t+cH-((gv-minV)/range)*cH;
+    svg+=`<line x1="${P.l}" y1="${gy.toFixed(1)}" x2="${W-P.r}" y2="${gy.toFixed(1)}" stroke="${i===0?'#2e2e32':'#1c1c1f'}" stroke-width="${i===0?0.8:0.5}"/>`;
+    svg+=`<text x="${P.l-6}" y="${(gy+3.5).toFixed(1)}" font-size="9" fill="#52525b" text-anchor="end" font-family="ui-monospace,monospace">${fmtN(gv)}</text>`;
+  }
 
   if(type==='bar'||type==='histogram'){
-    const n=Math.min(labels.length,30);
-    const gap=2;
-    const bw=Math.max(4,(cW-gap*(n-1))/n);
-    // Grid
-    for(let i=0;i<=3;i++){
-      const gy=P.t+cH-(cH*i/3);
-      const gv=minV+(range*i/3);
-      svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="#27272a" stroke-width="0.5"/>`;
-      svg+=`<text x="${P.l-4}" y="${gy+3}" font-size="7" fill="#71717a" text-anchor="end" font-family="JetBrains Mono,monospace">${gv>=1000?(gv/1000).toFixed(1)+'k':gv.toFixed(gv<10?2:0)}</text>`;
-    }
+    const n=Math.min(labels.length,40);
+    const gap=Math.max(1,Math.min(3,cW/n*0.18));
+    const bw=Math.max(2,(cW-gap*(n-1))/n);
     for(let i=0;i<n;i++){
       const x=P.l+i*(bw+gap);
-      const h=((numericVals[i]-minV)/range)*cH;
-      const y=P.t+cH-h;
-      svg+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" fill="#3b82f6" rx="1" opacity="0.85"><title>${labels[i]}: ${numericVals[i].toFixed(2)}</title></rect>`;
-      if(n<=15)svg+=`<text x="${x+bw/2}" y="${H-4}" font-size="6" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace" transform="rotate(-30 ${x+bw/2} ${H-4})">${String(labels[i]).slice(0,12)}</text>`;
+      const barH=Math.max(0,((numericVals[i]-minV)/range)*cH);
+      const y=P.t+cH-barH;
+      const isTop=i===numericVals.indexOf(Math.max(...numericVals));
+      svg+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${barH.toFixed(1)}" fill="${isTop?'#3b82f6':'#4f46e5'}" rx="2" opacity="${isTop?0.95:0.65}"><title>${labels[i]}: ${fmtN(numericVals[i])}</title></rect>`;
+      if(bw>10&&n<=20){
+        const lx=x+bw/2;const labelStr=String(labels[i]).slice(0,10);
+        svg+=`<text x="${lx.toFixed(1)}" y="${(H-6).toFixed(1)}" font-size="7.5" fill="#52525b" text-anchor="middle" font-family="ui-sans-serif,sans-serif"`;
+        if(n>10)svg+=` transform="rotate(-35 ${lx.toFixed(1)} ${(H-6).toFixed(1)})"`;
+        svg+=`>${esc(labelStr)}</text>`;
+      }
     }
   } else if(type==='line'){
     const n=labels.length;
-    const x=i=>P.l+(i/(Math.max(n-1,1)))*cW;
-    const y=v=>P.t+cH-(((v-minV)/range)*cH);
-    // Grid
-    for(let i=0;i<=3;i++){
-      const gy=P.t+cH-(cH*i/3);const gv=minV+(range*i/3);
-      svg+=`<line x1="${P.l}" y1="${gy}" x2="${W-P.r}" y2="${gy}" stroke="#27272a" stroke-width="0.5"/>`;
-      svg+=`<text x="${P.l-4}" y="${gy+3}" font-size="7" fill="#71717a" text-anchor="end" font-family="JetBrains Mono,monospace">${gv.toFixed(gv<10?2:0)}</text>`;
-    }
+    const xf=i=>P.l+(n===1?cW/2:i/(n-1)*cW);
+    const yf=v=>P.t+cH-((v-minV)/range)*cH;
+    const pts=numericVals.map((v,i)=>[xf(i),yf(v)]);
+    const linePath=curve(pts);
     // Area fill
-    let area=`M ${x(0)} ${P.t+cH}`;
-    for(let i=0;i<n;i++) area+=` L ${x(i)} ${y(numericVals[i])}`;
-    area+=` L ${x(n-1)} ${P.t+cH} Z`;
-    svg+=`<path d="${area}" fill="url(#areaGrad)" opacity="0.3"/>`;
-    svg+=`<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3b82f6" stop-opacity="0.4"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs>`;
+    const areaPath=linePath+` L${xf(n-1).toFixed(1)} ${(P.t+cH).toFixed(1)} L${P.l} ${(P.t+cH).toFixed(1)} Z`;
+    svg+=`<path d="${areaPath}" fill="url(#cg${uid})"/>`;
     // Line
-    let path=`M ${x(0)} ${y(numericVals[0])}`;
-    for(let i=1;i<n;i++) path+=` L ${x(i)} ${y(numericVals[i])}`;
-    svg+=`<path d="${path}" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>`;
-    // Dots
-    for(let i=0;i<n;i++){
-      svg+=`<circle cx="${x(i)}" cy="${y(numericVals[i])}" r="2.5" fill="#3b82f6"><title>${labels[i]}: ${numericVals[i].toFixed(2)}</title></circle>`;
+    svg+=`<path d="${linePath}" stroke="#3b82f6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+    // Dots (only for small n)
+    if(n<=40){
+      numericVals.forEach((v,i)=>{
+        svg+=`<circle cx="${xf(i).toFixed(1)}" cy="${yf(v).toFixed(1)}" r="${n<=15?3:2}" fill="#3b82f6" stroke="#09090b" stroke-width="1.2"><title>${labels[i]}: ${fmtN(v)}</title></circle>`;
+      });
     }
     // X labels
-    const step=Math.max(1,Math.floor(n/8));
+    const step=Math.max(1,Math.ceil(n/8));
     for(let i=0;i<n;i+=step){
-      svg+=`<text x="${x(i)}" y="${H-4}" font-size="6" fill="#71717a" text-anchor="middle" font-family="JetBrains Mono,monospace">${String(labels[i]).slice(0,10)}</text>`;
+      svg+=`<text x="${xf(i).toFixed(1)}" y="${(H-5).toFixed(1)}" font-size="7.5" fill="#52525b" text-anchor="middle" font-family="ui-sans-serif,sans-serif">${esc(String(labels[i]).slice(0,12))}</text>`;
     }
   } else if(type==='scatter'){
-    const n=Math.min(labels.length,200);
-    const x=i=>P.l+(i/(Math.max(n-1,1)))*cW;
-    const y=v=>P.t+cH-(((v-minV)/range)*cH);
+    const n=Math.min(labels.length,300);
+    const xf=i=>P.l+((i/(Math.max(n-1,1)))*cW);
+    const yf=v=>P.t+cH-((v-minV)/range)*cH;
     for(let i=0;i<n;i++){
-      svg+=`<circle cx="${x(i)}" cy="${y(numericVals[i])}" r="2" fill="#3b82f6" opacity="0.6"><title>${labels[i]}: ${numericVals[i].toFixed(2)}</title></circle>`;
+      svg+=`<circle cx="${xf(i).toFixed(1)}" cy="${yf(numericVals[i]).toFixed(1)}" r="2.5" fill="#3b82f6" opacity="0.55"><title>${labels[i]}: ${fmtN(numericVals[i])}</title></circle>`;
     }
   } else if(type==='pie'){
+    // Donut style
     const total=numericVals.reduce((a,b)=>a+b,0);
-    if(total<=0)return'';
-    const cx=W/2,cy=H/2,r=Math.min(cW,cH)/2-10;
-    const colors=['#3b82f6','#a78bfa','#f59e0b','#ef4444','#10b981','#6366f1','#ec4899','#14b8a6','#f97316','#8b5cf6'];
-    let angle=0;
-    for(let i=0;i<Math.min(labels.length,10);i++){
+    if(total<=0)return'<div style="color:var(--text-3)">No data</div>';
+    const cx=P.l+cW*0.4,cy=P.t+cH/2,r=Math.min(cW*0.38,cH/2-8),ri=r*0.55;
+    const PCOLORS=['#3b82f6','#6366f1','#a78bfa','#f59e0b','#10b981','#ef4444','#ec4899','#14b8a6','#f97316','#84cc16'];
+    let angle=-Math.PI/2;
+    const maxItems=Math.min(labels.length,8);
+    for(let i=0;i<maxItems;i++){
       const slice=(numericVals[i]/total)*Math.PI*2;
       const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle);
       const x2=cx+r*Math.cos(angle+slice),y2=cy+r*Math.sin(angle+slice);
+      const xi1=cx+ri*Math.cos(angle),yi1=cy+ri*Math.sin(angle);
+      const xi2=cx+ri*Math.cos(angle+slice),yi2=cy+ri*Math.sin(angle+slice);
       const large=slice>Math.PI?1:0;
-      svg+=`<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${colors[i%10]}" opacity="0.85"><title>${labels[i]}: ${numericVals[i].toFixed(1)} (${(numericVals[i]/total*100).toFixed(1)}%)</title></path>`;
+      const col=PCOLORS[i%PCOLORS.length];
+      svg+=`<path d="M${xi1.toFixed(1)} ${yi1.toFixed(1)} L${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${xi2.toFixed(1)} ${yi2.toFixed(1)} A${ri} ${ri} 0 ${large} 0 ${xi1.toFixed(1)} ${yi1.toFixed(1)} Z" fill="${col}" opacity="0.9"><title>${labels[i]}: ${(numericVals[i]/total*100).toFixed(1)}%</title></path>`;
+      // Percentage label at midpoint
+      const midAngle=angle+slice/2;
+      const labelR=(r+ri)/2;
+      if(slice>0.25){
+        svg+=`<text x="${(cx+labelR*Math.cos(midAngle)).toFixed(1)}" y="${(cy+labelR*Math.sin(midAngle)+3).toFixed(1)}" font-size="8" fill="#fff" text-anchor="middle" font-weight="600" font-family="ui-sans-serif,sans-serif">${(numericVals[i]/total*100).toFixed(0)}%</text>`;
+      }
       angle+=slice;
+    }
+    // Center label
+    svg+=`<text x="${cx.toFixed(1)}" y="${(cy+4).toFixed(1)}" font-size="10" fill="#a1a1aa" text-anchor="middle" font-family="ui-sans-serif,sans-serif">${maxItems} items</text>`;
+    // Legend on right
+    for(let i=0;i<maxItems;i++){
+      const ly=P.t+10+i*18;const lx=P.l+cW*0.82;
+      svg+=`<rect x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" width="10" height="10" rx="2" fill="${PCOLORS[i%PCOLORS.length]}"/>`;
+      svg+=`<text x="${(lx+14).toFixed(1)}" y="${(ly+8).toFixed(1)}" font-size="8.5" fill="#a1a1aa" font-family="ui-sans-serif,sans-serif">${esc(String(labels[i]).slice(0,14))}</text>`;
     }
   }
 
