@@ -2983,25 +2983,39 @@ function showArts(runId,arts){
     final_report_md:{n:'report.md',i:_ico.report,t:'Report'}
   };
   const plotItems=[
-    {key:'timeseries_png',title:'Time Series Forecast',desc:'Full date range · actual vs predicted · train/test split'},
-    {key:'correlation_png',title:'Feature Correlations',desc:'Heatmap · top features by abs correlation with target'},
-    {key:'shap_png',title:'SHAP Feature Importance',desc:'SHAP summary · which features drive predictions'},
-    {key:'predictions_png',title:'Actual vs Predicted',desc:'Scatter plot · test set performance'},
-    {key:'residuals_png',title:'Residuals',desc:'Residual distribution · model error analysis'},
-    {key:'experiment_timeline_png',title:'Experiment Timeline',desc:'Progress + train/test + models used'},
-    {key:'train_test_png',title:'Train vs Test',desc:'Overfitting analysis per experiment'},
-    {key:'model_comparison_png',title:'Model Comparison',desc:'Side-by-side model performance'},
-    {key:'metrics_overview_png',title:'Metrics Overview',desc:'All metrics for the best model'},
-    {key:'progress_png',title:'Progress Chart',desc:'Running best metric over time'},
+    // Business understanding first
+    {key:'data_overview_png',title:'Data Overview',desc:'All key signals over time — raw business data at a glance',section:'Business Intelligence'},
+    {key:'timeseries_png',title:'Time Series Forecast',desc:'Full date range · actual vs predicted · train/test split',section:'Business Intelligence'},
+    {key:'seasonality_png',title:'Seasonality Heatmap',desc:'Cyclical patterns by year × month or weekday — identify your peak periods',section:'Business Intelligence'},
+    {key:'feature_importance_png',title:'Feature Importance',desc:'Which inputs drive your target most — business levers to pull',section:'Business Intelligence'},
+    {key:'lag_correlation_png',title:'Lead-Lag Analysis',desc:'Do features lead or lag the target? Signals for causal business insights',section:'Business Intelligence'},
+    {key:'correlation_png',title:'Feature Correlations',desc:'Heatmap · top features by abs correlation with target',section:'Business Intelligence'},
+    // ML diagnostics
+    {key:'shap_png',title:'SHAP Feature Importance',desc:'SHAP summary · which features drive predictions',section:'ML Diagnostics'},
+    {key:'predictions_png',title:'Actual vs Predicted',desc:'Scatter plot · test set performance',section:'ML Diagnostics'},
+    {key:'residuals_png',title:'Residuals',desc:'Residual distribution · model error analysis',section:'ML Diagnostics'},
+    {key:'experiment_timeline_png',title:'Experiment Timeline',desc:'Progress + train/test + models used',section:'ML Diagnostics'},
+    {key:'train_test_png',title:'Train vs Test',desc:'Overfitting analysis per experiment',section:'ML Diagnostics'},
+    {key:'model_comparison_png',title:'Model Comparison',desc:'Side-by-side model performance',section:'ML Diagnostics'},
+    {key:'metrics_overview_png',title:'Metrics Overview',desc:'All metrics for the best model',section:'ML Diagnostics'},
+    {key:'progress_png',title:'Progress Chart',desc:'Running best metric over time',section:'ML Diagnostics'},
   ];
   let h='';let count=0;
 
   // Plots — load via apiFetch (sends auth header) then set blob src
   const availPlots=plotItems.filter(p=>arts[p.key]);
   if(availPlots.length){
-    h+=`<div style="grid-column:1/-1;margin-bottom:8px"><div style="font-size:13px;font-weight:600;color:var(--text-1);margin-bottom:12px">Visualizations</div>`;
+    h+=`<div style="grid-column:1/-1;margin-bottom:8px">`;
+    let lastSection='';
     availPlots.forEach(p=>{
       count++;
+      if(p.section&&p.section!==lastSection){
+        const isBiz=p.section==='Business Intelligence';
+        h+=`<div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:${isBiz?'#34d399':'#60a5fa'};margin:${lastSection?'28px':'0px'} 0 12px;display:flex;align-items:center;gap:8px">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">${isBiz?'<polyline points="1,12 5,7 9,10 13,4 15,4"/><polyline points="13,1 15,1 15,4"/>':'<rect x="2" y="8" width="3" height="6"/><rect x="6.5" y="4" width="3" height="10"/><rect x="11" y="1" width="3" height="13"/>'}</svg>
+          ${p.section}</div>`;
+        lastSection=p.section;
+      }
       h+=`<div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px">${p.title}<span style="font-weight:400;color:var(--text-3);margin-left:6px">— ${p.desc}</span></div>
         <div id="aimg-${p.key}" style="width:100%;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);min-height:180px;display:flex;align-items:center;justify-content:center">

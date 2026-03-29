@@ -2400,10 +2400,396 @@ def render_final_plots(ws, history, obj, best):
         except Exception:
             pass
 
+    # ── 7. DATA OVERVIEW — multi-line normalized time series ────────
+    if not (ws / "data_overview.png").exists():
+        try:
+            import pandas as pd
+            csv_files = sorted(
+                list(ws.glob("*.csv")) + list(ws.glob("*.tsv")),
+                key=lambda f: -f.stat().st_size
+            )
+            if csv_files:
+                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=30000)
+                # Detect date column
+                date_col = None
+                for col in df.columns:
+                    if any(k in col.lower() for k in ["date","time","period","month","year","week","day"]):
+                        try:
+                            parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                            if parsed.notna().mean() > 0.7:
+                                df[col] = parsed; date_col = col; break
+                        except Exception: pass
+                if not date_col:
+                    for col in df.columns:
+                        if df[col].dtype == object:
+                            try:
+                                parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                                if parsed.notna().mean() > 0.8:
+                                    df[col] = parsed; date_col = col; break
+                            except Exception: pass
+
+                target = obj.get("target", "")
+                num_cols = df.select_dtypes(include="number").columns.tolist()
+                if date_col and len(num_cols) >= 2:
+                    df = df.sort_values(date_col).reset_index(drop=True)
+                    dates = df[date_col]
+                    # Pick target + top correlated features (up to 5 total)
+                    plot_cols = [c for c in num_cols if c != target]
+                    if target in num_cols:
+                        try:
+                            corr_rank = df[num_cols].corr()[target].abs().drop(target).sort_values(ascending=False)
+                            plot_cols = corr_rank.head(4).index.tolist()
+                        except Exception:
+                            plot_cols = plot_cols[:4]
+                        plot_cols = [target] + plot_cols
+                    else:
+                        plot_cols = num_cols[:5]
+
+                    palette = ["#e4e4e7", BLUE, "#34d399", "#f59e0b", PURPLE]
+                    n_lines = min(len(plot_cols), 5)
+                    plot_cols = plot_cols[:n_lines]
+
+                    fig, axes = plt.subplots(n_lines, 1, figsize=(15, 2.5 * n_lines), sharex=True)
+                    if n_lines == 1: axes = [axes]
+                    fig.suptitle(
+                        "Data Overview  ·  all key signals over time",
+                        fontsize=13, fontweight="700", color="#e4e4e7", x=0.01, ha="left", y=1.01
+                    )
+
+                    for i, (col, color) in enumerate(zip(plot_cols, palette)):
+                        ax = axes[i]
+                        series = pd.to_numeric(df[col], errors="coerce")
+                        # Rolling average
+                        window = max(3, len(series) // 50)
+                        rolling = series.rolling(window, center=True, min_periods=1).mean()
+
+                        ax.fill_between(dates, series, series.min(), alpha=0.06, color=color, zorder=1)
+                        ax.plot(dates, series, color=color, lw=1.0, alpha=0.45, zorder=2)
+                        ax.plot(dates, rolling, color=color, lw=2.2, alpha=0.95, zorder=3,
+                                solid_capstyle="round")
+
+                        # Min/max annotation
+                        ax.set_ylabel(col[:20], fontsize=9, color=color, labelpad=6)
+                        ax.yaxis.label.set_rotation(0)
+                        ax.yaxis.label.set_ha("right")
+                        ax.tick_params(axis="y", colors="#52525b", length=2, labelsize=7)
+                        ax.tick_params(axis="x", length=0, pad=6, colors="#52525b", labelsize=7)
+                        ax.spines["left"].set_color(DIM)
+                        ax.spines["bottom"].set_color(DIM)
+                        ax.set_facecolor(BG)
+                        # Mark overall max
+                        try:
+                            pk = series.idxmax()
+                            ax.scatter([dates.iloc[pk]], [series.iloc[pk]], s=50, color=color,
+                                       zorder=5, linewidths=0, alpha=0.9)
+                            fmt_pk = f"{series.iloc[pk]:,.0f}" if series.iloc[pk] > 100 else f"{series.iloc[pk]:.3f}"
+                            ax.annotate(fmt_pk, (dates.iloc[pk], series.iloc[pk]),
+                                        xytext=(4, 6), textcoords="offset points",
+                                        fontsize=7, color=color, alpha=0.8)
+                        except Exception: pass
+                        if i < n_lines - 1:
+                            ax.spines["bottom"].set_visible(False)
+                            ax.tick_params(axis="x", labelbottom=False)
+
+                    axes[-1].set_xlabel(date_col, labelpad=6, fontsize=8, color="#52525b")
+                    plt.tight_layout(pad=1.4)
+                    p = ws / "data_overview.png"
+                    plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+                    plt.close(fig)
+                    generated["data_overview_png"] = str(p)
+        except Exception:
+            pass
+
+    # ── 8. SEASONALITY HEATMAP ───────────────────────────────────────
+    if not (ws / "seasonality.png").exists():
+        try:
+            import pandas as pd
+            csv_files = sorted(
+                list(ws.glob("*.csv")) + list(ws.glob("*.tsv")),
+                key=lambda f: -f.stat().st_size
+            )
+            if csv_files:
+                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=30000)
+                target = obj.get("target", "")
+                date_col = None
+                for col in df.columns:
+                    if any(k in col.lower() for k in ["date","time","period","month","year","week"]):
+                        try:
+                            parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                            if parsed.notna().mean() > 0.7:
+                                df[col] = parsed; date_col = col; break
+                        except Exception: pass
+                if not date_col:
+                    for col in df.columns:
+                        if df[col].dtype == object:
+                            try:
+                                parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                                if parsed.notna().mean() > 0.8:
+                                    df[col] = parsed; date_col = col; break
+                            except Exception: pass
+
+                if date_col and target in df.columns:
+                    df = df.sort_values(date_col).reset_index(drop=True)
+                    df["_target"] = pd.to_numeric(df[target], errors="coerce")
+                    df["_month"]   = df[date_col].dt.month
+                    df["_year"]    = df[date_col].dt.year
+                    df["_dow"]     = df[date_col].dt.dayofweek  # 0=Mon
+
+                    years  = df["_year"].nunique()
+                    months = df["_month"].nunique()
+
+                    # Decide chart type: year×month heatmap if multi-year, else dow×month
+                    if years >= 2 and months >= 2:
+                        pivot = df.groupby(["_year","_month"])["_target"].mean().unstack(fill_value=None)
+                        row_lbl = [str(y) for y in pivot.index]
+                        col_lbl = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+                        col_lbl = col_lbl[:len(pivot.columns)]
+                        title_sfx = "by year × month"
+                    else:
+                        dow_names = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+                        pivot = df.groupby(["_dow","_month"])["_target"].mean().unstack(fill_value=None)
+                        row_lbl = [dow_names[i] for i in pivot.index if i < len(dow_names)]
+                        col_lbl = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+                        col_lbl = col_lbl[:len(pivot.columns)]
+                        title_sfx = "by weekday × month"
+
+                    data = pivot.values.astype(float)
+                    nr, nc = data.shape
+                    fig, ax = plt.subplots(figsize=(max(8, nc * 0.9 + 2), max(4, nr * 0.55 + 2)))
+                    import numpy as np
+                    masked = np.ma.array(data, mask=np.isnan(data))
+                    im = ax.imshow(masked, cmap="RdYlGn", aspect="auto",
+                                   vmin=np.nanpercentile(data, 5),
+                                   vmax=np.nanpercentile(data, 95))
+                    ax.set_xticks(range(nc)); ax.set_xticklabels(col_lbl, fontsize=9, color="#a1a1aa")
+                    ax.set_yticks(range(nr)); ax.set_yticklabels(row_lbl[:nr], fontsize=9, color="#a1a1aa")
+                    # Value annotations
+                    for i in range(nr):
+                        for j in range(nc):
+                            if not np.isnan(data[i, j]):
+                                val = data[i, j]
+                                fmt = f"{val:,.0f}" if abs(val) >= 100 else f"{val:.2f}"
+                                ax.text(j, i, fmt, ha="center", va="center", fontsize=7,
+                                        color="#fafafa", fontweight="500")
+                    cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+                    cbar.ax.tick_params(colors="#52525b", labelsize=7)
+                    ax.set_title(
+                        f"Seasonality  ·  {target}  {title_sfx}",
+                        fontsize=12, fontweight="700", color="#e4e4e7", loc="left", pad=14,
+                    )
+                    ax.set_facecolor(BG); fig.set_facecolor(BG)
+                    plt.tight_layout(pad=1.6)
+                    p = ws / "seasonality.png"
+                    plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+                    plt.close(fig)
+                    generated["seasonality_png"] = str(p)
+        except Exception:
+            pass
+
+    # ── 9. FEATURE IMPORTANCE (model-based or correlation-based) ─────
+    if not (ws / "feature_importance.png").exists():
+        try:
+            import pandas as pd, numpy as np
+            # Try to load from saved model
+            importances, feat_names, method = None, None, "correlation"
+            csv_files = sorted(list(ws.glob("*.csv")) + list(ws.glob("*.tsv")), key=lambda f: -f.stat().st_size)
+            target = obj.get("target", "")
+
+            # Method A: load from model.pkl
+            for pkl_path in [ws / "best_model.pkl", ws / "model.pkl"]:
+                if pkl_path.exists() and importances is None:
+                    try:
+                        import joblib
+                        mdl = joblib.load(pkl_path)
+                        # Unwrap pipeline
+                        step = mdl
+                        if hasattr(mdl, "steps"):
+                            step = mdl.steps[-1][1]
+                        if hasattr(step, "feature_importances_"):
+                            importances = step.feature_importances_
+                            method = "model"
+                            # Try to get feature names from pipeline
+                            if hasattr(mdl, "named_steps"):
+                                for sname, sobj in reversed(mdl.steps):
+                                    if hasattr(sobj, "get_feature_names_out"):
+                                        try: feat_names = list(sobj.get_feature_names_out()); break
+                                        except Exception: pass
+                                    elif hasattr(sobj, "feature_names_in_"):
+                                        try: feat_names = list(sobj.feature_names_in_); break
+                                        except Exception: pass
+                        elif hasattr(step, "coef_"):
+                            importances = np.abs(step.coef_).flatten()
+                            method = "model (coef)"
+                    except Exception: pass
+
+            # Method B: correlation with target from CSV
+            if importances is None and csv_files and target:
+                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=10000)
+                if target in df.columns:
+                    num_cols = [c for c in df.select_dtypes(include="number").columns if c != target]
+                    if num_cols:
+                        corr = df[num_cols].corrwith(pd.to_numeric(df[target], errors="coerce")).abs()
+                        corr = corr.dropna().sort_values(ascending=False)
+                        feat_names = list(corr.index[:20])
+                        importances = corr.values[:20]
+                        method = "|corr| with target"
+
+            if importances is not None and len(importances) > 0:
+                # If no feature names, generate generic ones
+                if feat_names is None:
+                    feat_names = [f"feature_{i}" for i in range(len(importances))]
+                # Align lengths
+                n = min(len(importances), len(feat_names), 20)
+                imps = np.array(importances[:n])
+                names = feat_names[:n]
+                # Sort descending
+                order = np.argsort(imps)[::-1]
+                imps = imps[order]; names = [names[i] for i in order]
+                # Truncate to top-20
+                imps = imps[:20]; names = names[:20]
+                n = len(imps)
+
+                palette_imp = []
+                for i in range(n):
+                    t_pct = 1 - i / max(n - 1, 1)
+                    palette_imp.append((
+                        0.231 + (1 - t_pct) * (0.933 - 0.231),  # R
+                        0.510 + (1 - t_pct) * (0.133 - 0.510),  # G
+                        0.965 + (1 - t_pct) * (0.267 - 0.965),  # B
+                    ))
+                palette_imp = [(max(0, min(1, r)), max(0, min(1, g)), max(0, min(1, b)))
+                               for r, g, b in palette_imp]
+
+                fig, ax = plt.subplots(figsize=(10, max(4, n * 0.45 + 1.5)))
+                y_pos = np.arange(n)
+                ax.barh(y_pos, imps[::-1], color=palette_imp[::-1], height=0.6,
+                        edgecolor="none", zorder=3)
+                # Value labels
+                for i, (v, nm) in enumerate(zip(imps[::-1], names[::-1])):
+                    fmt = f"{v:.4f}" if v < 1 else f"{v:,.1f}"
+                    ax.text(v + imps.max() * 0.01, i, fmt, va="center",
+                            fontsize=8, color="#a1a1aa", fontweight="500" if i == n-1 else "400")
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels([nm[:35] for nm in names[::-1]], fontsize=9,
+                                   color=["#e4e4e7" if i == n-1 else "#71717a" for i in range(n)])
+                ax.set_title(
+                    f"Feature Importance  ·  {method}  ·  top {n} features",
+                    fontsize=12, fontweight="700", color="#e4e4e7", loc="left", pad=14,
+                )
+                ax.xaxis.set_visible(False)
+                ax.spines["bottom"].set_visible(False)
+                ax.spines["left"].set_color(DIM)
+                ax.set_facecolor(BG); fig.set_facecolor(BG)
+                plt.tight_layout(pad=2.0)
+                p = ws / "feature_importance.png"
+                plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+                plt.close(fig)
+                generated["feature_importance_png"] = str(p)
+        except Exception:
+            pass
+
+    # ── 10. LAG CROSS-CORRELATION (causality signals) ───────────────
+    if not (ws / "lag_correlation.png").exists():
+        try:
+            import pandas as pd, numpy as np
+            csv_files = sorted(list(ws.glob("*.csv")) + list(ws.glob("*.tsv")), key=lambda f: -f.stat().st_size)
+            target = obj.get("target", "")
+            if csv_files and target:
+                df = pd.read_csv(csv_files[0], sep=None, engine="python", nrows=10000)
+                # Detect date col for ordering
+                date_col = None
+                for col in df.columns:
+                    if any(k in col.lower() for k in ["date","time","period","month","year","week"]):
+                        try:
+                            parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                            if parsed.notna().mean() > 0.7:
+                                df[col] = parsed; date_col = col; break
+                        except Exception: pass
+                if date_col:
+                    df = df.sort_values(date_col).reset_index(drop=True)
+
+                if target in df.columns:
+                    num_cols = [c for c in df.select_dtypes(include="number").columns if c != target]
+                    y = pd.to_numeric(df[target], errors="coerce").fillna(method="ffill").fillna(0)
+                    y_std = (y - y.mean()) / (y.std() + 1e-10)
+
+                    # Pick top features by instantaneous correlation
+                    base_corrs = {}
+                    for c in num_cols:
+                        x = pd.to_numeric(df[c], errors="coerce").fillna(method="ffill").fillna(0)
+                        try: base_corrs[c] = abs(np.corrcoef(x, y)[0, 1])
+                        except Exception: base_corrs[c] = 0
+                    top_feats = sorted(base_corrs, key=lambda k: -base_corrs[k])[:5]
+
+                    if top_feats:
+                        max_lag = min(20, len(df) // 5)
+                        lags = range(-max_lag, max_lag + 1)
+                        lag_arr = np.array(list(lags))
+
+                        palette_lag = [BLUE, "#34d399", "#f59e0b", PURPLE, RED]
+                        fig, ax = plt.subplots(figsize=(14, 5))
+
+                        for feat, color in zip(top_feats, palette_lag):
+                            x = pd.to_numeric(df[feat], errors="coerce").fillna(method="ffill").fillna(0)
+                            x_std = (x - x.mean()) / (x.std() + 1e-10)
+                            xcorr = []
+                            for lag in lags:
+                                if lag >= 0:
+                                    a = x_std.iloc[:len(x_std) - lag] if lag > 0 else x_std
+                                    b = y_std.iloc[lag:] if lag > 0 else y_std
+                                else:
+                                    a = x_std.iloc[-lag:]
+                                    b = y_std.iloc[:len(y_std) + lag]
+                                try: xcorr.append(float(np.corrcoef(a, b)[0, 1]))
+                                except Exception: xcorr.append(0)
+                            xcorr = np.array(xcorr)
+                            ax.plot(lag_arr, xcorr, color=color, lw=2.0, alpha=0.85,
+                                    label=feat[:25], solid_capstyle="round")
+                            # Mark peak lag
+                            pk_idx = int(np.argmax(np.abs(xcorr)))
+                            ax.scatter([lag_arr[pk_idx]], [xcorr[pk_idx]], s=60, color=color,
+                                       zorder=5, linewidths=0)
+
+                        ax.axvline(0, color=DIM, lw=1.5, linestyle="--", alpha=0.7, label="lag=0")
+                        ax.axhline(0, color=DIM, lw=0.8, alpha=0.4)
+                        ax.fill_between(lag_arr[lag_arr < 0], -1, 1, alpha=0.03, color="#f59e0b")
+                        ax.fill_between(lag_arr[lag_arr > 0], -1, 1, alpha=0.03, color=BLUE)
+
+                        ax.text(-(max_lag * 0.6), 0.92, "features LEAD", fontsize=8,
+                                color="#f59e0b", alpha=0.7, transform=ax.transData)
+                        ax.text(max_lag * 0.25, 0.92, "features LAG", fontsize=8,
+                                color=BLUE, alpha=0.7, transform=ax.transData)
+
+                        ax.set_xlim(-max_lag, max_lag)
+                        ax.set_ylim(-1.05, 1.1)
+                        ax.set_xlabel("lag (periods)", labelpad=8, fontsize=9, color="#52525b")
+                        ax.set_ylabel("cross-correlation", labelpad=8, fontsize=9, color="#52525b")
+                        ax.set_title(
+                            f"Lag Cross-Correlation  ·  how features relate to {target} over time",
+                            fontsize=12, fontweight="700", color="#e4e4e7", loc="left", pad=14,
+                        )
+                        ax.spines["left"].set_color(DIM)
+                        ax.spines["bottom"].set_color(DIM)
+                        ax.tick_params(axis="both", colors="#52525b", length=3, labelsize=8)
+                        ax.legend(loc="lower right", fontsize=8, frameon=True,
+                                  facecolor="#18181b", edgecolor=DIM, labelcolor="#a1a1aa")
+                        ax.set_facecolor(BG); fig.set_facecolor(BG)
+                        plt.tight_layout(pad=2.0)
+                        p = ws / "lag_correlation.png"
+                        plt.savefig(p, dpi=160, facecolor=BG, bbox_inches="tight")
+                        plt.close(fig)
+                        generated["lag_correlation_png"] = str(p)
+        except Exception:
+            pass
+
     # Register any plots already saved by train.py that aren't in generated yet
-    for key, fname in [("timeseries_png","timeseries.png"), ("correlation_png","correlation.png"),
-                        ("shap_png","shap.png"), ("predictions_png","predictions.png"),
-                        ("residuals_png","residuals.png")]:
+    for key, fname in [
+        ("timeseries_png","timeseries.png"), ("correlation_png","correlation.png"),
+        ("shap_png","shap.png"), ("predictions_png","predictions.png"),
+        ("residuals_png","residuals.png"), ("data_overview_png","data_overview.png"),
+        ("seasonality_png","seasonality.png"), ("feature_importance_png","feature_importance.png"),
+        ("lag_correlation_png","lag_correlation.png"),
+    ]:
         if key not in generated and (ws / fname).exists():
             generated[key] = str(ws / fname)
 
