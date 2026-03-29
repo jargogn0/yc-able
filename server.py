@@ -369,9 +369,11 @@ def _load_run_history_from_db(user_id: str | None = None):
                 (user_id,)
             ).fetchall()
         else:
-            # Guest — show only runs with no owner (other guest/trial runs)
+            # Guest — only show runs explicitly created by guests (id starts with 'guest-').
+            # Old runs with user_id IS NULL may belong to auth users created before the
+            # user_id column existed, so we exclude them to prevent cross-user leakage.
             rows = conn.execute(
-                "SELECT * FROM runs WHERE user_id IS NULL ORDER BY started DESC LIMIT 50"
+                "SELECT * FROM runs WHERE user_id IS NULL AND id LIKE 'guest-%' ORDER BY started DESC LIMIT 50"
             ).fetchall()
         conn.close()
         return list(rows)
