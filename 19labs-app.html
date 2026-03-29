@@ -1679,15 +1679,23 @@ async function _restoreRunHistory(){
     const r=await apiFetch(`${BASE}/api/runs`);
     if(r.ok){
       const d=await r.json();
+      const serverIds=new Set((d.runs||[]).map(run=>run.id));
+      // Add new server runs to local history
       (d.runs||[]).forEach(run=>{
         const label=run.filename||(run.best_model?`${run.best_model}`:'Run');
         const status=run.status==='done'?'done':run.status==='error'?'error':'done';
         if(!runHistory.find(rh=>rh.id===run.id))runHistory.push({id:run.id,status,label});
       });
-      runHistory.sort((a,b)=>{
-        // Keep order stable — no timestamp on local items, just deduplicate
-        return 0;
-      });
+      // Purge local entries that no longer exist on the server
+      const before=runHistory.length;
+      for(let i=runHistory.length-1;i>=0;i--){
+        if(!serverIds.has(runHistory[i].id))runHistory.splice(i,1);
+      }
+      if(runHistory.length!==before){
+        // Also clear last_run_id if it was deleted
+        const lastRun=localStorage.getItem('19labs_last_run_id');
+        if(lastRun&&!serverIds.has(lastRun))localStorage.removeItem('19labs_last_run_id');
+      }
       _rhSave();
       renderRunHistory();
     }
