@@ -197,10 +197,13 @@ body.desktop-mac .topbar{padding-left:84px}
   .side-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .side-status{flex-shrink:0}
 
-  /* ── Workspace internals ── */
-  .tabs{flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:0;padding:0 4px;height:40px}
-  .tabs::-webkit-scrollbar{display:none}
-  .tab{flex-shrink:0;padding:6px 12px;font-size:12px}
+  /* ── Workspace tabs: icon grid, no scroll ── */
+  .tabs{display:grid!important;grid-template-columns:repeat(9,1fr);overflow:visible;padding:0;height:40px;gap:0}
+  .tab{flex-shrink:0;padding:0;display:flex!important;flex-direction:column;align-items:center;justify-content:center;border-radius:0;gap:0}
+  .tab-icon{display:block!important;width:17px;height:17px;flex-shrink:0}
+  .tab-lbl{display:none!important}
+  .tab::after{bottom:-1px;left:20%;right:20%}
+  .tab-badge{position:absolute;top:3px;right:6px;margin:0;min-width:10px;height:10px;font-size:7px;padding:0 2px}
   .ws-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;max-width:100vw}
   /* All direct ws-body children: constrain width */
   .ws-body>*{max-width:100%;box-sizing:border-box}
@@ -268,6 +271,8 @@ input[type=file]{display:none}
 .ws{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;background:var(--bg)}
 .tabs{height:38px;display:flex;align-items:center;padding:0 8px;gap:2px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .tab{padding:5px 12px;font-size:12px;font-weight:500;color:var(--text-3);border-radius:6px;cursor:pointer;transition:all var(--t);white-space:nowrap;position:relative}
+.tab-icon{display:none;stroke:currentColor}
+.tab-lbl{}
 .tab:hover{color:var(--text-2);background:var(--surface-2)}
 .tab.on{color:var(--text);background:var(--surface-2)}
 .tab.on::after{content:'';position:absolute;bottom:-7px;left:10px;right:10px;height:2px;background:var(--accent);border-radius:1px}
@@ -1169,15 +1174,15 @@ input[type=file]{display:none}
     </div>
   </div>
     <div class="tabs" id="tabs">
-      <div class="tab on" data-t="data" onclick="stab('data')">Data</div>
-      <div class="tab" data-t="code" onclick="stab('code')">Code</div>
-      <div class="tab" data-t="exp" onclick="stab('exp')">Experiments</div>
-      <div class="tab" data-t="art" onclick="stab('art')">Artifacts</div>
-      <div class="tab" data-t="results" onclick="stab('results')">Results</div>
-      <div class="tab" data-t="predict" onclick="stab('predict')">Predict</div>
-      <div class="tab" data-t="explain" onclick="stab('explain')">Explain</div>
-      <div class="tab" data-t="rpt" onclick="stab('rpt')">Report</div>
-      <div class="tab" data-t="log" onclick="stab('log')">Logs</div>
+      <div class="tab on" data-t="data" onclick="stab('data')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="tab-lbl">Data</span></div>
+      <div class="tab" data-t="code" onclick="stab('code')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="tab-lbl">Code</span></div>
+      <div class="tab" data-t="exp" onclick="stab('exp')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/></svg><span class="tab-lbl">Experiments</span></div>
+      <div class="tab" data-t="art" onclick="stab('art')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span class="tab-lbl">Artifacts</span></div>
+      <div class="tab" data-t="results" onclick="stab('results')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span class="tab-lbl">Results</span></div>
+      <div class="tab" data-t="predict" onclick="stab('predict')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg><span class="tab-lbl">Predict</span></div>
+      <div class="tab" data-t="explain" onclick="stab('explain')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tab-lbl">Explain</span></div>
+      <div class="tab" data-t="rpt" onclick="stab('rpt')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span class="tab-lbl">Report</span></div>
+      <div class="tab" data-t="log" onclick="stab('log')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span class="tab-lbl">Logs</span></div>
     </div>
     <div class="ws-body" id="ws-body">
       <div class="ws-empty" id="ws-empty">
