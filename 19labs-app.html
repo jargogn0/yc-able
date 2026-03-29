@@ -1440,6 +1440,11 @@ async function initAuth(){
   if(hasKey){
     _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
   }
+  // No valid session — wipe any cached run history so other users' data isn't visible
+  localStorage.removeItem('19labs_run_history');
+  localStorage.removeItem('19labs_last_run_id');
+  runHistory.splice(0, runHistory.length);
+  renderRunHistory();
   // Already in trial mode with slots left — stay in app
   if(_isTrialMode&&_trialRemaining()>0){
     _updateTrialBtn();return;
@@ -1716,6 +1721,7 @@ async function doLogout(){
   localStorage.removeItem('19labs_auth_token');
   localStorage.removeItem('19labs_trial_started');
   localStorage.removeItem('19labs_last_run_id');
+  localStorage.removeItem('19labs_run_history'); // clear run history on logout
   // Hard reload — clears all in-memory state and prevents auto-re-login via API key path
   window.location.reload();
 }
@@ -4544,8 +4550,7 @@ setBadge(C.key?'READY':'IDLE','');
 {const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
 ['p-exp','p-art','p-results','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
-// Render persisted run history immediately so sidebar isn't empty on reload
-renderRunHistory();
+// Do NOT render run history before auth resolves — clears on unauthenticated load inside initAuth
 _loadServerConfig().then(()=>initAuth().then(()=>{
   // Auto-start trial+titanic when landing page sends ?start=titanic
   const urlParams=new URLSearchParams(window.location.search);
