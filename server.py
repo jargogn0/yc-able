@@ -1218,7 +1218,19 @@ async def start_run(req: RunRequest, request: Request):
         if not allowed:
             raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} runs). Sign in to continue.")
 
-    run_id = str(uuid.uuid4())[:12]
+    # Build meaningful run ID prefix
+    if user:
+        # Auth user: initials from name or email, e.g. "dba" for "Doudou Ba"
+        raw = (user.get("name") or user.get("email") or "u").strip()
+        parts = raw.split()
+        if len(parts) >= 2:
+            prefix = (parts[0][0] + parts[-1][:2]).lower()
+        else:
+            prefix = raw[:3].lower()
+        prefix = ''.join(c for c in prefix if c.isalnum()) or "u"
+    else:
+        prefix = "guest"
+    run_id = f"{prefix}-{str(uuid.uuid4())[:8]}"
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
 
     if req.dataset_id:
