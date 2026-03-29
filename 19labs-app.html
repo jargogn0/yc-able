@@ -1637,12 +1637,21 @@ async function doProviderLogin(){
 function onAuthSuccess(){
   const user=_authUser;
   if(!user)return;
-  const initials=(user.name||user.email||'?')[0].toUpperCase();
-  document.getElementById('user-avatar').textContent=initials;
-  document.getElementById('user-email-display').textContent=user.name||user.email||'User';
-  document.getElementById('ump-email-full').textContent=user.email||'';
-  document.getElementById('user-btn').style.display='flex';
-  document.getElementById('trial-btn').style.display='none';
+  // Only show the account avatar for real accounts (not API-key-only / local mode)
+  const isRealAccount = user.id && user.id !== 'local';
+  if(isRealAccount){
+    const initials=(user.name||user.email||'?')[0].toUpperCase();
+    document.getElementById('user-avatar').textContent=initials;
+    document.getElementById('user-email-display').textContent=user.name||user.email||'';
+    document.getElementById('ump-email-full').textContent=user.email||'';
+    document.getElementById('user-btn').style.display='flex';
+    document.getElementById('trial-btn').style.display='none';
+  } else {
+    // API-key-only mode — keep "Sign In" button visible so users can create an account
+    document.getElementById('user-btn').style.display='none';
+    document.getElementById('trial-btn').style.display='inline-block';
+    document.getElementById('trial-btn').textContent='Sign In';
+  }
   _isTrialMode=false;
   localStorage.removeItem('19labs_trial_started');
   // Upload any locally-stored keys to server (in case they were set before login)
