@@ -34,3 +34,6 @@ Thumbs.db
 
 # Autoresearch workspaces (generated at runtime)
 /workspaces/
+
+# Local SQLite database (production uses PostgreSQL)
+*.db
