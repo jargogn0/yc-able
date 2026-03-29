@@ -47,7 +47,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hid
 .topbar{height:46px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;gap:12px}
 /* macOS desktop: leave room for traffic light buttons (~80px wide from x:16) */
 body.desktop-mac .topbar{padding-left:84px}
-.logo{display:flex;align-items:center;gap:7px;text-decoration:none;cursor:default}
+.logo{display:flex;align-items:center;gap:7px;text-decoration:none;cursor:pointer}
 .logo-mark{display:block;flex-shrink:0;image-rendering:pixelated}
 .logo-text{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
 .topbar-sep{width:1px;height:18px;background:var(--border)}
@@ -1085,10 +1085,10 @@ input[type=file]{display:none}
 
 <!-- TOPBAR -->
 <div class="topbar" style="position:relative">
-  <div class="logo">
+  <a class="logo" href="/" style="text-decoration:none">
     <img src="/ghost.svg" width="22" height="22" alt="19Labs" style="display:block;flex-shrink:0;filter:drop-shadow(0 0 6px rgba(168,85,247,.4))">
     <span class="logo-text">Labs</span>
-  </div>
+  </a>
   <div class="topbar-sep"></div>
   <div class="topbar-tag">Auto-ML Research</div>
   <div class="topbar-r">
@@ -1451,11 +1451,12 @@ async function initAuth(){
   document.getElementById('tb-prov').style.display='none';
   // Already in trial mode with slots left — stay in app
   if(_isTrialMode&&_trialRemaining()>0){
-    _updateTrialBtn();return;
+    _updateTrialBtn();
+    _restoreRunHistory(); // restore any in-progress guest run
+    return;
   }
-  // No session — clear any stored run so anonymous users start fresh on reload
   _updateTrialBtn();
-  localStorage.removeItem('19labs_last_run_id');
+  _restoreRunHistory(); // restore guest run history and reconnect if running
 }
 
 async function _refreshTokenSilently(){
@@ -1705,10 +1706,59 @@ async function _restoreRunHistory(){
           stab('exp');
           const src=st.from_db?'session':'live';
           toast(`Session restored (${src})${st.hint?' — '+st.hint.slice(0,40):''}`, 'ok', 4000);
+          // Reconnect live SSE stream if the run is still executing
+          if(st.status==='running'){_reconnectRunSSE(lastRun);}
         }
       }
     }catch(_){}
   }
+}
+
+// Reconnect to an already-running run's SSE stream (used on page reload)
+function _reconnectRunSSE(run_id){
+  if(!run_id||S._es)return; // already connected
+  S.running=true;
+  if(!S._seenNarrations)S._seenNarrations=new Set();
+  setBadge('RUNNING','run');
+  document.getElementById('stop-btn').style.display='';
+  document.getElementById('cdot').className='chat-dot on';
+  sbUpdate({status:'Running',running:true,startTimer:true,tokens:0});
+  updStatus();
+  activeAbort=new AbortController();
+  const es=new EventSource(sseUrl(`${BASE}/api/run/${run_id}/stream`));
+  S._es=es;
+  function cleanup(){
+    try{es.close();}catch(_){}
+    S.running=false;S._es=null;activeAbort=null;
+    document.getElementById('stop-btn').style.display='none';
+    document.getElementById('cdot').className='chat-dot';
+    apiFetch(`${BASE}/api/run/${run_id}/status`).then(r=>r.json()).then(st=>{
+      if(st.best){S.best=st.best;showBest(st.best,st.objective,run_id)}
+      if(st.artifacts){S.artifacts=st.artifacts;showArts(run_id,st.artifacts);updArtSide()}
+      if(st.report){S.report=st.report;showRpt(st.report)}
+      addRunHistory(run_id,st.status==='error'?'error':'done',S.file?.name||'Run');
+      setBadge(st.status==='error'?'ERROR':'DONE',st.status==='error'?'err':'ok');
+    }).catch(()=>{setBadge('DONE','ok');});
+    updStatus();
+  }
+  es.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.msg==='__DONE__'){cleanup();return;}
+    S.logs.push(`[${d.tag}] ${d.msg}`);updLogs();procMsg(d);
+  };
+  es.onerror=()=>{
+    es.close();
+    const poll=setInterval(async()=>{
+      try{
+        const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);
+        if(!pr.ok){clearInterval(poll);cleanup();return;}
+        const ps=await pr.json();
+        if(ps.status==='done'||ps.status==='error'){clearInterval(poll);cleanup();return;}
+      }catch(_){}
+    },3000);
+    activeAbort.signal.addEventListener('abort',()=>{clearInterval(poll);cleanup();});
+  };
+  activeAbort.signal.addEventListener('abort',()=>{try{es.close();}catch(_){}});
 }
 
 async function _syncLocalKeysToServer(){
