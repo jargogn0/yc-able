@@ -200,7 +200,7 @@ body.desktop-mac .topbar{padding-left:84px}
   /* ── Workspace tabs: 5 core tabs, all fit one line ── */
   .tabs{display:flex!important;overflow:hidden;padding:0 4px;height:40px;gap:0}
   .tab{flex:1;padding:0 4px;font-size:11px;text-align:center;justify-content:center}
-  .tab[data-t="art"],.tab[data-t="predict"],.tab[data-t="explain"],.tab[data-t="rpt"]{display:none!important}
+  .tab[data-t="art"],.tab[data-t="dash"],.tab[data-t="predict"],.tab[data-t="explain"],.tab[data-t="rpt"]{display:none!important}
   .tab::after{bottom:-1px;left:15%;right:15%}
   .ws-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;max-width:100vw}
   /* All direct ws-body children: constrain width */
@@ -403,6 +403,55 @@ input[type=file]{display:none}
 .logs{padding:12px;font-family:var(--mono);font-size:11px;color:var(--text-3);line-height:1.8;overflow-y:auto}
 .log-line{display:flex;align-items:baseline;gap:6px;white-space:pre-wrap;word-break:break-all}
 .log-ghost{font-size:9px;opacity:.5;flex-shrink:0;user-select:none}
+
+/* ── DASHBOARD ── */
+.dash{padding:20px 24px 32px;min-height:100%;background:var(--bg);box-sizing:border-box}
+.dash-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-3);gap:14px}
+.dash-empty-icon{font-size:52px;opacity:.6}
+.dash-empty-msg{font-size:13px;color:var(--text-3)}
+.dash-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+@media(max-width:900px){.dash-kpis{grid-template-columns:repeat(2,1fr)}}
+.dash-kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden;transition:transform 120ms,box-shadow 120ms}
+.dash-kpi:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.dash-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:12px 12px 0 0}
+.dash-kpi.accent::before{background:linear-gradient(90deg,var(--accent),#818cf8)}
+.dash-kpi.green::before{background:linear-gradient(90deg,#34d399,#10b981)}
+.dash-kpi.blue::before{background:linear-gradient(90deg,#60a5fa,#3b82f6)}
+.dash-kpi.amber::before{background:linear-gradient(90deg,#fbbf24,#f59e0b)}
+.dash-kpi.red::before{background:linear-gradient(90deg,#f87171,#ef4444)}
+.dash-kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);margin-bottom:8px}
+.dash-kpi-val{font-size:26px;font-weight:700;color:var(--text);line-height:1;font-family:var(--mono);letter-spacing:-0.5px}
+.dash-kpi-sub{font-size:11px;color:var(--text-3);margin-top:5px}
+.dash-kpi-badge{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;font-size:15px;font-weight:800;position:absolute;top:14px;right:14px}
+.dash-row{display:grid;gap:14px;margin-bottom:14px}
+.dash-row.cols-2{grid-template-columns:1fr 1fr}
+.dash-row.cols-3{grid-template-columns:2fr 1fr}
+@media(max-width:1100px){.dash-row.cols-2,.dash-row.cols-3{grid-template-columns:1fr}}
+.dash-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+.dash-card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);margin-bottom:14px;display:flex;align-items:center;gap:6px}
+.dash-card-title span{flex:1}
+.dash-card-title small{font-size:10px;font-weight:500;text-transform:none;letter-spacing:0;color:#3f3f46;background:#1c1c1f;padding:2px 8px;border-radius:20px}
+.dash-lb-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #1a1a1d}
+.dash-lb-row:last-child{border-bottom:none}
+.dash-lb-rank{font-size:11px;font-weight:700;color:#3f3f46;width:18px;text-align:center;flex-shrink:0}
+.dash-lb-name{font-size:12px;font-weight:600;color:var(--text-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-lb-bar-wrap{width:80px;height:5px;background:#1c1c1f;border-radius:3px;flex-shrink:0;overflow:hidden}
+.dash-lb-bar{height:100%;border-radius:3px;transition:width .6s ease}
+.dash-lb-val{font-size:11px;font-family:var(--mono);color:var(--text-2);width:70px;text-align:right;flex-shrink:0}
+.dash-lb-grade{font-size:10px;font-weight:800;width:20px;text-align:center;flex-shrink:0}
+.dash-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dash-meta-item{background:#0d0d0f;border-radius:8px;padding:10px 12px}
+.dash-meta-key{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:#3f3f46;margin-bottom:4px}
+.dash-meta-val{font-size:12px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-gap-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1a1a1d}
+.dash-gap-row:last-child{border-bottom:none}
+.dash-gap-name{font-size:11px;color:var(--text-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-gap-pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;flex-shrink:0}
+.dash-gap-pill.ok{background:rgba(52,211,153,.12);color:#34d399}
+.dash-gap-pill.warn{background:rgba(251,191,36,.12);color:#fbbf24}
+.dash-gap-pill.bad{background:rgba(248,113,113,.12);color:#f87171}
+@keyframes dashCountUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dash-kpi-val{animation:dashCountUp .4s ease both}
 
 /* ── CHAT ── */
 .chat{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);min-height:0;overflow:hidden}
@@ -1179,6 +1228,7 @@ input[type=file]{display:none}
       <div class="tab" data-t="code" onclick="stab('code')"><span class="tab-lbl">Code</span></div>
       <div class="tab" data-t="exp" onclick="stab('exp')"><span class="tab-lbl">Exp</span></div>
       <div class="tab" data-t="art" onclick="stab('art')">Artifacts</div>
+      <div class="tab" data-t="dash" onclick="stab('dash')"><span class="tab-lbl">Dashboard</span></div>
       <div class="tab" data-t="results" onclick="stab('results')"><span class="tab-lbl">Results</span></div>
       <div class="tab" data-t="predict" onclick="stab('predict')">Predict</div>
       <div class="tab" data-t="explain" onclick="stab('explain')">Explain</div>
@@ -1203,6 +1253,7 @@ input[type=file]{display:none}
       </div>
       <div id="p-exp" class="exp-feed" style="display:none"></div>
       <div id="p-art" class="art-grid" style="display:none"></div>
+      <div id="p-dash" style="display:none;height:100%;overflow-y:auto"></div>
       <div id="p-results" style="display:none;padding:16px;overflow:auto;height:100%"></div>
       <div id="p-predict" style="display:none"></div>
       <div id="p-explain" class="explain-panel" style="display:none"></div>
@@ -2026,11 +2077,12 @@ function stab(name){
     t.classList.toggle('on',t.dataset.t===name);
     if(t.dataset.t===name){const b=t.querySelector('.tab-badge');if(b)b.remove()}
   });
-  ['data','code','exp','art','results','predict','explain','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':'block'):'none'});
+  ['data','code','exp','art','dash','results','predict','explain','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':'block'):'none'});
   const em=document.getElementById('ws-empty');
   if(em)em.style.display=(name==='data'&&!S.cols)?'':'none';
   if(name==='code'&&monacoEditor)monacoEditor.layout();
   if(name==='results'&&S.runId)loadForecastTable(S.runId);
+  if(name==='dash')renderDashboard();
 }
 
 // ═══════════════════════════════════════════
@@ -2725,9 +2777,14 @@ async function launchRun(){
       else{S.exps[idx]={...S.exps[idx],...exp}} // merge in status/model from server
     });
 
+    if(st.objective)S.objective=st.objective;
+    if(st.token_usage)S.tokenUsage=st.token_usage;
     if(st.best){S.best=st.best;showBest(st.best,st.objective,run_id)}
     if(st.report){S.report=st.report;showRpt(st.report)}
     if(st.artifacts){S.artifacts=st.artifacts;showArts(run_id,st.artifacts);updArtSide()}
+    // Badge the dashboard tab
+    const dashTab=document.querySelector('.tab[data-t="dash"]');
+    if(dashTab&&!dashTab.querySelector('.tab-badge'))dashTab.innerHTML='<span class="tab-lbl">Dashboard</span> <span class="tab-badge">★</span>';
 
     const score=st.diagnostics?.yc_readiness_score||0;
     // Use server history as source-of-truth for counts
@@ -3448,6 +3505,245 @@ async function cancelRun(){
 }
 
 // ═══════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════
+function renderDashboard(){
+  const panel=document.getElementById('p-dash');
+  if(!panel)return;
+  const exps=S.exps||[];
+  if(!exps.length){
+    panel.innerHTML=`<div class="dash-empty"><div class="dash-empty-icon">📊</div><div class="dash-empty-msg">Run an experiment to unlock your dashboard</div></div>`;
+    return;
+  }
+
+  const best=S.best||{};
+  const obj=S.objective||{};
+  const isLower=(obj.direction||'lower_is_better')==='lower_is_better';
+  const metricName=(best.metric_name||exps[0]?.metric_name||'score').toUpperCase();
+  const fmtV=v=>{if(v==null)return'—';const n=Number(v);return Math.abs(n)<0.001?n.toExponential(2):n<1?n.toFixed(4):n<100?n.toFixed(2):n.toFixed(0)};
+
+  // Compute leaderboard — best per model
+  const modelMap={};
+  exps.forEach(e=>{
+    if(!e.success)return;
+    const m=e.model;
+    if(!modelMap[m]||(isLower?e.metric_val<modelMap[m].metric_val:e.metric_val>modelMap[m].metric_val))modelMap[m]=e;
+  });
+  const leaders=Object.values(modelMap).sort((a,b)=>isLower?a.metric_val-b.metric_val:b.metric_val-a.metric_val);
+  const bestVal=leaders[0]?.metric_val;
+  const worstVal=leaders[leaders.length-1]?.metric_val;
+  const span=Math.abs(bestVal-worstVal)||Math.abs(bestVal||1)*0.2||1;
+
+  // Grade colour map
+  const GC={A:'#34d399',B:'#60a5fa',C:'#fbbf24',D:'#f87171',F:'#ef4444'};
+  function grade(name,val){
+    try{return interpretMetric(name,val,obj.direction||'lower_is_better').grade}catch(_){return'—'}
+  }
+  function gradeCol(g){return GC[g]||'#6b7280'}
+
+  // KPI values
+  const kept=exps.filter(e=>e.status==='keep'&&e.success).length;
+  const successRate=exps.length?Math.round((kept/exps.length)*100):0;
+  const topGrade=grade(best.metric_name||'',best.metric_val);
+  const topGradeCol=gradeCol(topGrade);
+  const totalTokens=((S.tokenUsage||{}).input||0)+((S.tokenUsage||{}).output||0);
+  const tokStr=totalTokens>1000?`${(totalTokens/1000).toFixed(1)}K`:`${totalTokens}`;
+
+  // Progress chart data — metric over experiment number (successive best)
+  const successExps=exps.filter(e=>e.success&&e.metric_val!=null);
+  const progressLine=[];
+  let runBest=null;
+  successExps.forEach(e=>{
+    if(runBest===null||( isLower?e.metric_val<runBest:e.metric_val>runBest))runBest=e.metric_val;
+    progressLine.push({x:e.num,each:e.metric_val,best:runBest});
+  });
+
+  // Train/test gap analysis
+  const gapRows=leaders.slice(0,6).map(e=>{
+    const am=e.all_metrics||{};
+    const mn=e.metric_name;
+    const train=am['train_'+mn]??am[mn];
+    const test=am['test_'+mn]??am[mn];
+    let gapPct=null;
+    if(train!=null&&test!=null&&train!==0){
+      gapPct=Math.abs((test-train)/Math.abs(train)*100);
+    }
+    return{model:e.model,val:e.metric_val,gap:gapPct,grade:grade(mn,test??e.metric_val)};
+  });
+
+  // ── Build SVG progress chart ──
+  function buildProgressSVG(){
+    if(progressLine.length<2)return`<div style="color:var(--text-3);font-size:12px;text-align:center;padding:30px 0">Need more experiments</div>`;
+    const W=480,H=120,PL=10,PR=10,PT=10,PB=20;
+    const cW=W-PL-PR,cH=H-PT-PB;
+    const xs=progressLine.map(p=>p.x);
+    const vals=[...progressLine.map(p=>p.each),...progressLine.map(p=>p.best)].filter(v=>v!=null);
+    const minV=Math.min(...vals),maxV=Math.max(...vals);
+    const yRange=maxV-minV||Math.abs(maxV)*0.1||1;
+    const padY=yRange*0.12;
+    const lo=minV-padY,hi=maxV+padY;
+    const xScale=i=>{const xmin=xs[0],xmax=xs[xs.length-1];return PL+(xs[i]-xmin)/Math.max(xmax-xmin,1)*cW};
+    const yScale=v=>PT+cH-(v-lo)/(hi-lo)*cH;
+    // each-exp dots and best line
+    let bestPath='',eachDots='';
+    progressLine.forEach((p,i)=>{
+      const x=xScale(i),y=yScale(p.best);
+      bestPath+=(i===0?`M${x},${y}`:`L${x},${y}`);
+      const ey=yScale(p.each);
+      eachDots+=`<circle cx="${x}" cy="${ey}" r="2.5" fill="#6366f1" opacity=".55"/>`;
+    });
+    const lastP=progressLine[progressLine.length-1];
+    const lastX=xScale(progressLine.length-1),lastY=yScale(lastP.best);
+    return`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:auto">
+      <defs>
+        <linearGradient id="dgLine" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#6366f1" stop-opacity=".25"/>
+          <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+        </linearGradient>
+        <filter id="glow"><feGaussianBlur stdDeviation="1.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      ${eachDots}
+      <path d="${bestPath}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" filter="url(#glow)"/>
+      <circle cx="${lastX}" cy="${lastY}" r="4" fill="#6366f1"/>
+      <text x="${lastX+6}" y="${lastY+4}" font-size="9" fill="#6366f1" font-family="var(--mono)">${fmtV(lastP.best)}</text>
+    </svg>`;
+  }
+
+  // ── Build leaderboard HTML ──
+  function buildLeaderboard(){
+    return leaders.slice(0,8).map((e,i)=>{
+      const pct=isLower?(span>0?Math.round((1-Math.abs(e.metric_val-bestVal)/span)*100):100):(span>0?Math.round(Math.abs(e.metric_val-worstVal+span)/span*100):100);
+      const g=grade(e.metric_name||best.metric_name,e.metric_val);
+      const gc=gradeCol(g);
+      const medals=['🥇','🥈','🥉'];
+      const rank=i<3?medals[i]:`${i+1}`;
+      return`<div class="dash-lb-row">
+        <div class="dash-lb-rank">${rank}</div>
+        <div class="dash-lb-name" title="${esc(e.model)}">${esc(e.model)}</div>
+        <div class="dash-lb-bar-wrap"><div class="dash-lb-bar" style="width:${Math.max(4,pct)}%;background:${gc}"></div></div>
+        <div class="dash-lb-val">${fmtV(e.metric_val)}</div>
+        <div class="dash-lb-grade" style="color:${gc}">${g}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Build train/test gap ──
+  function buildGaps(){
+    return gapRows.map(r=>{
+      const gapLabel=r.gap==null?'—':`${r.gap.toFixed(1)}%`;
+      const cls=r.gap==null?'ok':r.gap<10?'ok':r.gap<20?'warn':'bad';
+      return`<div class="dash-gap-row">
+        <div class="dash-gap-name" title="${esc(r.model)}">${esc(r.model)}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--text-2);width:70px;text-align:right;flex-shrink:0">${fmtV(r.val)}</div>
+        <div class="dash-gap-pill ${cls}">${r.gap==null?'n/a':r.gap<10?'✓ low':r.gap<20?'⚠ mid':'✕ high'} ${gapLabel}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Metrics multi-bar ──
+  function buildMetrics(){
+    const am=best.all_metrics||{};
+    const mkeys=['accuracy','auc','roc_auc','f1','r2','rmse','mae','mape','nse'].filter(k=>{
+      return am['test_'+k]!=null||am[k]!=null;
+    }).slice(0,6);
+    if(!mkeys.length)return`<div style="color:var(--text-3);font-size:12px;padding:10px 0">No metric breakdown available</div>`;
+    return mkeys.map(k=>{
+      const v=am['test_'+k]??am[k];
+      const g=grade(k,v);
+      const gc=gradeCol(g);
+      const higher=['accuracy','auc','roc_auc','f1','r2','nse'];
+      const isH=higher.includes(k);
+      const pct=isH?Math.min(100,Math.max(0,Math.round(v*100))):Math.min(100,Math.max(0,Math.round((1-Math.min(1,v/10))*100)));
+      return`<div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.5px">${k.toUpperCase()}</span>
+          <span style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-family:var(--mono);color:var(--text-2)">${fmtV(v)}</span><span style="font-size:10px;font-weight:800;color:${gc}">${g}</span></span>
+        </div>
+        <div style="height:4px;background:#1c1c1f;border-radius:2px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${gc};border-radius:2px;transition:width .6s ease"></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Meta info ──
+  const domain=obj.domain||'—';
+  const task=obj.task||'—';
+  const target=obj.target||'—';
+  const filename=(S.file?.name)||'—';
+  const expCount=exps.length;
+  const provider=(S.provider||'claude').charAt(0).toUpperCase()+(S.provider||'claude').slice(1);
+
+  // ── Determine KPI color class based on grade ──
+  const kpiClass={A:'green',B:'blue',C:'amber',D:'red',F:'red'}[topGrade]||'accent';
+
+  panel.innerHTML=`<div class="dash">
+
+    <div class="dash-kpis">
+      <div class="dash-kpi ${kpiClass}">
+        <div class="dash-kpi-label">Best Model</div>
+        <div class="dash-kpi-val" style="font-size:16px;margin-top:4px">${esc(best.model||'—')}</div>
+        <div class="dash-kpi-sub">${metricName}: ${fmtV(best.metric_val)}</div>
+        <div class="dash-kpi-badge" style="background:${topGradeCol}22;color:${topGradeCol}">${topGrade}</div>
+      </div>
+      <div class="dash-kpi accent">
+        <div class="dash-kpi-label">Primary Metric</div>
+        <div class="dash-kpi-val">${fmtV(best.metric_val)}</div>
+        <div class="dash-kpi-sub">${metricName} · ${isLower?'lower is better':'higher is better'}</div>
+        <div class="dash-kpi-badge" style="background:rgba(99,102,241,.15);color:#818cf8">📐</div>
+      </div>
+      <div class="dash-kpi blue">
+        <div class="dash-kpi-label">Experiments</div>
+        <div class="dash-kpi-val">${expCount}</div>
+        <div class="dash-kpi-sub">${kept} kept · ${successRate}% success rate</div>
+        <div class="dash-kpi-badge" style="background:rgba(96,165,250,.15);color:#60a5fa">🧪</div>
+      </div>
+      <div class="dash-kpi ${successRate>=70?'green':'amber'}">
+        <div class="dash-kpi-label">Model Diversity</div>
+        <div class="dash-kpi-val">${leaders.length}</div>
+        <div class="dash-kpi-sub">unique models explored</div>
+        <div class="dash-kpi-badge" style="background:rgba(52,211,153,.15);color:#34d399">🏆</div>
+      </div>
+    </div>
+
+    <div class="dash-row cols-3">
+      <div class="dash-card">
+        <div class="dash-card-title"><span>Experiment Progress</span><small>${metricName} over ${expCount} runs</small></div>
+        ${buildProgressSVG()}
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-title"><span>Metrics Breakdown</span></div>
+        ${buildMetrics()}
+      </div>
+    </div>
+
+    <div class="dash-row cols-2">
+      <div class="dash-card">
+        <div class="dash-card-title"><span>Model Leaderboard</span><small>${leaders.length} models</small></div>
+        ${buildLeaderboard()}
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-title"><span>Train / Test Gap</span><small>Overfitting detector</small></div>
+        ${gapRows.length?buildGaps():'<div style="color:var(--text-3);font-size:12px">No train/test split data available</div>'}
+      </div>
+    </div>
+
+    <div class="dash-card" style="margin-top:0">
+      <div class="dash-card-title"><span>Run Intelligence</span></div>
+      <div class="dash-meta-grid">
+        <div class="dash-meta-item"><div class="dash-meta-key">Dataset</div><div class="dash-meta-val" title="${esc(filename)}">${esc(filename)}</div></div>
+        <div class="dash-meta-item"><div class="dash-meta-key">Objective</div><div class="dash-meta-val" title="${esc(S.hint||task)}">${esc(S.hint||task||'—')}</div></div>
+        <div class="dash-meta-item"><div class="dash-meta-key">Task Type</div><div class="dash-meta-val">${esc(task)}</div></div>
+        <div class="dash-meta-item"><div class="dash-meta-key">Target Column</div><div class="dash-meta-val">${esc(target)}</div></div>
+        <div class="dash-meta-item"><div class="dash-meta-key">Domain</div><div class="dash-meta-val">${esc(domain)}</div></div>
+        <div class="dash-meta-item"><div class="dash-meta-key">Provider</div><div class="dash-meta-val">${esc(provider)}</div></div>
+      </div>
+    </div>
+
+  </div>`;
+}
+
+// ═══════════════════════════════════════════
 // RUN HISTORY (sidebar)
 // ═══════════════════════════════════════════
 // ── RUN HISTORY (persisted to localStorage + server) ───────────
@@ -3518,6 +3814,8 @@ async function loadRunStatus(id){
     if(st.hint)S.hint=st.hint;
     if(st.filename)S.file={name:st.filename};
     S.exps=[];document.getElementById('p-exp').innerHTML='';
+    if(st.objective)S.objective=st.objective;
+    if(st.token_usage)S.tokenUsage=st.token_usage;
     if(st.best){S.best=st.best;showBest(st.best,st.objective,id)}
     if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
     if(st.artifacts){S.artifacts=st.artifacts;showArts(id,st.artifacts);updArtSide()}
