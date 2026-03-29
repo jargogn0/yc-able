@@ -213,7 +213,10 @@ body.desktop-mac .topbar{padding-left:84px}
   .comp-send{width:44px;height:44px;min-width:44px}
   .comp-in{font-size:16px}/* prevent iOS auto-zoom */
   /* Chat welcome area: smaller padding on mobile */
-  .cw{padding:16px 12px}
+  .cw{padding:12px 12px;gap:0}
+  .cw-headline{font-size:15px}
+  .cw-stats{gap:10px}
+  .cw-stat-val{font-size:13px}
   .cw-hints{max-width:100%;width:100%}
   .cw-hint{font-size:13px;padding:10px 12px;-webkit-tap-highlight-color:transparent}
 
@@ -489,14 +492,31 @@ input[type=file]{display:none}
 @keyframes bounce{0%,70%,100%{transform:translateY(0)}35%{transform:translateY(-5px)}}
 
 /* Welcome */
-.cw{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;padding:32px}
-.cw-i{display:flex;align-items:center;justify-content:center;opacity:.25}
-.cw-i img{width:36px;height:36px;filter:drop-shadow(0 0 8px rgba(168,85,247,.5))}
-.cw-t{font-size:15px;font-weight:700}
-.cw-s{font-size:13px;color:var(--text-3);line-height:1.7;max-width:280px}
-.cw-hints{display:flex;flex-direction:column;gap:6px;margin-top:8px;width:100%;max-width:300px}
-.cw-hint{padding:10px 14px;border:1px solid var(--border);border-radius:var(--r);font-size:12px;color:var(--text-2);cursor:pointer;text-align:left;transition:all var(--t);background:var(--surface-2)}
-.cw-hint:hover{border-color:var(--accent);color:var(--text);background:var(--accent-soft)}
+.cw{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 24px;gap:0;overflow:hidden}
+.cw-i{display:flex;align-items:center;justify-content:center;margin-bottom:16px;animation:cwIconIn .6s ease both}
+.cw-i img{width:42px;height:42px;filter:drop-shadow(0 0 14px rgba(168,85,247,.7));animation:cwIconFloat 3s ease-in-out infinite}
+@keyframes cwIconFloat{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-6px) rotate(3deg)}}
+@keyframes cwIconIn{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+.cw-headline-wrap{height:32px;overflow:hidden;margin-bottom:8px;position:relative;animation:cwFadeUp .5s .1s ease both}
+@keyframes cwFadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.cw-headline{font-size:17px;font-weight:700;line-height:32px;white-space:nowrap;transition:all .4s cubic-bezier(.4,0,.2,1)}
+.cw-headline.out{opacity:0;transform:translateY(-20px)}
+.cw-headline.in{opacity:0;transform:translateY(20px)}
+.cw-sub{font-size:12px;color:var(--text-3);max-width:270px;line-height:1.65;margin-bottom:16px;animation:cwFadeUp .5s .25s ease both}
+.cw-personas{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:18px;animation:cwFadeUp .5s .35s ease both}
+.cw-persona{font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid var(--border);color:var(--text-3);cursor:default;transition:all .2s}
+.cw-persona.ds{border-color:rgba(99,102,241,.35);color:#818cf8;background:rgba(99,102,241,.08)}
+.cw-persona.team{border-color:rgba(52,211,153,.3);color:#34d399;background:rgba(52,211,153,.07)}
+.cw-persona.biz{border-color:rgba(251,191,36,.3);color:#fbbf24;background:rgba(251,191,36,.07)}
+.cw-stats{display:flex;gap:14px;justify-content:center;margin-bottom:20px;animation:cwFadeUp .5s .45s ease both}
+.cw-stat{display:flex;flex-direction:column;align-items:center;gap:2px}
+.cw-stat-val{font-size:15px;font-weight:800;color:var(--text);font-family:var(--mono)}
+.cw-stat-lbl{font-size:10px;color:#3f3f46;font-weight:500;text-transform:uppercase;letter-spacing:.6px}
+.cw-stat-sep{width:1px;background:var(--border);align-self:stretch;margin:2px 0}
+.cw-hints{display:flex;flex-direction:column;gap:5px;width:100%;max-width:300px;animation:cwFadeUp .5s .55s ease both}
+.cw-hint{padding:9px 13px;border:1px solid var(--border);border-radius:var(--r);font-size:12px;color:var(--text-2);cursor:pointer;text-align:left;transition:all .18s;background:var(--surface-2);animation:cwSlideIn .35s ease both}
+.cw-hint:hover{border-color:var(--accent);color:var(--text);background:var(--accent-soft);transform:translateX(2px)}
+@keyframes cwSlideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
 
 /* Composer */
 .comp{padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0}
@@ -1277,14 +1297,26 @@ input[type=file]{display:none}
     <div class="chat-msgs" id="msgs">
       <div class="cw" id="cw">
         <div class="cw-i"><img src="/ghost.svg" alt="19Labs"></div>
-        <div class="cw-t">What are you building?</div>
-        <div class="cw-s">Drop any dataset (CSV, Excel, JSON) and describe your goal. I'll profile the data, build a plan, train models, and deploy — all automatically.</div>
+        <div class="cw-headline-wrap"><div class="cw-headline" id="cw-headline">Your ML team, automated.</div></div>
+        <div class="cw-sub">Drop any dataset. Describe your goal.<br>Models trained, evaluated &amp; deployed — automatically.</div>
+        <div class="cw-personas">
+          <span class="cw-persona ds">🧬 Data Scientists</span>
+          <span class="cw-persona team">👥 DS Teams</span>
+          <span class="cw-persona biz">📊 Business</span>
+        </div>
+        <div class="cw-stats">
+          <div class="cw-stat"><div class="cw-stat-val">100+</div><div class="cw-stat-lbl">Models</div></div>
+          <div class="cw-stat-sep"></div>
+          <div class="cw-stat"><div class="cw-stat-val">&lt;5m</div><div class="cw-stat-lbl">First result</div></div>
+          <div class="cw-stat-sep"></div>
+          <div class="cw-stat"><div class="cw-stat-val">1-click</div><div class="cw-stat-lbl">Deploy</div></div>
+        </div>
         <div class="cw-hints">
-          <div class="cw-hint" onclick="hint('Predict customer churn')">Predict customer churn</div>
-          <div class="cw-hint" onclick="hint('Forecast next month revenue')">Forecast revenue</div>
-          <div class="cw-hint" onclick="hint('Find the most important features')">Feature importance</div>
-          <div class="cw-hint" onclick="hint('Just analyze and do your best')">Autopilot — just do it</div>
-          <div class="cw-hint" onclick="hint('Never stop — run forever')">Continuous — never stop</div>
+          <div class="cw-hint" style="animation-delay:.55s" onclick="hint('Predict customer churn')">Predict customer churn</div>
+          <div class="cw-hint" style="animation-delay:.65s" onclick="hint('Forecast next month revenue')">Forecast revenue</div>
+          <div class="cw-hint" style="animation-delay:.75s" onclick="hint('Find the most important features')">Feature importance</div>
+          <div class="cw-hint" style="animation-delay:.85s" onclick="hint('Just analyze and do your best')">Autopilot — just do it</div>
+          <div class="cw-hint" style="animation-delay:.95s" onclick="hint('Never stop — run forever')">Continuous — never stop</div>
         </div>
       </div>
       <button class="jump-btn" id="jump-btn" onclick="scrollChat()">New messages below</button>
@@ -1363,7 +1395,37 @@ function _mobChatActivity(){
 function _initMobNav(){
   if(window.innerWidth<=767) setMobPanel('ws');
 }
-window.addEventListener('DOMContentLoaded', _initMobNav);
+window.addEventListener('DOMContentLoaded', ()=>{
+  _initMobNav();
+  _startHeadlineRotator();
+});
+
+// Rotating welcome headline — cycles through persona-targeted messages
+function _startHeadlineRotator(){
+  const lines=[
+    'Your ML team, automated.',
+    'From CSV to deployed model.',
+    'No PhD required.',
+    'Train 100+ models. Pick the best.',
+    'PowerBI on steroids.',
+    'Built for DS teams. Used by everyone.',
+    'Data in. Decisions out.',
+  ];
+  let idx=0;
+  const el=document.getElementById('cw-headline');
+  if(!el)return;
+  setInterval(()=>{
+    if(!el.isConnected)return; // cw was removed when chat started
+    idx=(idx+1)%lines.length;
+    el.classList.add('out');
+    setTimeout(()=>{
+      el.textContent=lines[idx];
+      el.classList.remove('out');
+      el.classList.add('in');
+      requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.remove('in')));
+    },200);
+  },3000);
+}
 window.addEventListener('resize', ()=>{
   if(window.innerWidth>767){
     ['side','ws','chat'].forEach(p=>{
