@@ -2116,6 +2116,12 @@ async function send(){
 
   // ── CHAT MODE ──────────────────────────────
   if(S.mode==='chat'){
+    // "go" / "run" / "start" in chat mode → guide to Agent mode
+    const isRunCmd=/^(go|run|start|launch|execute|do it|let'?s go|train|analyze)$/i.test(lo.trim());
+    if(isRunCmd){
+      chat('ai','To run experiments switch to <strong>Agent mode</strong> using the button above — Chat mode is for asking questions only.<br><br><button onclick="setMode(\'agent\');chat(\'sys\',\'Switched to Agent mode — say go to start.\')" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.12);color:#a5b4fc;font-size:12px;cursor:pointer">Switch to Agent mode →</button>');
+      return;
+    }
     if(!S.file&&!lo.includes('setting')&&!lo.includes('key')){
       chat('ai',"Drop a CSV first so I have context — then ask me anything about your data.");return;
     }
@@ -2203,16 +2209,31 @@ async function chatWithAI(message){
     report:S.report,
     chat_history:S._chatHistory.slice(-10)// last 10 turns
   };
+  // Upfront key check
+  if(!key){
+    typing(false);
+    chat('ai','No API key set — add one in Settings to use the chat assistant.<br><br><button onclick="openSettings()" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.12);color:#a5b4fc;font-size:12px;cursor:pointer">Open Settings →</button>');
+    return;
+  }
   try{
     const r=await apiFetch(`${BASE}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,api_key:key||undefined,provider:C.provider,model:C.model||undefined,context:ctx})});
     const j=await r.json();typing(false);
-    if(!r.ok||!j.ok){chat('err',j.error||'Chat failed');return}
+    if(!r.ok||!j.ok){
+      const err=j.error||'Chat failed';
+      const isAuth=err.includes('401')||err.toLowerCase().includes('invalid')||err.toLowerCase().includes('key');
+      if(isAuth){
+        chat('ai','Invalid API key — please update it in Settings.<br><br><button onclick="openSettings()" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);color:#fca5a5;font-size:12px;cursor:pointer">Fix API Key →</button>');
+      } else {
+        chat('err',err.replace(/\{.*\}/s,'').trim()||'Chat failed');
+      }
+      return;
+    }
     // Track conversation history for multi-turn context
     S._chatHistory.push({role:'user',content:message});
     S._chatHistory.push({role:'assistant',content:j.response});
     if(S._chatHistory.length>40)S._chatHistory=S._chatHistory.slice(-40);
     chat('ai',j.response);
-  }catch(e){typing(false);chat('err',`Chat error: ${esc(e.message)}`)}
+  }catch(e){typing(false);chat('err',`Chat error: ${esc(e.message.slice(0,80))}`)}
 }
 
 // ═══════════════════════════════════════════

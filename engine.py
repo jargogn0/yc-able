@@ -3763,7 +3763,14 @@ BEHAVIOR:
             )
             return resp.content[0].text
     except Exception as e:
-        return f"I couldn't process that: {e}"
+        err = str(e)
+        if "401" in err or "invalid" in err.lower() and "key" in err.lower():
+            return "❌ Invalid API key — please update your key in Settings (top-right ⚙)."
+        if "429" in err or "rate" in err.lower():
+            return "⏱ Rate limit hit — wait a moment and try again."
+        if "insufficient_quota" in err or "quota" in err.lower():
+            return "💳 API quota exceeded — check your billing at your provider dashboard."
+        return f"I couldn't process that — {err[:120]}"
 
 
 # ── INFERENCE SERVER GENERATOR ─────────────────────────────────
