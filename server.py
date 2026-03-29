@@ -582,6 +582,19 @@ def _download_linux():
 # In-memory CSRF state store for Google OAuth (short-lived)
 _OAUTH_STATES: dict[str, float] = {}
 
+def _site_base(request: Request) -> str:
+    """Return the public base URL, always https in production.
+    Reads SITE_URL env var first (e.g. https://19labs.dev),
+    then falls back to request.base_url with http→https forced."""
+    site = os.environ.get("SITE_URL", "").strip().rstrip("/")
+    if site:
+        return site
+    base = _site_base(request)
+    # Railway / any reverse-proxy: request arrives as http:// internally
+    if base.startswith("http://"):
+        base = "https://" + base[7:]
+    return base
+
 def _validate_provider_key(provider: str, api_key: str) -> tuple[bool, str]:
     """Validate an API key by calling the provider. Returns (valid, display_name)."""
     try:
@@ -667,7 +680,7 @@ async def google_auth_start(request: Request):
     old = [k for k, t in _OAUTH_STATES.items() if time.time() - t > 600]
     for k in old:
         del _OAUTH_STATES[k]
-    base = str(request.base_url).rstrip("/")
+    base = _site_base(request)
     redirect_uri = urllib.parse.quote(f"{base}/auth/google/callback", safe="")
     scope = urllib.parse.quote("openid email profile", safe="")
     url = (f"https://accounts.google.com/o/oauth2/v2/auth"
@@ -686,7 +699,7 @@ async def github_auth_start(request: Request):
     old = [k for k, t in _OAUTH_STATES.items() if time.time() - t > 600]
     for k in old:
         del _OAUTH_STATES[k]
-    base = str(request.base_url).rstrip("/")
+    base = _site_base(request)
     redirect_uri = urllib.parse.quote(f"{base}/auth/github/callback", safe="")
     url = (f"https://github.com/login/oauth/authorize"
            f"?client_id={client_id}&redirect_uri={redirect_uri}"
@@ -704,7 +717,7 @@ async def github_auth_callback(code: str = "", state: str = "", error: str = "",
 
     client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
     client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "").strip()
-    base = str(request.base_url).rstrip("/")
+    base = _site_base(request)
     redirect_uri = f"{base}/auth/github/callback"
 
     try:
@@ -772,7 +785,7 @@ async def google_auth_callback(code: str = "", state: str = "", error: str = "",
 
     client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
-    base = str(request.base_url).rstrip("/")
+    base = _site_base(request)
     redirect_uri = f"{base}/auth/google/callback"
 
     try:
