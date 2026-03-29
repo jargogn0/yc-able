@@ -1094,8 +1094,8 @@ input[type=file]{display:none}
     <div class="badge" id="badge">IDLE</div>
     <button class="tbtn" onclick="openCmd()" data-tip="Command Palette (⌘K)">⌘K</button>
     <button class="tbtn" id="tb-prov" onclick="openSettings()" data-tip="Provider settings (⌘,)">Claude</button>
-    <!-- Trial / auth button — shown when not logged in -->
-    <button class="tbtn-start" id="trial-btn" style="display:none" onclick="showAuthModal()">Start Free</button>
+    <!-- Trial / auth button — shown when not logged in, visible by default until auth resolves -->
+    <button class="tbtn-start" id="trial-btn" style="display:inline-block" onclick="showAuthModal()">Sign In</button>
     <div style="position:relative">
       <div class="user-btn" id="user-btn" onclick="toggleUserMenu()" style="display:none">
         <div class="user-avatar" id="user-avatar">?</div>
