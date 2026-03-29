@@ -219,8 +219,7 @@ body.desktop-mac .topbar{padding-left:84px}
   .cw-headline{font-size:15px}
   .cw-stats{gap:10px}
   .cw-stat-val{font-size:13px}
-  .cw-hints{max-width:100%;width:100%}
-  .cw-hint{font-size:13px;padding:10px 12px;-webkit-tap-highlight-color:transparent}
+  .cw-domains{max-width:100%}
 
   /* ── Dropzone: compact ── */
   .dz{padding:14px 10px;margin:8px 8px 4px}
@@ -557,10 +556,9 @@ input[type=file]{display:none}
 .cw-stat-val{font-size:15px;font-weight:800;color:var(--text);font-family:var(--mono)}
 .cw-stat-lbl{font-size:10px;color:#3f3f46;font-weight:500;text-transform:uppercase;letter-spacing:.6px}
 .cw-stat-sep{width:1px;background:var(--border);align-self:stretch;margin:2px 0}
-.cw-hints{display:flex;flex-direction:column;gap:5px;width:100%;max-width:300px;animation:cwFadeUp .5s .55s ease both}
-.cw-hint{padding:9px 13px;border:1px solid var(--border);border-radius:var(--r);font-size:12px;color:var(--text-2);cursor:pointer;text-align:left;transition:all .18s;background:var(--surface-2);animation:cwSlideIn .35s ease both}
-.cw-hint:hover{border-color:var(--accent);color:var(--text);background:var(--accent-soft);transform:translateX(2px)}
-@keyframes cwSlideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.cw-domains{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;max-width:300px;margin-top:4px}
+.cw-domain{font-size:12px;font-weight:500;color:var(--text-3);padding:5px 12px;border:1px solid var(--border);border-radius:20px;background:var(--surface-2);animation:cwSlideIn .35s ease both;white-space:nowrap}
+@keyframes cwSlideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 /* Composer */
 .comp{padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0}
@@ -1395,14 +1393,15 @@ input[type=file]{display:none}
         <div class="cw-i"><img src="/ghost.svg" alt="19Labs"></div>
         <div class="cw-headline-wrap"><div class="cw-headline" id="cw-headline">What do you want to know?</div></div>
         <div class="cw-sub">Connect your data, say what's on your mind —<br>get a production-ready model and real business insights.</div>
-        <div class="cw-hints">
-          <div class="cw-hint" style="animation-delay:.45s" onclick="hint('Forecast next month revenue')">📈 Forecast next month revenue</div>
-          <div class="cw-hint" style="animation-delay:.52s" onclick="hint('Which customers are about to churn?')">⚠️ Which customers are about to churn?</div>
-          <div class="cw-hint" style="animation-delay:.59s" onclick="hint('Predict sales pipeline conversion')">💼 Predict sales pipeline conversion</div>
-          <div class="cw-hint" style="animation-delay:.66s" onclick="hint('Detect fraud transactions in our finance data')">🏦 Detect fraud in finance data</div>
-          <div class="cw-hint" style="animation-delay:.73s" onclick="hint('Predict patient readmission risk')">🏥 Predict patient readmission risk</div>
-          <div class="cw-hint" style="animation-delay:.80s" onclick="hint('Optimize delivery routes and forecast demand')">🚚 Optimize logistics & forecast demand</div>
-          <div class="cw-hint" style="animation-delay:.87s" onclick="hint('Analyze geospatial patterns and predict location-based outcomes')">🌍 Geospatial pattern analysis</div>
+        <div class="cw-domains">
+          <span class="cw-domain" style="animation-delay:.4s">📈 Sales</span>
+          <span class="cw-domain" style="animation-delay:.46s">🏦 Finance</span>
+          <span class="cw-domain" style="animation-delay:.52s">🏥 Healthcare</span>
+          <span class="cw-domain" style="animation-delay:.58s">🚚 Logistics</span>
+          <span class="cw-domain" style="animation-delay:.64s">🌍 Geoscience</span>
+          <span class="cw-domain" style="animation-delay:.70s">⚡ Energy</span>
+          <span class="cw-domain" style="animation-delay:.76s">🛒 Retail</span>
+          <span class="cw-domain" style="animation-delay:.82s">🏭 Manufacturing</span>
         </div>
       </div>
       <button class="jump-btn" id="jump-btn" onclick="scrollChat()">New messages below</button>
