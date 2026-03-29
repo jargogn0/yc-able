@@ -2477,6 +2477,268 @@ async def fetch_url_data(req: FetchURLRequest):
         return {"ok": False, "error": str(e)}
 
 
+# ── DATA CONNECTORS ────────────────────────────────────────────
+class ConnectRequest(BaseModel):
+    connector: str          # postgresql | mysql | sqlserver | snowflake | bigquery
+                            # databricks | redshift | mongodb | s3 | rest
+    credentials: dict       # connector-specific fields
+    query: str = ""         # SQL query or empty → SELECT * FROM table LIMIT n
+    table: str = ""         # table name (used when query is empty)
+    limit: int = 50000      # max rows to fetch
+
+@app.post("/api/connect")
+async def connect_datasource(req: ConnectRequest):
+    """Connect to an external data source and return CSV."""
+    import io
+    try:
+        import pandas as pd
+    except ImportError:
+        return {"ok": False, "error": "pandas not installed"}
+
+    c = req.connector.lower()
+    creds = req.credentials
+    limit = max(1, min(req.limit, 200_000))
+    query = req.query.strip()
+    table = req.table.strip()
+
+    def df_to_response(df, source_name="data"):
+        if df.empty:
+            return {"ok": False, "error": "Query returned no rows"}
+        if len(df) > limit:
+            df = df.head(limit)
+        csv_text = df.to_csv(index=False)
+        fname = f"{source_name.replace(' ','_')}.csv"
+        return {"ok": True, "csv": csv_text, "filename": fname,
+                "rows": len(df), "cols": len(df.columns)}
+
+    def build_sql(table, limit):
+        if not table:
+            return None
+        return f'SELECT * FROM {table} LIMIT {limit}'
+
+    # ── PostgreSQL / Redshift ──────────────────────────────────
+    if c in ("postgresql", "postgres", "redshift"):
+        try:
+            import psycopg2
+            conn = psycopg2.connect(
+                host=creds.get("host",""),
+                port=int(creds.get("port", 5432)),
+                dbname=creds.get("database",""),
+                user=creds.get("username",""),
+                password=creds.get("password",""),
+                connect_timeout=15,
+            )
+            sql = query or build_sql(table, limit)
+            if not sql:
+                return {"ok": False, "error": "Provide a SQL query or table name"}
+            df = pd.read_sql(sql, conn)
+            conn.close()
+            return df_to_response(df, creds.get("database","data"))
+        except ImportError:
+            return {"ok": False, "error": "psycopg2 not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── MySQL / MariaDB ───────────────────────────────────────
+    if c in ("mysql", "mariadb"):
+        try:
+            import pymysql
+            conn = pymysql.connect(
+                host=creds.get("host",""),
+                port=int(creds.get("port", 3306)),
+                db=creds.get("database",""),
+                user=creds.get("username",""),
+                password=creds.get("password",""),
+                connect_timeout=15,
+            )
+            sql = query or build_sql(table, limit)
+            if not sql:
+                return {"ok": False, "error": "Provide a SQL query or table name"}
+            df = pd.read_sql(sql, conn)
+            conn.close()
+            return df_to_response(df, creds.get("database","data"))
+        except ImportError:
+            return {"ok": False, "error": "pymysql not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── SQL Server ────────────────────────────────────────────
+    if c in ("sqlserver", "mssql"):
+        try:
+            import pymssql
+            conn = pymssql.connect(
+                server=creds.get("host",""),
+                port=int(creds.get("port", 1433)),
+                database=creds.get("database",""),
+                user=creds.get("username",""),
+                password=creds.get("password",""),
+                login_timeout=15,
+            )
+            sql = query or build_sql(table, limit)
+            if not sql:
+                return {"ok": False, "error": "Provide a SQL query or table name"}
+            df = pd.read_sql(sql, conn)
+            conn.close()
+            return df_to_response(df, creds.get("database","data"))
+        except ImportError:
+            return {"ok": False, "error": "pymssql not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Snowflake ─────────────────────────────────────────────
+    if c == "snowflake":
+        try:
+            import snowflake.connector
+            conn = snowflake.connector.connect(
+                account=creds.get("account",""),
+                user=creds.get("username",""),
+                password=creds.get("password",""),
+                warehouse=creds.get("warehouse",""),
+                database=creds.get("database",""),
+                schema=creds.get("schema","PUBLIC"),
+                login_timeout=20,
+            )
+            sql = query or build_sql(table, limit)
+            if not sql:
+                return {"ok": False, "error": "Provide a SQL query or table name"}
+            df = pd.read_sql(sql, conn)
+            conn.close()
+            return df_to_response(df, creds.get("database","snowflake"))
+        except ImportError:
+            return {"ok": False, "error": "snowflake-connector-python not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Databricks ────────────────────────────────────────────
+    if c == "databricks":
+        try:
+            from databricks import sql as dbsql
+            conn = dbsql.connect(
+                server_hostname=creds.get("host",""),
+                http_path=creds.get("http_path",""),
+                access_token=creds.get("token",""),
+            )
+            sql = query or build_sql(table, limit)
+            if not sql:
+                return {"ok": False, "error": "Provide a SQL query or table name"}
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                cols = [d[0] for d in cur.description]
+                rows = cur.fetchall()
+            conn.close()
+            df = pd.DataFrame(rows, columns=cols)
+            return df_to_response(df, "databricks")
+        except ImportError:
+            return {"ok": False, "error": "databricks-sql-connector not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── BigQuery ──────────────────────────────────────────────
+    if c == "bigquery":
+        try:
+            from google.cloud import bigquery as bq
+            import json as _json
+            sa_json = creds.get("service_account_json","")
+            if sa_json:
+                import tempfile, os
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    f.write(sa_json); fname_tmp = f.name
+                client = bq.Client.from_service_account_json(fname_tmp)
+                os.unlink(fname_tmp)
+            else:
+                client = bq.Client(project=creds.get("project",""))
+            sql = query or (f'SELECT * FROM `{table}` LIMIT {limit}' if table else None)
+            if not sql:
+                return {"ok": False, "error": "Provide a SQL query or table name"}
+            df = client.query(sql).to_dataframe()
+            return df_to_response(df, creds.get("project","bigquery"))
+        except ImportError:
+            return {"ok": False, "error": "google-cloud-bigquery not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── MongoDB ───────────────────────────────────────────────
+    if c == "mongodb":
+        try:
+            import pymongo
+            client = pymongo.MongoClient(
+                creds.get("uri", f"mongodb://{creds.get('host','localhost')}:{creds.get('port',27017)}/"),
+                serverSelectionTimeoutMS=10000,
+            )
+            db = client[creds.get("database","")]
+            coll = client[creds.get("database","")][creds.get("collection","")]
+            docs = list(coll.find({}, {"_id": 0}).limit(limit))
+            if not docs:
+                return {"ok": False, "error": "Collection is empty or not found"}
+            df = pd.DataFrame(docs)
+            return df_to_response(df, creds.get("collection","mongodb"))
+        except ImportError:
+            return {"ok": False, "error": "pymongo not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── AWS S3 ────────────────────────────────────────────────
+    if c == "s3":
+        try:
+            import boto3
+            s3 = boto3.client(
+                "s3",
+                aws_access_key_id=creds.get("access_key",""),
+                aws_secret_access_key=creds.get("secret_key",""),
+                region_name=creds.get("region","us-east-1"),
+            )
+            bucket = creds.get("bucket","")
+            key = creds.get("key","")    # object path
+            obj = s3.get_object(Bucket=bucket, Key=key)
+            content = obj["Body"].read()
+            ext = key.rsplit(".",1)[-1].lower()
+            if ext in ("xlsx","xls"):
+                df = pd.read_excel(io.BytesIO(content))
+            elif ext == "json":
+                df = pd.read_json(io.BytesIO(content))
+            elif ext == "parquet":
+                df = pd.read_parquet(io.BytesIO(content))
+            else:
+                df = pd.read_csv(io.BytesIO(content))
+            return df_to_response(df, key.rsplit("/",1)[-1])
+        except ImportError:
+            return {"ok": False, "error": "boto3 not installed on server"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── REST / JSON API ───────────────────────────────────────
+    if c == "rest":
+        try:
+            import urllib.request
+            url = creds.get("url","")
+            headers = {}
+            if creds.get("token"):
+                headers["Authorization"] = f"Bearer {creds['token']}"
+            if creds.get("api_key"):
+                headers[creds.get("api_key_header","X-API-Key")] = creds["api_key"]
+            r = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(r, timeout=20) as resp:
+                data = resp.read().decode("utf-8")
+            import json as _j
+            parsed = _j.loads(data)
+            # Handle common shapes: list, {data:[...]}, {results:[...]}, {items:[...]}
+            if isinstance(parsed, list):
+                df = pd.DataFrame(parsed)
+            elif isinstance(parsed, dict):
+                for key in ("data","results","items","records","rows","value"):
+                    if key in parsed and isinstance(parsed[key], list):
+                        df = pd.DataFrame(parsed[key]); break
+                else:
+                    df = pd.json_normalize(parsed)
+            else:
+                return {"ok": False, "error": "Unexpected JSON shape"}
+            return df_to_response(df, "api_data")
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    return {"ok": False, "error": f"Unknown connector: {req.connector}"}
+
+
 # ── TIER 2: Data Transform ───────────────────────────────────
 
 class TransformRequest(BaseModel):

@@ -409,6 +409,48 @@ input[type=file]{display:none}
 .log-line{display:flex;align-items:baseline;gap:6px;white-space:pre-wrap;word-break:break-all}
 .log-ghost{font-size:9px;opacity:.5;flex-shrink:0;user-select:none}
 
+/* ── DATA CONNECTORS ── */
+.conn-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.7);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:si .2s ease}
+.conn-modal{background:#0f0f11;border:1px solid var(--border);border-radius:18px;width:100%;max-width:720px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.7)}
+.conn-header{padding:20px 24px 0;flex-shrink:0}
+.conn-title{font-size:16px;font-weight:700;margin-bottom:4px}
+.conn-sub{font-size:12px;color:var(--text-3);margin-bottom:14px}
+.conn-search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0 12px;margin-bottom:4px}
+.conn-search svg{width:14px;height:14px;stroke:var(--text-3);fill:none;flex-shrink:0}
+.conn-search input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:12px;padding:9px 0;font-family:var(--sans)}
+.conn-search input::placeholder{color:#3f3f46}
+.conn-body{flex:1;overflow-y:auto;padding:14px 24px 20px;display:flex;gap:16px}
+.conn-gallery{flex:1;min-width:0}
+.conn-section{margin-bottom:16px}
+.conn-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3f3f46;margin-bottom:8px}
+.conn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px}
+.conn-card{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 6px;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all .15s;background:var(--surface);text-align:center}
+.conn-card:hover{border-color:var(--accent);background:rgba(99,102,241,.07);transform:translateY(-1px)}
+.conn-card.active{border-color:var(--accent);background:rgba(99,102,241,.12)}
+.conn-card-icon{font-size:22px;line-height:1}
+.conn-card-name{font-size:10px;font-weight:600;color:var(--text-2);line-height:1.2}
+.conn-card.hidden{display:none}
+.conn-form-panel{width:260px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:none;flex-direction:column;gap:10px;animation:si .2s ease}
+.conn-form-panel.visible{display:flex}
+.conn-form-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.conn-field{display:flex;flex-direction:column;gap:4px}
+.conn-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:#3f3f46}
+.conn-input{background:#0a0a0b;border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:12px;font-family:var(--sans);outline:none;transition:border-color .15s;width:100%;box-sizing:border-box}
+.conn-input:focus{border-color:var(--accent)}
+.conn-input::placeholder{color:#3f3f46}
+.conn-textarea{resize:vertical;min-height:60px;font-family:var(--mono);font-size:11px}
+.conn-connect-btn{margin-top:4px;padding:9px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);transition:background .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+.conn-connect-btn:hover{background:var(--accent-2)}
+.conn-connect-btn:disabled{opacity:.5;cursor:not-allowed}
+.conn-footer{padding:12px 24px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.conn-close{background:none;border:none;color:var(--text-3);font-size:12px;cursor:pointer;font-family:var(--sans);padding:6px 12px;border-radius:6px;transition:all .15s}
+.conn-close:hover{background:var(--surface);color:var(--text)}
+.conn-status{font-size:11px;color:var(--text-3)}
+/* Sidebar connect button */
+.conn-btn{display:flex;align-items:center;gap:7px;padding:7px 14px;font-size:11px;font-weight:600;color:var(--text-3);cursor:pointer;background:none;border:none;font-family:var(--sans);width:100%;transition:all .15s;letter-spacing:.1px}
+.conn-btn:hover{color:var(--accent);background:rgba(99,102,241,.06)}
+.conn-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;flex-shrink:0}
+
 /* ── DASHBOARD ── */
 .dash{padding:20px 24px 32px;min-height:100%;background:var(--bg);box-sizing:border-box}
 .dash-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-3);gap:14px}
@@ -1018,6 +1060,54 @@ input[type=file]{display:none}
   </div>
 </div>
 
+<!-- DATA CONNECTORS MODAL -->
+<div class="conn-overlay" id="conn-overlay" style="display:none" onclick="if(event.target===this)closeConnectors()">
+  <div class="conn-modal">
+    <div class="conn-header">
+      <div class="conn-title">Connect Data Source</div>
+      <div class="conn-sub">Connect to any database, warehouse, or API — we'll fetch your data automatically.</div>
+      <div class="conn-search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input id="conn-search-input" placeholder="Search connectors..." oninput="filterConnectors(this.value)">
+      </div>
+    </div>
+    <div class="conn-body">
+      <div class="conn-gallery" id="conn-gallery">
+        <div class="conn-section">
+          <div class="conn-section-title">Cloud Warehouses</div>
+          <div class="conn-grid">
+            <div class="conn-card" data-conn="snowflake" data-name="Snowflake" onclick="selectConnector(this)"><div class="conn-card-icon">❄️</div><div class="conn-card-name">Snowflake</div></div>
+            <div class="conn-card" data-conn="bigquery" data-name="BigQuery" onclick="selectConnector(this)"><div class="conn-card-icon">🔷</div><div class="conn-card-name">BigQuery</div></div>
+            <div class="conn-card" data-conn="databricks" data-name="Databricks" onclick="selectConnector(this)"><div class="conn-card-icon">🧱</div><div class="conn-card-name">Databricks</div></div>
+            <div class="conn-card" data-conn="redshift" data-name="Redshift" onclick="selectConnector(this)"><div class="conn-card-icon">🔴</div><div class="conn-card-name">Redshift</div></div>
+          </div>
+        </div>
+        <div class="conn-section">
+          <div class="conn-section-title">Databases</div>
+          <div class="conn-grid">
+            <div class="conn-card" data-conn="postgresql" data-name="PostgreSQL" onclick="selectConnector(this)"><div class="conn-card-icon">🐘</div><div class="conn-card-name">PostgreSQL</div></div>
+            <div class="conn-card" data-conn="mysql" data-name="MySQL" onclick="selectConnector(this)"><div class="conn-card-icon">🐬</div><div class="conn-card-name">MySQL</div></div>
+            <div class="conn-card" data-conn="sqlserver" data-name="SQL Server" onclick="selectConnector(this)"><div class="conn-card-icon">🪟</div><div class="conn-card-name">SQL Server</div></div>
+            <div class="conn-card" data-conn="mongodb" data-name="MongoDB" onclick="selectConnector(this)"><div class="conn-card-icon">🍃</div><div class="conn-card-name">MongoDB</div></div>
+          </div>
+        </div>
+        <div class="conn-section">
+          <div class="conn-section-title">Storage</div>
+          <div class="conn-grid">
+            <div class="conn-card" data-conn="s3" data-name="AWS S3" onclick="selectConnector(this)"><div class="conn-card-icon">📦</div><div class="conn-card-name">AWS S3</div></div>
+            <div class="conn-card" data-conn="rest" data-name="REST API" onclick="selectConnector(this)"><div class="conn-card-icon">🌐</div><div class="conn-card-name">REST API</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="conn-form-panel" id="conn-form-panel"></div>
+    </div>
+    <div class="conn-footer">
+      <span class="conn-status" id="conn-status"></span>
+      <button class="conn-close" onclick="closeConnectors()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ONBOARDING MODAL -->
 <div class="onboard-overlay" id="onboard-overlay" style="display:none">
   <div class="onboard-card">
@@ -1211,6 +1301,10 @@ input[type=file]{display:none}
         <input class="url-in" id="url-in" placeholder="Paste URL or Google Sheets link..." onkeydown="if(event.key==='Enter')fetchFromURL()">
         <button class="url-btn" onclick="fetchFromURL()">Fetch</button>
       </div>
+      <button class="conn-btn" onclick="openConnectors()">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="5" r="3"/><circle cx="15" cy="19" r="3"/><circle cx="19" cy="9" r="3"/><path d="M9 8v3m6 3v3M11.5 6.5l5-1.5M11 14l5 3.5" stroke-linecap="round"/></svg>
+        Connect a data source
+      </button>
       <a class="dz-sample-link" onclick="loadSampleDataset()">or try the Titanic sample dataset →</a>
       <div id="multi-ds-panel"></div>
       <div id="file-list"></div>
@@ -3574,6 +3668,169 @@ async function cancelRun(){
 }
 
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// DATA CONNECTORS
+// ═══════════════════════════════════════════
+const _CONN_FORMS={
+  postgresql:{label:'PostgreSQL',fields:[
+    {id:'host',label:'Host',placeholder:'db.example.com',required:true},
+    {id:'port',label:'Port',placeholder:'5432'},
+    {id:'database',label:'Database',placeholder:'my_database',required:true},
+    {id:'username',label:'Username',placeholder:'postgres',required:true},
+    {id:'password',label:'Password',placeholder:'••••••••',type:'password',required:true},
+    {id:'table',label:'Table (or write SQL below)',placeholder:'public.orders'},
+    {id:'query',label:'Custom SQL',placeholder:'SELECT * FROM orders WHERE date > \'2024-01-01\'',type:'textarea'},
+  ]},
+  redshift:{label:'Amazon Redshift',fields:[
+    {id:'host',label:'Host',placeholder:'cluster.us-east-1.redshift.amazonaws.com',required:true},
+    {id:'port',label:'Port',placeholder:'5439'},
+    {id:'database',label:'Database',required:true},
+    {id:'username',label:'Username',required:true},
+    {id:'password',label:'Password',type:'password',required:true},
+    {id:'table',label:'Table',placeholder:'public.sales'},
+    {id:'query',label:'Custom SQL',type:'textarea'},
+  ]},
+  mysql:{label:'MySQL / MariaDB',fields:[
+    {id:'host',label:'Host',placeholder:'db.example.com',required:true},
+    {id:'port',label:'Port',placeholder:'3306'},
+    {id:'database',label:'Database',required:true},
+    {id:'username',label:'Username',required:true},
+    {id:'password',label:'Password',type:'password',required:true},
+    {id:'table',label:'Table'},
+    {id:'query',label:'Custom SQL',type:'textarea'},
+  ]},
+  sqlserver:{label:'SQL Server',fields:[
+    {id:'host',label:'Host / Server',placeholder:'myserver.database.windows.net',required:true},
+    {id:'port',label:'Port',placeholder:'1433'},
+    {id:'database',label:'Database',required:true},
+    {id:'username',label:'Username',required:true},
+    {id:'password',label:'Password',type:'password',required:true},
+    {id:'table',label:'Table / View'},
+    {id:'query',label:'Custom SQL',type:'textarea'},
+  ]},
+  snowflake:{label:'Snowflake',fields:[
+    {id:'account',label:'Account',placeholder:'xy12345.us-east-1',required:true},
+    {id:'username',label:'Username',required:true},
+    {id:'password',label:'Password',type:'password',required:true},
+    {id:'warehouse',label:'Warehouse',placeholder:'COMPUTE_WH'},
+    {id:'database',label:'Database',required:true},
+    {id:'schema',label:'Schema',placeholder:'PUBLIC'},
+    {id:'table',label:'Table'},
+    {id:'query',label:'Custom SQL',type:'textarea'},
+  ]},
+  bigquery:{label:'Google BigQuery',fields:[
+    {id:'project',label:'Project ID',required:true},
+    {id:'service_account_json',label:'Service Account JSON',placeholder:'Paste your JSON key here...',type:'textarea',required:true},
+    {id:'table',label:'Table',placeholder:'dataset.table_name'},
+    {id:'query',label:'Custom SQL',placeholder:'SELECT * FROM `project.dataset.table` LIMIT 10000',type:'textarea'},
+  ]},
+  databricks:{label:'Databricks',fields:[
+    {id:'host',label:'Server Hostname',placeholder:'adb-xxxx.azuredatabricks.net',required:true},
+    {id:'http_path',label:'HTTP Path',placeholder:'/sql/1.0/warehouses/xxxx',required:true},
+    {id:'token',label:'Personal Access Token',type:'password',required:true},
+    {id:'table',label:'Table / View'},
+    {id:'query',label:'Custom SQL',type:'textarea'},
+  ]},
+  mongodb:{label:'MongoDB',fields:[
+    {id:'uri',label:'Connection URI',placeholder:'mongodb+srv://user:pass@cluster.mongodb.net/',required:true},
+    {id:'database',label:'Database',required:true},
+    {id:'collection',label:'Collection',required:true},
+  ]},
+  s3:{label:'AWS S3',fields:[
+    {id:'bucket',label:'Bucket',required:true},
+    {id:'key',label:'Object Key (file path)',placeholder:'data/sales/2024.csv',required:true},
+    {id:'access_key',label:'Access Key ID',required:true},
+    {id:'secret_key',label:'Secret Access Key',type:'password',required:true},
+    {id:'region',label:'Region',placeholder:'us-east-1'},
+  ]},
+  rest:{label:'REST / JSON API',fields:[
+    {id:'url',label:'Endpoint URL',placeholder:'https://api.example.com/data',required:true},
+    {id:'token',label:'Bearer Token (optional)',type:'password'},
+    {id:'api_key',label:'API Key (optional)'},
+    {id:'api_key_header',label:'API Key Header',placeholder:'X-API-Key'},
+  ]},
+};
+
+let _connActive=null;
+
+function openConnectors(){
+  document.getElementById('conn-overlay').style.display='flex';
+  document.getElementById('conn-search-input').value='';
+  filterConnectors('');
+  _connActive=null;
+  document.querySelectorAll('.conn-card').forEach(c=>c.classList.remove('active'));
+  document.getElementById('conn-form-panel').classList.remove('visible');
+  document.getElementById('conn-status').textContent='';
+}
+function closeConnectors(){document.getElementById('conn-overlay').style.display='none';}
+
+function filterConnectors(q){
+  q=q.toLowerCase();
+  document.querySelectorAll('.conn-card').forEach(card=>{
+    const name=(card.dataset.name||'').toLowerCase();
+    const conn=(card.dataset.conn||'').toLowerCase();
+    card.classList.toggle('hidden',q&&!name.includes(q)&&!conn.includes(q));
+  });
+  document.querySelectorAll('.conn-section').forEach(sec=>{
+    const hasVisible=[...sec.querySelectorAll('.conn-card')].some(c=>!c.classList.contains('hidden'));
+    sec.style.display=hasVisible?'':'none';
+  });
+}
+
+function selectConnector(card){
+  _connActive=card.dataset.conn;
+  document.querySelectorAll('.conn-card').forEach(c=>c.classList.remove('active'));
+  card.classList.add('active');
+  const def=_CONN_FORMS[_connActive];
+  if(!def)return;
+  const panel=document.getElementById('conn-form-panel');
+  const icon=card.querySelector('.conn-card-icon').textContent;
+  panel.innerHTML=`
+    <div class="conn-form-title">${icon} ${def.label}</div>
+    ${def.fields.map(f=>`<div class="conn-field">
+      <div class="conn-label">${f.label}${f.required?'<span style="color:var(--accent)"> *</span>':''}</div>
+      ${f.type==='textarea'
+        ?`<textarea class="conn-input conn-textarea" id="cf-${f.id}" placeholder="${f.placeholder||''}" rows="3"></textarea>`
+        :`<input class="conn-input" id="cf-${f.id}" type="${f.type||'text'}" placeholder="${f.placeholder||''}">`}
+    </div>`).join('')}
+    <button class="conn-connect-btn" onclick="doConnect()" id="conn-do-btn">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Connect & Import
+    </button>`;
+  panel.classList.add('visible');
+  document.getElementById('conn-status').textContent='';
+}
+
+async function doConnect(){
+  if(!_connActive)return;
+  const def=_CONN_FORMS[_connActive];
+  const creds={};
+  for(const f of def.fields){
+    const el=document.getElementById('cf-'+f.id);
+    if(el)creds[f.id]=el.value.trim();
+  }
+  const query=creds.query||''; delete creds.query;
+  const table=creds.table||''; delete creds.table;
+  const btn=document.getElementById('conn-do-btn');
+  const status=document.getElementById('conn-status');
+  btn.disabled=true;btn.textContent='Connecting...';
+  status.style.color='var(--text-3)';status.textContent='Fetching data…';
+  try{
+    const r=await apiFetch(`${BASE}/api/connect`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({connector:_connActive,credentials:creds,query,table,limit:50000})});
+    const j=await r.json();
+    if(!j.ok)throw new Error(j.error||'Connection failed');
+    closeConnectors();
+    const fname=j.filename||`${_connActive}_data.csv`;
+    const blob=new Blob([j.csv],{type:'text/csv'});
+    const file=new File([blob],fname);
+    handleFile(file,j.csv);
+    toast(`Connected — ${j.rows?.toLocaleString()||'?'} rows × ${j.cols||'?'} cols imported from ${_CONN_FORMS[_connActive]?.label}`,'ok',5000);
+  }catch(e){
+    status.style.color='#f87171';status.textContent=e.message.slice(0,120);
+    btn.disabled=false;btn.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Retry';
+  }
+}
+
 // DASHBOARD
 // ═══════════════════════════════════════════
 function renderDashboard(){
