@@ -332,6 +332,7 @@ def narrate(cb, event_type, **kwargs):
         "final_report": "Generating final report with findings, methodology, and deployment package...",
         "overfitting_warning": lambda: f"Overfitting detected on #{kwargs.get('num', '?')}: train={kwargs.get('train', 0):.4f} vs test={kwargs.get('test', 0):.4f}. Next experiment will add regularization.",
         "improvement": lambda: f"Improvement! {kwargs.get('metric', 'metric')} went from {kwargs.get('prev', 0):.4f} → {kwargs.get('curr', 0):.4f} ({kwargs.get('pct', 0):+.1f}%)",
+        "predictions_ready": lambda: f"📊 {kwargs.get('summary', 'Forecast table ready')} — switch to the Results tab to see actual vs predicted values.",
     }
 
     template = messages.get(event_type)
@@ -920,6 +921,27 @@ def normalize_reliability_mode(mode: str | None) -> str:
     resolved = aliases.get(m, "balanced")
     return resolved if resolved in RELIABILITY_PROFILES else "balanced"
 
+def _smart_default_metric(task, hint=""):
+    """Pick the right metric based on the task type and user hint — never blindly default to RMSE."""
+    hint_lo = (hint or "").lower()
+    # If user explicitly mentions a metric, use it
+    for m in ["mape", "smape", "mae", "rmse", "mse", "nse", "r2", "auc", "f1", "accuracy", "precision", "recall", "logloss"]:
+        if m in hint_lo:
+            return m
+    task_lo = (task or "").lower()
+    if "timeseries" in task_lo or "forecast" in task_lo:
+        return "mape"  # MAPE is the business-standard for forecasting
+    if "classif" in task_lo:
+        if "binary" in task_lo:
+            return "auc"
+        return "f1"
+    if "cluster" in task_lo:
+        return "silhouette"
+    if "sentiment" in task_lo or "nlp" in task_lo:
+        return "f1"
+    # Generic regression — R² is more interpretable than RMSE for business users
+    return "rmse"
+
 # ── INFER OBJECTIVE ────────────────────────────────────────────
 def infer_objective(profile, hint="", domain_analysis="", previous_objective=None):
     # Build context-aware hint block so the LLM can interpret corrections correctly
@@ -990,7 +1012,7 @@ HYPOTHESES:
     return dict(domain=g("DOMAIN") or "General",
         task   =g("TASK")   or "Regression",
         target =g("TARGET") or (tc[0] if tc else profile["headers"][-1]),
-        metric =g("METRIC") or "rmse",
+        metric =g("METRIC") or _smart_default_metric(g("TASK"), hint),
         direction=g("DIRECTION") or "lower_is_better",
         confidence=_safe_float(g("CONFIDENCE"), 0.7),
         reasoning =g("REASONING") or "",
@@ -3284,10 +3306,24 @@ def run_research(
             consecutive_crashes = 0
             m = res["metrics"]
             score = m
-            for k in [metric_name, metric_name.upper(), "rmse", "r2", "mape", "mae", "nse", "auc", "f1", "accuracy"]:
+            # Priority: exact primary key → test_ prefixed → uppercase → then fallbacks
+            _primary = obj["metric"]  # what the user/system actually wants
+            _search_order = [
+                _primary, _primary.lower(), _primary.upper(),
+                f"test_{_primary}", f"test_{_primary.lower()}", f"test_{_primary.upper()}",
+            ]
+            # Only fall back to other metrics if the primary is truly absent
+            _fallbacks = [k for k in ["rmse", "r2", "mape", "mae", "nse", "auc", "f1", "accuracy"]
+                          if k != _primary.lower()]
+            _search_order += _fallbacks
+            for k in _search_order:
                 if k in m and _is_valid_metric(k, m[k]):
-                    metric_name = k
                     metric_val = float(m[k])
+                    # Keep the canonical metric name (what user asked for) when it matches
+                    if k.lower().replace("test_", "") == _primary.lower():
+                        metric_name = _primary
+                    else:
+                        metric_name = k
                     break
             else:
                 # Fallback: pick first key that looks like a real metric
@@ -3359,10 +3395,15 @@ def run_research(
                         res = retry_res
                         m = res["metrics"]
                         score = m
-                        for k in [metric_name, metric_name.upper(), "rmse", "r2", "mape", "mae", "nse", "auc", "f1", "accuracy"]:
+                        _primary_r = obj["metric"]
+                        _search_r = [
+                            _primary_r, _primary_r.lower(), _primary_r.upper(),
+                            f"test_{_primary_r}", f"test_{_primary_r.lower()}",
+                        ] + [k for k in ["rmse","r2","mape","mae","nse","auc","f1","accuracy"] if k != _primary_r.lower()]
+                        for k in _search_r:
                             if k in m and _is_valid_metric(k, m[k]):
-                                metric_name = k
                                 metric_val = float(m[k])
+                                metric_name = _primary_r if k.lower().replace("test_","") == _primary_r.lower() else k
                                 break
                         else:
                             for k, v in m.items():
@@ -3676,6 +3717,24 @@ Output ONLY a complete ```python block.""", 4200)
     artifacts.update(final_plots)
     if final_plots:
         log.engine(f"Generated {len(final_plots)} plots: {', '.join(final_plots.keys())}")
+
+    # ── Predictions summary narration ─────────────────────────────
+    pred_csv = ws / "predictions.csv"
+    if pred_csv.exists() and best:
+        try:
+            import pandas as _pd
+            _preds = _pd.read_csv(pred_csv, nrows=500)
+            _ncols = [c for c in _preds.columns if c.lower() in ("actual","predicted","error","pct_error")]
+            _nrows = len(_preds)
+            _summary = f"Forecast table ready — {_nrows} rows"
+            if "actual" in _preds.columns and "predicted" in _preds.columns:
+                _errs = (_preds["predicted"] - _preds["actual"])
+                _mae = _errs.abs().mean()
+                _summary += f" · MAE={_mae:.4f}"
+            narrate(log_callback, "predictions_ready", summary=_summary, n_rows=_nrows)
+        except Exception:
+            pass
+    artifacts["predictions_csv"] = str(pred_csv) if pred_csv.exists() else ""
 
     return dict(workspace=str(ws), objective=obj, profile=profile,
         history=history, best=best, deploy_path=deploy, report=report,
