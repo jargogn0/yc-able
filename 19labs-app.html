@@ -152,6 +152,8 @@ body.desktop-mac .topbar{padding-left:84px}
 .mn-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:600;font-family:var(--sans);letter-spacing:.3px;transition:color var(--t);padding:6px 0;-webkit-tap-highlight-color:transparent}
 .mn-tab svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7}
 .mn-tab.active{color:var(--accent)}
+.mn-logo{width:22px;height:22px;filter:drop-shadow(0 0 5px rgba(168,85,247,.4));opacity:.55;transition:opacity var(--t),filter var(--t)}
+.mn-tab-agent.active .mn-logo{opacity:1;filter:drop-shadow(0 0 8px rgba(168,85,247,.8))}
 .mn-tab .mn-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);position:absolute;top:6px;right:calc(50% - 14px);display:none}
 .mn-tab.has-activity .mn-dot{display:block}
 
@@ -1338,8 +1340,8 @@ input[type=file]{display:none}
     Data
     <span class="mn-dot"></span>
   </button>
-  <button class="mn-tab" data-panel="chat" onclick="setMobPanel('chat')" aria-label="Agent">
-    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="none"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/><path d="M8 14s1.5 2 4 2 4-2 4-2" stroke-linecap="round"/></svg>
+  <button class="mn-tab mn-tab-agent" data-panel="chat" onclick="setMobPanel('chat')" aria-label="Agent">
+    <img src="/ghost.svg" class="mn-logo" alt="Agent">
     Agent
     <span class="mn-dot" id="chat-mn-dot"></span>
   </button>
