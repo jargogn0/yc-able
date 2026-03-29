@@ -3514,6 +3514,17 @@ async function loadRunStatus(id){
     if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
     if(st.artifacts){S.artifacts=st.artifacts;showArts(id,st.artifacts);updArtSide()}
     if(st.report){S.report=st.report;showRpt(st.report)}
+    // Restore code (train.py)
+    if(st.code&&monacoEditor){
+      monacoEditor.setValue(st.code);
+      const t=document.querySelector('.tab[data-t="code"]');
+      if(t&&!t.querySelector('.tab-badge'))t.innerHTML='Code <span class="tab-badge">!</span>';
+    }
+    // Restore logs
+    if(st.logs&&st.logs.length){
+      S.logs=st.logs.map(l=>l.msg||'');
+      updLogs();
+    }
     updStatus();stab('exp');
     const src=st.from_db?'(from DB)':'';
     toast(`Loaded run ${id} ${src}`,'ok',2500);

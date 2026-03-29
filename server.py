@@ -1295,6 +1295,17 @@ async def start_run(req: RunRequest, request: Request):
                 provider=req.provider or "claude",
                 model=req.model or None,
             )
+            # Capture train.py content and logs into result so they survive DB persistence
+            if result is None:
+                result = {}
+            train_py_path = ws / "train.py"
+            if train_py_path.exists():
+                try:
+                    result["train_code"] = train_py_path.read_text()
+                except Exception:
+                    pass
+            result["run_logs"] = [{"tag": l["tag"], "msg": l["msg"], "ts": l.get("ts", "")}
+                                  for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
             RUNS[run_id]["result"] = result
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
@@ -1647,6 +1658,11 @@ def get_status(run_id: str, request: Request):
                     out["total_experiments"] = result.get("total_experiments", len(result.get("history", [])))
                     out["continuous_mode"]= result.get("continuous_mode", False)
                     out["token_usage"]    = result.get("token_usage", {})
+                    # Code and logs persisted into result_json
+                    if result.get("train_code"):
+                        out["code"] = result["train_code"]
+                    if result.get("run_logs"):
+                        out["logs"] = result["run_logs"]
                 elif row["best_model"]:
                     # No full result_json but we have summary fields
                     out["best"] = {
@@ -1682,6 +1698,20 @@ def get_status(run_id: str, request: Request):
         out["total_experiments"] = result.get("total_experiments", len(result.get("history", [])))
         out["continuous_mode"] = result.get("continuous_mode", False)
         out["token_usage"] = result.get("token_usage", {})
+        if result.get("train_code"):
+            out["code"] = result["train_code"]
+    # Also expose code from workspace file (for live runs before result is set)
+    if "code" not in out:
+        ws_path = Path(run.get("ws", ""))
+        train_py = ws_path / "train.py"
+        if train_py.exists():
+            try:
+                out["code"] = train_py.read_text()
+            except Exception:
+                pass
+    # Expose logs for completed runs
+    if run["status"] in ("done", "error") and result and result.get("run_logs"):
+        out["logs"] = result["run_logs"]
     if run.get("error"):
         out["error"] = run["error"]
     return out
