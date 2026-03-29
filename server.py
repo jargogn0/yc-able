@@ -370,7 +370,7 @@ ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "").strip()
 CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 
 # Trial limits — how many runs a non-logged-in user can do using the server's Bedrock key
-TRIAL_RUN_LIMIT = int(os.environ.get("TRIAL_RUN_LIMIT", "3"))
+TRIAL_RUN_LIMIT = int(os.environ.get("TRIAL_RUN_LIMIT", "5"))
 
 def _server_has_bedrock() -> bool:
     return bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))

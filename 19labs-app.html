@@ -1378,7 +1378,7 @@ let _savedKeys = {};
 let _authTab = 'signin';
 
 // ── TRIAL MODE ───────────────────────────────────────────────
-const TRIAL_LIMIT = 3;
+const TRIAL_LIMIT = 5;
 let _trialCount = parseInt(localStorage.getItem('19labs_trial_count')||'0',10);
 let _isTrialMode = localStorage.getItem('19labs_trial_started')==='1';
 
@@ -1444,6 +1444,8 @@ async function initAuth(){
   localStorage.removeItem('19labs_last_run_id');
   runHistory.splice(0, runHistory.length);
   renderRunHistory();
+  // Hide provider button — guest users always use server Bedrock, no config needed
+  document.getElementById('tb-prov').style.display='none';
   // Already in trial mode with slots left — stay in app
   if(_isTrialMode&&_trialRemaining()>0){
     _updateTrialBtn();return;
@@ -1645,10 +1647,12 @@ function onAuthSuccess(){
     document.getElementById('ump-email-full').textContent=user.email||'';
     document.getElementById('user-btn').style.display='flex';
     document.getElementById('auth-btns').style.display='none';
+    document.getElementById('tb-prov').style.display=''; // show provider button for real accounts
   } else {
-    // API-key-only mode — keep auth buttons visible so users can create an account
+    // API-key-only / guest mode — keep auth buttons, hide provider button
     document.getElementById('user-btn').style.display='none';
     document.getElementById('auth-btns').style.display='flex';
+    document.getElementById('tb-prov').style.display='none';
   }
   _isTrialMode=false;
   localStorage.removeItem('19labs_trial_started');
