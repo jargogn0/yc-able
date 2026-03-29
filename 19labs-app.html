@@ -1403,7 +1403,7 @@ function gk(p){return localStorage.getItem(`19labs_api_key_${p}`)||localStorage.
 function gm(p){return localStorage.getItem(`19labs_model_${p}`)||''}
 const C={provider:localStorage.getItem('19labs_provider')||'claude',key:'',model:'',demo:false};
 C.key=gk(C.provider);C.model=gm(C.provider);
-let _serverConfig={has_bedrock:false,trial_limit:3,bedrock_model:'anthropic.claude-sonnet-4-6'};
+let _serverConfig={has_bedrock:false,guest_max_runs:1,guest_max_budget:4,bedrock_model:'anthropic.claude-sonnet-4-6'};
 async function _loadServerConfig(){
   try{
     const r=await fetch(`${BASE}/api/config`);
@@ -1449,6 +1449,13 @@ function _updateTrialBtn(){
   const authBtns=document.getElementById('auth-btns');
   if(!authBtns)return;
   authBtns.style.display=_authUser?'none':'flex';
+  // If guest already has a run, show a locked hint in the input area
+  const cin=document.getElementById('cin');
+  const sendBtn=document.getElementById('send-btn');
+  if(!_authUser&&_isGuestLocked()){
+    if(cin)cin.placeholder='Sign in to run more experiments...';
+    if(sendBtn){sendBtn.title='Sign in to continue';sendBtn.onclick=()=>showTrialLimitModal('blocked');}
+  }
 }
 function startTrial(){
   _isTrialMode=true;
@@ -1527,18 +1534,26 @@ async function _refreshTokenSilently(){
   }catch(_){}
 }
 
-function showTrialLimitModal(){
-  // Remove any existing one
+function _isGuestLocked(){
+  // Guest is locked if they already have a run in history (used their 1 free run)
+  if(_authUser)return false;
+  return runHistory.length>0;
+}
+
+function showTrialLimitModal(reason){
+  // reason: 'done' (run just finished), 'blocked' (trying to start 2nd run)
   const ex=document.getElementById('trial-limit-modal');if(ex)ex.remove();
   const el=document.createElement('div');
   el.id='trial-limit-modal';
   el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  const heading=reason==='done'?'Your free run is complete 🎉':'You\'ve already used your free run';
+  const sub=reason==='done'?'Sign in to run unlimited experiments, save models, and deploy.':'Create an account to get unlimited runs, saved history, and deployment.';
   el.innerHTML=`
   <div style="position:relative;width:100%;max-width:580px">
     <button onclick="document.getElementById('trial-limit-modal').remove()" style="position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.08);border:none;color:rgba(255,255,255,.5);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1">✕</button>
     <div style="text-align:center;margin-bottom:18px">
-      <div style="font-size:17px;font-weight:600;color:#fff;margin-bottom:4px">Trial complete 🎉</div>
-      <div style="font-size:12.5px;color:rgba(255,255,255,.4)">You've used your free trial. Create an account to keep going.</div>
+      <div style="font-size:17px;font-weight:600;color:#fff;margin-bottom:4px">${heading}</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.4)">${sub}</div>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <div onclick="document.getElementById('trial-limit-modal').remove();showAuthModal()" style="flex:1;min-width:240px;border-radius:14px;padding:22px 20px;background:linear-gradient(145deg,#0f0f1a,#13132a);border:1px solid rgba(99,102,241,.35);cursor:pointer;transition:transform .18s,box-shadow .18s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
@@ -1749,6 +1764,7 @@ async function _restoreRunHistory(){
       }
       _rhSave();
       renderRunHistory();
+      _updateTrialBtn(); // re-evaluate lock state after syncing history
     }
   }catch(_){}
   // Restore last active run on page reload
@@ -2648,8 +2664,15 @@ async function launchRun(){
   if(!_authUser){
     if(!C.key)C.key=gk(C.provider);
     if(!C.key){
-      chat('ai','Sign in to run experiments — or add your own API key in Settings.');
-      showAuthModal();return;
+      // Guest with server Bedrock: check if they've already used their 1 free run
+      if(_isGuestLocked()){
+        showTrialLimitModal('blocked');
+        return;
+      }
+      if(!_serverConfig.has_bedrock){
+        chat('ai','Sign in to run experiments — or add your own API key in Settings.');
+        showAuthModal();return;
+      }
     }
   }
   if(!C.key)C.key=gk(C.provider);
@@ -2666,10 +2689,13 @@ async function launchRun(){
   stab('exp');updStatus();
 
   const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
+  // For guests: cap budget at server-enforced max
+  const isGuest=!_authUser&&!C.key;
+  const effectiveBudget=isGuest?Math.min(S.budget,_serverConfig.guest_max_budget||4):S.budget;
   try{
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:obj,budget:S.budget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:obj,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();
@@ -2677,7 +2703,7 @@ async function launchRun(){
       if(sr.status===429){
         setBadge('LIMIT','err');typing(false);S.running=false;
         document.getElementById('stop-btn').style.display='none';
-        showTrialLimitModal();
+        showTrialLimitModal('blocked');
         return;
       }
       throw new Error(errMsg);
@@ -2843,6 +2869,10 @@ async function launchRun(){
     // Final chart render
     renderMetricChart();renderComparison();
     playDone();
+    // Guest run finished — invite to sign in for more
+    if(!_authUser&&!C.key){
+      setTimeout(()=>showTrialLimitModal('done'),2000);
+    }
   }catch(e){
     chat('err',`Run failed: ${esc(e.message)}`);setBadge('ERROR','err');document.getElementById('cdot').className='chat-dot';
     addRunHistory(S.runId||'?','error','Failed');

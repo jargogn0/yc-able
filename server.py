@@ -122,6 +122,10 @@ def _init_db():
         count INTEGER DEFAULT 0,
         PRIMARY KEY (ip, day)
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS guest_runs (
+        ip TEXT PRIMARY KEY,
+        count INTEGER DEFAULT 0
+    )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS runs (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -387,8 +391,9 @@ if ALLOWED_ORIGINS == ["*"]:
 ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "").strip()
 CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 
-# Trial limits — how many runs a non-logged-in user can do using the server's Bedrock key
-TRIAL_RUN_LIMIT = int(os.environ.get("TRIAL_RUN_LIMIT", "5"))
+# Guest limits: 1 run total, max 4 experiments per run
+GUEST_MAX_RUNS = 1
+GUEST_MAX_BUDGET = 4
 
 def _server_has_bedrock() -> bool:
     return bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
@@ -398,18 +403,18 @@ def _trial_ip(request: Request) -> str:
     return (forwarded.split(",")[0] or request.client.host or "unknown").strip()
 
 def _trial_check_and_increment(ip: str) -> tuple[bool, int]:
-    """Returns (allowed, runs_used_today). Increments counter if allowed."""
-    day = time.strftime("%Y-%m-%d")
+    """Returns (allowed, total_runs_used). Increments guest_runs counter if allowed.
+    Guests get exactly GUEST_MAX_RUNS runs total (not per-day)."""
     try:
         conn = DBConn()
-        row = conn.execute("SELECT count FROM trial_usage WHERE ip=? AND day=?", (ip, day)).fetchone()
+        row = conn.execute("SELECT count FROM guest_runs WHERE ip=?", (ip,)).fetchone()
         used = row[0] if row else 0
-        if used >= TRIAL_RUN_LIMIT:
+        if used >= GUEST_MAX_RUNS:
             conn.close()
             return False, used
         conn.execute(
-            "INSERT INTO trial_usage (ip, day, count) VALUES (?,?,1) ON CONFLICT(ip,day) DO UPDATE SET count=count+1",
-            (ip, day)
+            "INSERT INTO guest_runs (ip, count) VALUES (?,1) ON CONFLICT(ip) DO UPDATE SET count=count+1",
+            (ip,)
         )
         conn.commit()
         conn.close()
@@ -1126,7 +1131,8 @@ async def get_config():
     """Public config — tells the frontend what's available server-side."""
     return {
         "has_bedrock": _server_has_bedrock(),
-        "trial_limit": TRIAL_RUN_LIMIT,
+        "guest_max_runs": GUEST_MAX_RUNS,
+        "guest_max_budget": GUEST_MAX_BUDGET,
         "bedrock_model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
     }
 
@@ -1211,14 +1217,16 @@ async def start_run(req: RunRequest, request: Request):
         if saved:
             req.api_key = saved
 
-    # Trial / guest path — allow server Bedrock if within limit
+    # Guest path — 1 free run (max 4 experiments) using server Bedrock
     if not req.api_key and not user:
         if not _server_has_bedrock():
-            raise HTTPException(401, "Sign in to run experiments. Create a free account at yc-able.com.")
+            raise HTTPException(401, "Sign in to run experiments. Create a free account.")
         ip = _trial_ip(request)
         allowed, used = _trial_check_and_increment(ip)
         if not allowed:
-            raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} runs). Sign in to continue.")
+            raise HTTPException(429, "GUEST_LIMIT_REACHED")
+        # Hard cap: guests get at most GUEST_MAX_BUDGET experiments per run
+        req.budget = min(req.budget or GUEST_MAX_BUDGET, GUEST_MAX_BUDGET)
 
     # Build meaningful run ID prefix
     if user:
