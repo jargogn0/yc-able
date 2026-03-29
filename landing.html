@@ -239,7 +239,32 @@ nav{
 .feat-dot{width:3px;height:3px;border-radius:50%;background:var(--accent);opacity:.5;flex-shrink:0}
 
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-@keyframes mascot-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes mascot-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Nav mascot ── */
+.nav-mascot{
+  position:absolute;top:calc(100% + 14px);right:0;
+  display:flex;align-items:flex-start;gap:9px;
+  animation:mascot-in .55s cubic-bezier(.34,1.56,.64,1) 1.1s both;
+  pointer-events:auto;z-index:30;
+}
+.nav-mascot-img{
+  width:38px;height:38px;flex-shrink:0;
+  filter:drop-shadow(0 2px 12px rgba(168,85,247,.6));
+  cursor:pointer;transition:transform .22s cubic-bezier(.34,1.56,.64,1);
+}
+.nav-mascot-img:hover{transform:scale(1.15) rotate(-8deg)}
+.nav-mascot-bubble{
+  background:rgba(13,13,20,.92);
+  border:1px solid rgba(168,85,247,.2);
+  border-radius:10px 10px 10px 3px;
+  padding:9px 13px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 6px 28px rgba(0,0,0,.45),0 0 0 1px rgba(168,85,247,.06);
+  white-space:nowrap;
+}
+.nav-mascot-bubble span{font-size:11.5px;color:rgba(255,255,255,.6);line-height:1.55}
+.nav-mascot-bubble strong{color:#c084fc;font-weight:500}
 
 @media(max-width:600px){
   .nav-links{display:none}
@@ -260,9 +285,16 @@ nav{
     <img class="logo-icon" src="/ghost.svg" alt="19Labs">
     Labs
   </a>
-  <div class="nav-r">
+  <div class="nav-r" style="position:relative">
     <button class="btn-ghost" id="nav-signin" onclick="window.location.href='/app'">Get started</button>
     <button class="btn-solid" id="nav-cta" onclick="openAuthModal()">Sign up</button>
+    <!-- mascot popup — always visible, anchored below Sign up -->
+    <div class="nav-mascot" id="nav-mascot">
+      <img src="/ghost.svg" class="nav-mascot-img" onclick="openAuthModal()" alt="19">
+      <div class="nav-mascot-bubble">
+        <span>Hi, I'm <strong>19</strong> — your data science agent.<br>Drop a dataset and I'll handle the rest.</span>
+      </div>
+    </div>
   </div>
 </nav>
 
@@ -330,11 +362,6 @@ nav{
       <span class="feat"><span class="feat-dot"></span>One-click deploy</span>
       <span class="feat"><span class="feat-dot"></span>Any dataset format</span>
       <span class="feat"><span class="feat-dot"></span>No code required</span>
-    </div>
-    <!-- inline mascot hint -->
-    <div style="display:flex;align-items:center;gap:10px;margin-top:22px;opacity:0;animation:mascot-in .5s cubic-bezier(.34,1.56,.64,1) .9s both">
-      <img src="/ghost.svg" width="36" height="36" style="filter:drop-shadow(0 2px 10px rgba(168,85,247,.55));cursor:pointer;transition:transform .2s;flex-shrink:0" onclick="openAuthModal()" onmouseover="this.style.transform='scale(1.12) rotate(-5deg)'" onmouseout="this.style.transform=''">
-      <span style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.5;text-align:left">Hi, I'm <strong style="color:#a5b4fc;font-weight:500">19</strong> — your data science agent.<br>Drop a dataset and I'll handle the rest. 👾</span>
     </div>
   </div>
   <script>
