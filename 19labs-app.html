@@ -1297,8 +1297,8 @@ input[type=file]{display:none}
     <div class="chat-msgs" id="msgs">
       <div class="cw" id="cw">
         <div class="cw-i"><img src="/ghost.svg" alt="19Labs"></div>
-        <div class="cw-headline-wrap"><div class="cw-headline" id="cw-headline">Your ML team, automated.</div></div>
-        <div class="cw-sub">Drop any dataset. Describe your goal.<br>Models trained, evaluated &amp; deployed — automatically.</div>
+        <div class="cw-headline-wrap"><div class="cw-headline" id="cw-headline">What do you want to know?</div></div>
+        <div class="cw-sub">Connect your data, say what's on your mind —<br>get a production-ready model and real business insights.</div>
         <div class="cw-personas">
           <span class="cw-persona ds">🧬 Data Scientists</span>
           <span class="cw-persona team">👥 DS Teams</span>
@@ -1312,11 +1312,11 @@ input[type=file]{display:none}
           <div class="cw-stat"><div class="cw-stat-val">1-click</div><div class="cw-stat-lbl">Deploy</div></div>
         </div>
         <div class="cw-hints">
-          <div class="cw-hint" style="animation-delay:.55s" onclick="hint('Predict customer churn')">Predict customer churn</div>
-          <div class="cw-hint" style="animation-delay:.65s" onclick="hint('Forecast next month revenue')">Forecast revenue</div>
-          <div class="cw-hint" style="animation-delay:.75s" onclick="hint('Find the most important features')">Feature importance</div>
-          <div class="cw-hint" style="animation-delay:.85s" onclick="hint('Just analyze and do your best')">Autopilot — just do it</div>
-          <div class="cw-hint" style="animation-delay:.95s" onclick="hint('Never stop — run forever')">Continuous — never stop</div>
+          <div class="cw-hint" style="animation-delay:.55s" onclick="hint('Forecast next month revenue')">📈 Forecast next month revenue</div>
+          <div class="cw-hint" style="animation-delay:.65s" onclick="hint('Which customers are about to churn?')">⚠️ Which customers are about to churn?</div>
+          <div class="cw-hint" style="animation-delay:.75s" onclick="hint('What drives our sales the most?')">🔍 What drives our sales the most?</div>
+          <div class="cw-hint" style="animation-delay:.85s" onclick="hint('Score and rank leads by conversion probability')">🎯 Score and rank leads by conversion</div>
+          <div class="cw-hint" style="animation-delay:.95s" onclick="hint('Detect anomalies and outliers in our data')">🚨 Detect anomalies in our data</div>
         </div>
       </div>
       <button class="jump-btn" id="jump-btn" onclick="scrollChat()">New messages below</button>
@@ -1400,32 +1400,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
   _startHeadlineRotator();
 });
 
-// Rotating welcome headline — cycles through persona-targeted messages
-function _startHeadlineRotator(){
-  const lines=[
-    'Your ML team, automated.',
-    'From CSV to deployed model.',
-    'Train 100+ models. Pick the best.',
-    'Profile. Train. Deploy. Repeat.',
-    'Forecast. Classify. Explain.',
-    'Your entire pipeline in one place.',
-    'Data in. Decisions out.',
-  ];
-  let idx=0;
-  const el=document.getElementById('cw-headline');
-  if(!el)return;
-  setInterval(()=>{
-    if(!el.isConnected)return; // cw was removed when chat started
-    idx=(idx+1)%lines.length;
-    el.classList.add('out');
-    setTimeout(()=>{
-      el.textContent=lines[idx];
-      el.classList.remove('out');
-      el.classList.add('in');
-      requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.remove('in')));
-    },200);
-  },3000);
-}
+function _startHeadlineRotator(){} // no-op — static headline
 window.addEventListener('resize', ()=>{
   if(window.innerWidth>767){
     ['side','ws','chat'].forEach(p=>{
