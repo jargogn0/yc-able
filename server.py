@@ -1491,7 +1491,9 @@ def get_status(run_id: str):
                     out["deploy_path"]    = result.get("deploy_path")
                     out["diagnostics"]    = result.get("diagnostics")
                     out["executive_brief"]= result.get("executive_brief")
-                    out["artifacts"]      = result.get("artifacts")
+                    # Augment artifacts with workspace scan for any missing plot files
+                    db_run = RUNS.get(run_id, {})
+                    out["artifacts"]      = _augment_artifacts(db_run, result.get("artifacts"))
                     out["total_experiments"] = result.get("total_experiments", len(result.get("history", [])))
                     out["continuous_mode"]= result.get("continuous_mode", False)
                     out["token_usage"]    = result.get("token_usage", {})
@@ -1520,13 +1522,40 @@ def get_status(run_id: str):
         out["deploy_path"] = result.get("deploy_path")
         out["diagnostics"] = result.get("diagnostics")
         out["executive_brief"] = result.get("executive_brief")
-        out["artifacts"] = result.get("artifacts")
+        out["artifacts"] = _augment_artifacts(run, result.get("artifacts"))
         out["total_experiments"] = result.get("total_experiments", len(result.get("history", [])))
         out["continuous_mode"] = result.get("continuous_mode", False)
         out["token_usage"] = result.get("token_usage", {})
     if run.get("error"):
         out["error"] = run["error"]
     return out
+
+
+_KNOWN_PLOT_FILES = {
+    "progress_png":            "progress.png",
+    "experiment_timeline_png": "experiment_timeline.png",
+    "timeseries_png":          "timeseries.png",
+    "correlation_png":         "correlation.png",
+    "shap_png":                "shap.png",
+    "predictions_png":         "predictions.png",
+    "residuals_png":           "residuals.png",
+    "train_test_png":          "train_test.png",
+    "model_comparison_png":    "model_comparison.png",
+    "metrics_overview_png":    "metrics_overview.png",
+}
+
+def _augment_artifacts(run: dict, arts: dict) -> dict:
+    """Scan the workspace for known plot files and add any that exist but aren't registered."""
+    arts = dict(arts or {})
+    ws = Path(run.get("ws", ""))
+    if not ws.exists():
+        return arts
+    for key, fname in _KNOWN_PLOT_FILES.items():
+        if not arts.get(key):
+            p = ws / fname
+            if p.exists():
+                arts[key] = str(p)
+    return arts
 
 
 def _build_handoff_payload(run_id: str, result: dict):
@@ -1706,30 +1735,39 @@ def download_project_pack(run_id: str):
 @app.get("/api/run/{run_id}/artifact/{artifact_name}")
 def download_artifact(run_id: str, artifact_name: str):
     if run_id not in RUNS:
-        raise HTTPException(404, "Run not found")
-    result = RUNS[run_id].get("result") or {}
-    artifacts = result.get("artifacts") or {}
+        raise HTTPException(404, "Run not found")    run = RUNS[run_id]
+    result = run.get("result") or {}
+    artifacts = _augment_artifacts(run, result.get("artifacts"))
     allowed = {
-        "program_md": "program.md",
-        "prepare_py": "prepare.py",
-        "analysis_ipynb": "analysis.ipynb",
-        "progress_png": "progress.png",
-        "train_test_png": "train_test.png",
-        "model_comparison_png": "model_comparison.png",
-        "metrics_overview_png": "metrics_overview.png",
+        "program_md":              "program.md",
+        "prepare_py":              "prepare.py",
+        "analysis_ipynb":          "analysis.ipynb",
+        "progress_png":            "progress.png",
+        "train_test_png":          "train_test.png",
+        "model_comparison_png":    "model_comparison.png",
+        "metrics_overview_png":    "metrics_overview.png",
         "experiment_timeline_png": "experiment_timeline.png",
-        "results_tsv": "results.tsv",
-        "train_py": "train.py",
-        "final_report_md": "final_report.md",
+        "timeseries_png":          "timeseries.png",
+        "correlation_png":         "correlation.png",
+        "shap_png":                "shap.png",
+        "predictions_png":         "predictions.png",
+        "residuals_png":           "residuals.png",
+        "results_tsv":             "results.tsv",
+        "train_py":                "train.py",
+        "final_report_md":         "final_report.md",
     }
     # Also allow per-experiment plots like exp_01_predictions_png
-    if artifact_name not in allowed and not artifact_name.startswith("exp_"):
+    is_exp_plot = artifact_name.startswith("exp_")
+    if artifact_name not in allowed and not is_exp_plot:
         raise HTTPException(404, "Unknown artifact")
     p = artifacts.get(artifact_name)
     if not p:
         run = RUNS[run_id]
         ws = Path(run.get("ws", ""))
         fallback_name = allowed.get(artifact_name, "")
+        # For exp_ plots, derive filename from key (e.g. exp_01_timeseries_png → exp_01_timeseries.png)
+        if not fallback_name and is_exp_plot:
+            fallback_name = artifact_name.replace("_png", ".png").replace("_py", ".py")
         fallback_path = ws / fallback_name if ws.exists() and fallback_name else None
         if fallback_path and fallback_path.exists():
             p = str(fallback_path)
@@ -1749,7 +1787,9 @@ def download_artifact(run_id: str, artifact_name: str):
         media = "text/x-python"
     elif artifact_name.endswith("_tsv"):
         media = "text/tab-separated-values"
-    return FileResponse(str(fp), filename=allowed[artifact_name], media_type=media)
+    # Use allowed filename if available, else derive from artifact_name
+    dl_filename = allowed.get(artifact_name) or artifact_name.replace("_png", ".png").replace("_py", ".py").replace("_md", ".md")
+    return FileResponse(str(fp), filename=dl_filename, media_type=media)
 
 # ── TRAIN.PY CONTENT (text endpoint) ──────────────────────────
 @app.get("/api/run/{run_id}/train-py")
