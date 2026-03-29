@@ -123,6 +123,7 @@ def _init_db():
     )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS runs (
         id TEXT PRIMARY KEY,
+        user_id TEXT,
         status TEXT NOT NULL DEFAULT 'running',
         filename TEXT,
         provider TEXT DEFAULT 'claude',
@@ -141,6 +142,11 @@ def _init_db():
         error TEXT,
         result_json TEXT
     )""")
+    # Add user_id column to existing runs tables that predate this migration
+    try:
+        conn.execute("ALTER TABLE runs ADD COLUMN user_id TEXT")
+    except Exception:
+        pass  # column already exists
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
@@ -312,10 +318,10 @@ def _save_run_to_db(run_id: str, run: dict):
                 pass
         conn = DBConn()
         conn.execute("""INSERT INTO runs
-            (id, status, filename, provider, started, finished, hint, budget,
+            (id, user_id, status, filename, provider, started, finished, hint, budget,
              best_model, best_metric_name, best_metric_val, total_experiments,
              token_input, token_output, token_calls, yc_score, error, result_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
               status=EXCLUDED.status, finished=EXCLUDED.finished,
               best_model=EXCLUDED.best_model, best_metric_name=EXCLUDED.best_metric_name,
@@ -323,7 +329,8 @@ def _save_run_to_db(run_id: str, run: dict):
               token_input=EXCLUDED.token_input, token_output=EXCLUDED.token_output,
               token_calls=EXCLUDED.token_calls, yc_score=EXCLUDED.yc_score,
               error=EXCLUDED.error, result_json=EXCLUDED.result_json""",
-            (run_id, run.get("status", "done"),
+            (run_id, run.get("owner_id"),
+             run.get("status", "done"),
              Path(run.get("csv", "")).name if run.get("csv") else "",
              run.get("provider", "claude"),
              run.get("started"),
@@ -1219,7 +1226,8 @@ async def start_run(req: RunRequest, request: Request):
 
     cancel_event = threading.Event()
     RUNS[run_id] = dict(
-        id=run_id, status="running", ws=str(ws),
+        id=run_id, owner_id=user["id"] if user else None,
+        status="running", ws=str(ws),
         csv=str(csv_path), logs=[], result=None,
         started=time.time(), provider=req.provider,
         hint=req.hint or "", budget=req.budget,
@@ -1395,7 +1403,7 @@ async def cancel_run(run_id: str):
 # ── LIST RUNS ──────────────────────────────────────────────────
 @app.get("/api/runs")
 def list_runs(request: Request):
-    user = _current_user(request)
+    user = _get_user(_token_from_request(request))
     user_id = user["id"] if user else None
     out = []
     # In-memory runs:
@@ -1507,7 +1515,9 @@ async def stream_logs(run_id: str):
 
 # ── STATUS ─────────────────────────────────────────────────────
 @app.get("/api/run/{run_id}/status")
-def get_status(run_id: str):
+def get_status(run_id: str, request: Request):
+    requester = _get_user(_token_from_request(request))
+    requester_id = requester["id"] if requester else None
     if run_id not in RUNS:
         # Try to reconstruct from DB
         try:
@@ -1515,6 +1525,15 @@ def get_status(run_id: str):
             row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
             conn.close()
             if row:
+                # Access control: auth users only see their own; guests only see ownerless
+                try:
+                    row_owner = row["user_id"]
+                except (IndexError, KeyError):
+                    row_owner = None
+                if requester_id and row_owner and row_owner != requester_id:
+                    raise HTTPException(403, "Access denied")
+                if not requester_id and row_owner:
+                    raise HTTPException(403, "Access denied")
                 result = json.loads(row["result_json"]) if row["result_json"] else None
                 elapsed = round((row["finished"] or time.time()) - (row["started"] or time.time()), 1)
                 out = dict(
@@ -1553,6 +1572,12 @@ def get_status(run_id: str):
             pass
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
+    # Access control for in-memory runs
+    run_owner = run.get("owner_id")
+    if requester_id and run_owner and run_owner != requester_id:
+        raise HTTPException(403, "Access denied")
+    if not requester_id and run_owner:
+        raise HTTPException(403, "Access denied")
     result = run.get("result")
     elapsed = round(time.time() - run.get("started", time.time()), 1)
     out = dict(status=run["status"], log_count=len(run["logs"]), elapsed=elapsed)
