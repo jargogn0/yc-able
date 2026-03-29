@@ -1828,6 +1828,56 @@ def download_artifact(run_id: str, artifact_name: str):
     dl_filename = allowed.get(artifact_name) or artifact_name.replace("_png", ".png").replace("_py", ".py").replace("_md", ".md")
     return FileResponse(str(fp), filename=dl_filename, media_type=media)
 
+# ── PREDICTIONS CSV (actuals vs predicted table) ───────────────
+@app.get("/api/run/{run_id}/predictions")
+def get_predictions(run_id: str, limit: int = 500):
+    """Return actuals vs predicted CSV as JSON rows for the forecast table."""
+    ws_str = None
+    if run_id in RUNS:
+        ws_str = RUNS[run_id].get("ws")
+    else:
+        try:
+            from sqlalchemy.orm import Session as _S
+            with _S(engine) as sess:
+                result = sess.query(RunRecord).filter_by(run_id=run_id).first()
+                if result:
+                    ws_str = (result.result_json or {}).get("ws") if isinstance(result.result_json, dict) else None
+                    if not ws_str:
+                        import json as _j, glob as _g, tempfile as _tf
+                        td = pathlib.Path(_tf.gettempdir())
+                        matches = list(td.glob(f"19labs_{run_id}_*"))
+                        if matches:
+                            ws_str = str(matches[0])
+        except Exception:
+            pass
+    if not ws_str:
+        raise HTTPException(404, "Run not found")
+    ws = Path(ws_str)
+    # Try predictions.csv first, then any pred*.csv
+    candidates = [ws / "predictions.csv"] + sorted(ws.glob("pred*.csv"), key=lambda f: -f.stat().st_mtime if f.exists() else 0)
+    for csv_path in candidates:
+        if csv_path.exists():
+            try:
+                import pandas as pd
+                df = pd.read_csv(csv_path, nrows=limit)
+                # Normalise column names
+                col_map = {}
+                for c in df.columns:
+                    lc = c.lower().strip()
+                    if lc in ("actual", "actuals", "y_true", "y_actual", "true"): col_map[c] = "actual"
+                    elif lc in ("predicted", "prediction", "pred", "forecast", "y_pred"): col_map[c] = "predicted"
+                    elif lc in ("date", "datetime", "time", "period", "timestamp"): col_map[c] = "date"
+                df = df.rename(columns=col_map)
+                # Compute error columns if actual+predicted present
+                if "actual" in df.columns and "predicted" in df.columns:
+                    df["error"] = (df["predicted"] - df["actual"]).round(4)
+                    df["pct_error"] = ((df["error"] / df["actual"].replace(0, float("nan"))) * 100).round(2)
+                rows = df.where(df.notna(), None).to_dict(orient="records")
+                return {"ok": True, "columns": list(df.columns), "rows": rows, "total": len(rows)}
+            except Exception as e:
+                raise HTTPException(500, f"Could not parse predictions: {e}")
+    raise HTTPException(404, "predictions.csv not found — run an experiment first")
+
 # ── TRAIN.PY CONTENT (text endpoint) ──────────────────────────
 @app.get("/api/run/{run_id}/train-py")
 def get_train_py(run_id: str):

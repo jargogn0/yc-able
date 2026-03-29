@@ -1402,6 +1402,16 @@ KARPATHY DISCIPLINE (MANDATORY):
   def _save(fig, name):
     plt.tight_layout(pad=1.6); fig.savefig(name, dpi=160, facecolor=BG, bbox_inches='tight'); plt.close(fig)
 
+- SAVE PREDICTIONS CSV (MANDATORY): After fitting, always save:
+  pred_df = pd.DataFrame({{'actual': y_test.values if hasattr(y_test,'values') else list(y_test), 'predicted': list(y_pred)}})
+  # If a date/time column was found, insert it as first column: pred_df.insert(0, 'date', test_dates_values)
+  pred_df.to_csv('predictions.csv', index=False)
+  This enables the forecast comparison table in the UI. Never skip this.
+
+- OPTIMIZE FOR THE PRIMARY METRIC: {obj.get('metric','rmse').upper()} — not RMSE unless that IS the metric.
+  In LightGBM: metric='{obj.get('metric','rmse')}' in params. In XGBoost: eval_metric='{obj.get('metric','rmse')}'.
+  In sklearn GridSearchCV/cross_val_score: scoring='neg_{obj.get('metric','rmse')}' or a custom scorer.
+
   1. timeseries.png — THE MAIN PLOT. Full time series of actual vs predicted over the ENTIRE date range.
      - Detect date/time column (parse with pd.to_datetime). If no date column, use index as x-axis.
      - Sort by date. Plot ACTUALS as a solid white/light line (lw=1.5, alpha=0.9, color='#fafafa', label='actual').
@@ -1470,7 +1480,7 @@ Output ONLY ```python block.""",
             clean = clean2
     return clean
 
-def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=""):
+def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis="", obj=None):
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
         f"{h.get('metric_name', 'metric')}={h.get('metric_val', 0):.6f} note={h.get('note', '')[:120]}"
@@ -1516,8 +1526,21 @@ TRAIN.PY HARD RULES (Karpathy discipline):
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly: `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)`
 - Training MUST complete within TIME_BUDGET. Add wall-clock checks.
 - ALWAYS split data into train/test. Compute metrics on BOTH sets.
+- PRIMARY METRIC IS: {(obj or {}).get('metric', 'rmse').upper()} (direction: {(obj or {}).get('direction', 'lower_is_better')})
+  YOU MUST OPTIMIZE FOR THIS METRIC — NOT RMSE unless that IS the primary metric.
+  - Use it as eval_metric in LightGBM/XGBoost/CatBoost where supported
+  - Use it as the scoring function in cross-validation / GridSearchCV
+  - Use it to select the best model/hyperparameters
+  - The primary metric value MUST be the key "{(obj or {}).get('metric', 'rmse')}" in your final JSON
 - Final line: print(json.dumps(metrics)) — MUST include "model" key PLUS train_ and test_ prefixed metrics.
-  Required keys: "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse" (=test), "r2" (=test), and any other applicable: mape, mae, nse.
+  Required keys: "{(obj or {}).get('metric', 'rmse')}" (primary, test set), "train_{(obj or {}).get('metric', 'rmse')}", "test_{(obj or {}).get('metric', 'rmse')}", "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse", "r2", and any applicable: mape, mae, nse.
+- SAVE PREDICTIONS CSV: After training, ALWAYS save a CSV with actual vs predicted values:
+  import pandas as pd
+  pred_df = pd.DataFrame({{'actual': y_test.values if hasattr(y_test,'values') else y_test, 'predicted': y_pred}})
+  # If a date column exists, prepend it:
+  # pred_df.insert(0, 'date', test_dates.values)
+  pred_df.to_csv('predictions.csv', index=False)
+  This is MANDATORY — it enables the forecast table in the UI.
 - GENERATE PLOTS (matplotlib, Agg backend). Same 5 plots as always:
     BG='#09090b'; BLUE='#3b82f6'; RED='#ef4444'; DIM='#27272a'
     plt.rcParams.update({{'figure.facecolor':BG,'axes.facecolor':BG,'axes.spines.top':False,
@@ -3376,7 +3399,7 @@ def run_research(
             break
 
         # ── KEEP / DISCARD DECISION ──────────────────────────────
-        revision = revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=domain_analysis)
+        revision = revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=domain_analysis, obj=obj)
         keep = bool(revision["keep"] and res["success"])
         program_md = revision["new_program_md"]
         train_py_candidate = revision["new_train_py"]

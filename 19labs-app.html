@@ -1169,6 +1169,7 @@ input[type=file]{display:none}
       <div class="tab" data-t="code" onclick="stab('code')">Code</div>
       <div class="tab" data-t="exp" onclick="stab('exp')">Experiments</div>
       <div class="tab" data-t="art" onclick="stab('art')">Artifacts</div>
+      <div class="tab" data-t="results" onclick="stab('results')">Results</div>
       <div class="tab" data-t="predict" onclick="stab('predict')">Predict</div>
       <div class="tab" data-t="explain" onclick="stab('explain')">Explain</div>
       <div class="tab" data-t="rpt" onclick="stab('rpt')">Report</div>
@@ -1192,6 +1193,7 @@ input[type=file]{display:none}
       </div>
       <div id="p-exp" class="exp-feed" style="display:none"></div>
       <div id="p-art" class="art-grid" style="display:none"></div>
+      <div id="p-results" style="display:none;padding:16px;overflow:auto;height:100%"></div>
       <div id="p-predict" style="display:none"></div>
       <div id="p-explain" class="explain-panel" style="display:none"></div>
       <div id="p-rpt" class="rpt" style="display:none"></div>
@@ -1678,7 +1680,7 @@ async function _restoreRunHistory(){
           if(st.filename&&!S.file)S.file={name:st.filename};
           if(st.best){S.best=st.best;showBest(st.best,st.objective,lastRun)}
           if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
-          if(st.artifacts){S.artifacts=st.artifacts;showArts(lastRun,st.artifacts);updArtSide()}
+          if(st.artifacts){S.artifacts=st.artifacts;showArts(lastRun,st.artifacts);updArtSide();if(document.getElementById('p-results')?.style.display!=='none')loadForecastTable(lastRun)}
           if(st.report){S.report=st.report;showRpt(st.report)}
           updStatus();
           stab('exp');
@@ -1934,10 +1936,11 @@ function stab(name){
     t.classList.toggle('on',t.dataset.t===name);
     if(t.dataset.t===name){const b=t.querySelector('.tab-badge');if(b)b.remove()}
   });
-  ['data','code','exp','art','predict','explain','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':''):'none'});
+  ['data','code','exp','art','results','predict','explain','rpt','log'].forEach(t=>{const e=document.getElementById('p-'+t);if(e)e.style.display=(t===name)?(t==='code'?'flex':'block'):'none'});
   const em=document.getElementById('ws-empty');
   if(em)em.style.display=(name==='data'&&!S.cols)?'':'none';
   if(name==='code'&&monacoEditor)monacoEditor.layout();
+  if(name==='results'&&S.runId)loadForecastTable(S.runId);
 }
 
 // ═══════════════════════════════════════════
@@ -3091,6 +3094,90 @@ function showArts(runId,arts){
 }
 
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// FORECAST RESULTS TABLE
+// ═══════════════════════════════════════════
+async function loadForecastTable(runId){
+  const el=document.getElementById('p-results');
+  if(!el)return;
+  el.innerHTML=`<div style="padding:32px;text-align:center;color:var(--text-3);font-size:13px">Loading forecast results…</div>`;
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${runId}/predictions?limit=1000`);
+    if(!r.ok){
+      const err=await r.json().catch(()=>({detail:'Not found'}));
+      el.innerHTML=`<div style="padding:32px;color:var(--text-3);font-size:13px;text-align:center">
+        <div style="margin-bottom:8px">No forecast table yet</div>
+        <div style="font-size:11px;opacity:.6">${err.detail||'Run an experiment first — the agent will save actual vs predicted values automatically.'}</div>
+      </div>`;
+      return;
+    }
+    const d=await r.json();
+    if(!d.ok||!d.rows?.length){el.innerHTML=`<div style="padding:32px;color:var(--text-3);font-size:13px;text-align:center">No predictions data yet — run an experiment first.</div>`;return;}
+
+    const cols=d.columns;
+    const rows=d.rows;
+    // Compute summary stats
+    let mae=null,rmse=null,mape=null;
+    const errs=rows.map(r=>r.error).filter(v=>v!=null&&!isNaN(v));
+    const pcts=rows.map(r=>r.pct_error).filter(v=>v!=null&&!isNaN(v)&&isFinite(v));
+    if(errs.length){
+      mae=(errs.reduce((a,b)=>a+Math.abs(b),0)/errs.length).toFixed(4);
+      rmse=Math.sqrt(errs.reduce((a,b)=>a+b*b,0)/errs.length).toFixed(4);
+    }
+    if(pcts.length) mape=(pcts.reduce((a,b)=>a+Math.abs(b),0)/pcts.length).toFixed(2)+'%';
+
+    let h=`<div style="padding:0 0 16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--text)">Forecast Results</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px">${rows.length} rows · actual vs predicted</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    if(mae) h+=`<div style="background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:6px 14px;font-size:11px;color:#60a5fa"><span style="opacity:.6">MAE</span> <strong>${mae}</strong></div>`;
+    if(rmse) h+=`<div style="background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2);border-radius:8px;padding:6px 14px;font-size:11px;color:#a78bfa"><span style="opacity:.6">RMSE</span> <strong>${rmse}</strong></div>`;
+    if(mape) h+=`<div style="background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);border-radius:8px;padding:6px 14px;font-size:11px;color:#34d399"><span style="opacity:.6">MAPE</span> <strong>${mape}</strong></div>`;
+    h+=`<button onclick="dlPredictions('${runId}')" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-size:11px;cursor:pointer">↓ CSV</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)">
+        <thead><tr style="background:var(--surface-2,#18181b)">`;
+    const colDisplay={'date':'Date','actual':'Actual','predicted':'Predicted','error':'Error','pct_error':'% Error'};
+    cols.forEach(c=>{h+=`<th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--text-2);white-space:nowrap;border-bottom:1px solid var(--border)">${colDisplay[c]||c}</th>`});
+    h+=`</tr></thead><tbody>`;
+    rows.forEach((row,i)=>{
+      const isOver=row.pct_error!=null&&Math.abs(row.pct_error)>20;
+      h+=`<tr style="background:${i%2===0?'transparent':'rgba(255,255,255,.015)'}${isOver?';border-left:2px solid rgba(239,68,68,.4)':''}">`;
+      cols.forEach(c=>{
+        let val=row[c];
+        let style='padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap;color:var(--text-2)';
+        if(c==='actual') style+='color:var(--text)';
+        if(c==='predicted') style+='color:#60a5fa';
+        if(c==='error'){
+          const v=parseFloat(val);
+          style+=isNaN(v)?'':v>0?';color:#f87171':';color:#34d399';
+          val=val!=null?(v>0?'+':'')+val:'-';
+        }
+        if(c==='pct_error'&&val!=null){
+          const v=parseFloat(val);style+=isNaN(v)?'':Math.abs(v)>20?';color:#f87171':Math.abs(v)>10?';color:#fbbf24':';color:#a1a1aa';
+          val=val!=null?v.toFixed(2)+'%':'-';
+        }
+        if(val==null||val===''||val==='null') val='—';
+        h+=`<td style="${style}">${esc(String(val))}</td>`;
+      });
+      h+=`</tr>`;
+    });
+    h+=`</tbody></table></div></div>`;
+    el.innerHTML=h;
+  }catch(e){
+    el.innerHTML=`<div style="padding:32px;color:var(--text-3);font-size:13px;text-align:center">Error loading results: ${esc(e.message.slice(0,80))}</div>`;
+  }
+}
+async function dlPredictions(rid){
+  try{const r=await apiFetch(`${BASE}/api/run/${rid}/predictions?limit=100000`);const d=await r.json();if(!d.rows)return;const cols=d.columns;const csv=[cols.join(','),...d.rows.map(r=>cols.map(c=>{const v=r[c];return v==null?'':String(v).includes(',')?`"${v}"`:v}).join(','))].join('\n');const b=new Blob([csv],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`predictions_${rid}.csv`;a.click();URL.revokeObjectURL(u);toast('Predictions downloaded','ok')}catch(e){toast('Download failed','err')}
+}
+
+// ═══════════════════════════════════════════
 // DOWNLOADS
 // ═══════════════════════════════════════════
 async function dlDeploy(rid){
@@ -3391,6 +3478,7 @@ function showSkeleton(containerId,type){
 const emptyStates={
   'p-exp':{icon:'🧪',title:'No experiments yet',sub:'Start a run and experiments will appear here in real time with a live metric chart.'},
   'p-art':{icon:'📦',title:'No artifacts yet',sub:'Artifacts like notebooks, charts, and reports are generated after experiments.'},
+  'p-results':{icon:'📊',title:'No results yet',sub:'Actual vs predicted forecast table appears here after the first experiment completes.'},
   'p-predict':{icon:'🔮',title:'No model ready',sub:'Complete a training run, then test predictions on new data here.'},
   'p-explain':{icon:'🔬',title:'No model to explain',sub:'Complete a training run, then view feature importance, SHAP values, and partial dependence plots here.'},
   'p-rpt':{icon:'📝',title:'No report yet',sub:'A comprehensive report is generated at the end of each run.'},
@@ -4449,7 +4537,7 @@ setBadge(C.key?'READY':'IDLE','');
 // Apply saved mode on load (without showing the welcome toast)
 {const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
-['p-exp','p-art','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
+['p-exp','p-art','p-results','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
 // Render persisted run history immediately so sidebar isn't empty on reload
 renderRunHistory();
 _loadServerConfig().then(()=>initAuth().then(()=>{
