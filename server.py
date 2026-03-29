@@ -346,7 +346,9 @@ def _save_run_to_db(run_id: str, run: dict):
         pass  # Non-critical -- don't block the run
 
 def _load_run_history_from_db(user_id: str | None = None):
-    """Load recent runs from DB for the /api/runs endpoint, filtered by owner."""
+    """Load recent runs from DB for the /api/runs endpoint.
+    Authenticated users see only their own runs.
+    Anonymous users see only ownerless (guest) runs."""
     try:
         conn = DBConn()
         if user_id:
@@ -355,8 +357,10 @@ def _load_run_history_from_db(user_id: str | None = None):
                 (user_id,)
             ).fetchall()
         else:
-            # Anonymous / no user — return nothing (don't expose other users' runs)
-            rows = []
+            # Guest — show only runs with no owner (other guest/trial runs)
+            rows = conn.execute(
+                "SELECT * FROM runs WHERE user_id IS NULL ORDER BY started DESC LIMIT 50"
+            ).fetchall()
         conn.close()
         return list(rows)
     except Exception:
@@ -1394,11 +1398,15 @@ def list_runs(request: Request):
     user = _current_user(request)
     user_id = user["id"] if user else None
     out = []
-    # In-memory runs — only show runs owned by this user
+    # In-memory runs:
+    # - authenticated: only own runs
+    # - guest: only ownerless runs (other guests' trial runs are fine to share)
     for rid, run in sorted(RUNS.items(), key=lambda x: x[1].get("started", 0), reverse=True):
         owner = run.get("owner_id")
-        if owner and owner != user_id:
-            continue  # belongs to someone else
+        if user_id and owner and owner != user_id:
+            continue  # authenticated user — hide other people's runs
+        if not user_id and owner:
+            continue  # guest — hide runs that belong to an account
         out.append({
             "id": rid,
             "status": run["status"],

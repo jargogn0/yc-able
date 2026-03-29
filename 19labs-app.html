@@ -1439,10 +1439,14 @@ async function initAuth(){
   if(hasKey){
     _authUser={id:'local',email:'',name:''};hideAuthModal();onAuthSuccess();return;
   }
-  // No valid session — wipe any cached run history so other users' data isn't visible
-  localStorage.removeItem('19labs_run_history');
-  localStorage.removeItem('19labs_last_run_id');
-  runHistory.splice(0, runHistory.length);
+  // No valid session — clear any previously-authenticated user's cached runs
+  // (guest runs are fine to share, but don't show a logged-out user's personal history)
+  const cachedRuns = JSON.parse(localStorage.getItem('19labs_run_history')||'[]');
+  if(cachedRuns.some(r=>r._owned)){
+    localStorage.removeItem('19labs_run_history');
+    localStorage.removeItem('19labs_last_run_id');
+    runHistory.splice(0, runHistory.length);
+  }
   renderRunHistory();
   // Hide provider button — guest users always use server Bedrock, no config needed
   document.getElementById('tb-prov').style.display='none';
