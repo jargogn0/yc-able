@@ -31,7 +31,8 @@ def _resolve_db_path() -> Path:
 
 DB_PATH = _resolve_db_path()
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists before SQLite opens it
-print(f"[db] Using database at {DB_PATH}", flush=True)
+_pg_mode = bool(os.environ.get("DATABASE_URL", "").strip())
+print(f"[db] Backend: {'PostgreSQL (DATABASE_URL)' if _pg_mode else f'SQLite at {DB_PATH}'}", flush=True)
 
 # ── DB ABSTRACTION (sqlite3 locally, psycopg2/Supabase in prod) ──────────────
 def _pg_url() -> str:
@@ -1208,9 +1209,14 @@ async def start_run(req: RunRequest, request: Request):
         if saved:
             req.api_key = saved
 
-    # Require auth — anonymous users cannot use server credentials
+    # Trial / guest path — allow server Bedrock if within limit
     if not req.api_key and not user:
-        raise HTTPException(401, "Sign in to run experiments. Create a free account at yc-able.com.")
+        if not _server_has_bedrock():
+            raise HTTPException(401, "Sign in to run experiments. Create a free account at yc-able.com.")
+        ip = _trial_ip(request)
+        allowed, used = _trial_check_and_increment(ip)
+        if not allowed:
+            raise HTTPException(429, f"Trial limit reached ({TRIAL_RUN_LIMIT} runs). Sign in to continue.")
 
     run_id = str(uuid.uuid4())[:12]
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
@@ -1474,15 +1480,16 @@ def list_runs(request: Request):
     user = _get_user(_token_from_request(request))
     user_id = user["id"] if user else None
     out = []
-    # In-memory runs:
-    # - authenticated: only own runs
-    # - guest: only ownerless runs (other guests' trial runs are fine to share)
+    # In-memory runs — strict ownership:
+    # auth users see ONLY their own; guests see ONLY ownerless runs
     for rid, run in sorted(RUNS.items(), key=lambda x: x[1].get("started", 0), reverse=True):
         owner = run.get("owner_id")
-        if user_id and owner and owner != user_id:
-            continue  # authenticated user — hide other people's runs
-        if not user_id and owner:
-            continue  # guest — hide runs that belong to an account
+        if user_id:
+            if owner != user_id:
+                continue  # auth user — only their own runs
+        else:
+            if owner is not None:
+                continue  # guest — only ownerless (guest) runs
         out.append({
             "id": rid,
             "status": run["status"],
