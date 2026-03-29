@@ -758,10 +758,15 @@ async def github_auth_callback(code: str = "", state: str = "", error: str = "",
         user_id = f"github:{info['id']}"
 
         conn = DBConn()
-        conn.execute(
-            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
-            "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
-            (user_id, email, name, "", time.time()))
+        existing = conn.execute("SELECT id, name FROM users WHERE email=?", (email,)).fetchone()
+        if existing:
+            user_id = existing["id"]
+            name = existing["name"] or name
+        else:
+            conn.execute(
+                "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+                "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
+                (user_id, email, name, "", time.time()))
         conn.commit()
         conn.close()
 
@@ -810,10 +815,16 @@ async def google_auth_callback(code: str = "", state: str = "", error: str = "",
         user_id = f"google:{info.get('sub', hashlib.sha256(email.encode()).hexdigest()[:16])}"
 
         conn = DBConn()
-        conn.execute(
-            "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
-            "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
-            (user_id, email, name, "", time.time()))
+        existing = conn.execute("SELECT id, name FROM users WHERE email=?", (email,)).fetchone()
+        if existing:
+            # Email already registered (e.g. via email/password) — log in as that account
+            user_id = existing["id"]
+            name = existing["name"] or name
+        else:
+            conn.execute(
+                "INSERT INTO users (id, email, name, password_hash, created) VALUES (?,?,?,?,?) "
+                "ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name",
+                (user_id, email, name, "", time.time()))
         conn.commit()
         conn.close()
 
