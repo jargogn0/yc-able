@@ -1485,59 +1485,31 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
     _kaggle_test = obj.get('kaggle_test_file') or ''
     _kaggle_sample = obj.get('kaggle_sample_file') or ''
     if _is_kaggle and _kaggle_test:
-        _sample_read_line = (
+        _sample_line = (
             f"  sample_sub = pd.read_csv(os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_sample)}))"
             if _kaggle_sample else
-            "  sample_sub = None  # sample_submission.csv not found"
+            "  # Read sample_submission.csv to get the required output column names"
         )
         _kaggle_train_block = f"""
 KAGGLE COMPETITION MODE — MANDATORY RULES:
-1. DO NOT use train_test_split for evaluation. Use StratifiedKFold (classification) or
-   KFold (regression) cross-validation on the full train.csv. Accumulate OOF predictions.
+1. DO NOT do a simple train_test_split for evaluation. Instead use StratifiedKFold (classification)
+   or KFold (regression) cross-validation on the full train.csv to estimate performance.
 2. After CV, retrain the FINAL model on ALL of train.csv (no holdout withheld).
-3. Load {repr(_kaggle_test)} ONLY for final inference — never train on it, never leak it.
-4. Apply the EXACT same preprocessing pipeline (fitted on train only) to test_df.
-5. Determine submission format by reading sample_submission.csv VALUES (not just columns):
+3. Load {repr(_kaggle_test)} separately — this is the unlabelled test set, NEVER train on it.
+4. Apply the EXACT same preprocessing pipeline (fitted on train only) to the test set.
+5. Generate predictions for test set and save submission.csv:
   import os
-{_sample_read_line}
-  _sub_target_vals = sample_sub.iloc[:, -1].dropna().head(5).tolist() if sample_sub is not None else []
-  _sub_is_proba = sample_sub is not None and (
-      all(isinstance(v, float) for v in _sub_target_vals) or
-      any(0 < float(str(v).replace(',','')) < 1 for v in _sub_target_vals if str(v).replace('.','').replace(',','').isdigit()))
-  _sub_is_string = sample_sub is not None and any(isinstance(v, str) and not str(v).replace('.','').lstrip('-').isdigit() for v in _sub_target_vals)
-6. Generate predictions matching the submission format exactly:
   test_path = os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_test)})
   test_df = pd.read_csv(test_path)
-  test_features = preprocessor.transform(test_df[feature_cols])  # same pipeline as train
-  if _sub_is_proba and hasattr(final_model, 'predict_proba'):
-      test_preds = final_model.predict_proba(test_features)[:, 1]  # probability scores
-  elif _sub_is_string:
-      raw_preds = final_model.predict(test_features)
-      # Decode label-encoded predictions back to original strings (e.g. Yes/No)
-      test_preds = le.inverse_transform(raw_preds) if 'le' in dir() else raw_preds
-  else:
-      test_preds = final_model.predict(test_features)
-  id_col = sample_sub.columns[0] if sample_sub is not None else test_df.columns[0]
-  tgt_col = sample_sub.columns[-1] if sample_sub is not None else {repr(obj.get('target','target'))}
-  submission = pd.DataFrame({{id_col: test_df[id_col], tgt_col: test_preds}})
+  test_features = preprocessor.transform(test_df[feature_cols])
+  test_preds = final_model.predict(test_features)
+{_sample_line}
+  submission = pd.DataFrame({{sample_sub.columns[0]: test_df[sample_sub.columns[0]], sample_sub.columns[-1]: test_preds}})
   submission.to_csv('submission.csv', index=False)
-  print(f"submission.csv saved — {{len(submission)}} rows, columns: {{list(submission.columns)}}, sample: {{test_preds[:3]}}")
+  print(f"submission.csv saved — {{len(submission)}} rows, columns: {{list(submission.columns)}}")
 """
-        _predictions_csv_block = f"""- PREDICTIONS CSV (Kaggle — use OOF, NOT a holdout split):
-  Accumulate out-of-fold predictions during the CV loop:
-  oof_actual, oof_pred = [], []
-  # Inside your CV loop after predicting the validation fold:
-  #   oof_actual.extend(y.iloc[val_idx].tolist())
-  #   oof_pred.extend(val_preds.tolist())  # use predict_proba[:, 1] for AUC
-  # After CV:
-  pd.DataFrame({{'actual': oof_actual, 'predicted': oof_pred}}).to_csv('predictions.csv', index=False)
-  This is the predictions.csv shown in the Results tab."""
     else:
         _kaggle_train_block = ""
-        _predictions_csv_block = """- SAVE PREDICTIONS CSV (MANDATORY): After fitting, always save:
-  pred_df = pd.DataFrame({'actual': y_test.values if hasattr(y_test,'values') else list(y_test), 'predicted': list(y_pred)})
-  pred_df.to_csv('predictions.csv', index=False)
-  This enables the forecast comparison table in the UI. Never skip this."""
 
     # Pre-compute media-specific strings (avoids backslash-in-f-string issues on Python < 3.12)
     _is_media = bool(profile.get('is_media'))
@@ -1617,7 +1589,17 @@ KARPATHY DISCIPLINE (MANDATORY):
 - Save model via `joblib.dump(model, 'model.pkl')`.
 - PRIMARY METRIC: {obj.get('metric','rmse').upper()} — optimize for THIS, not RMSE.
   Use as eval_metric in LightGBM/XGBoost/CatBoost. Use as scoring in cross_val_score.
-- predictions.csv MUST always exist (see instructions below for the correct format).
+- MANDATORY predictions.csv — ALWAYS save this file after fitting, no exceptions:
+  ```python
+  import pandas as pd
+  _pred_df_rows = []
+  for i, (act, pred) in enumerate(zip(y_test, y_pred)):
+      row = {{'actual': float(act), 'predicted': float(pred)}}
+      # If you have a date column, add it:  row['date'] = str(test_dates.iloc[i]) if hasattr(test_dates,'iloc') else str(i)
+      _pred_df_rows.append(row)
+  pd.DataFrame(_pred_df_rows).to_csv('predictions.csv', index=False)
+  ```
+  This table is shown to the user in the Results tab — it MUST exist.
 - ALL output goes to stdout. Final line MUST be `print(json.dumps(metrics))` where metrics is a dict:
   REQUIRED keys:
   - "model": string (e.g. "LightGBM")
@@ -1642,7 +1624,11 @@ KARPATHY DISCIPLINE (MANDATORY):
   def _save(fig, name):
     plt.tight_layout(pad=1.6); fig.savefig(name, dpi=160, facecolor=BG, bbox_inches='tight'); plt.close(fig)
 
-{_predictions_csv_block}
+- SAVE PREDICTIONS CSV (MANDATORY): After fitting, always save:
+  pred_df = pd.DataFrame({{'actual': y_test.values if hasattr(y_test,'values') else list(y_test), 'predicted': list(y_pred)}})
+  # If a date/time column was found, insert it as first column: pred_df.insert(0, 'date', test_dates_values)
+  pred_df.to_csv('predictions.csv', index=False)
+  This enables the forecast comparison table in the UI. Never skip this.
 {_kaggle_train_block}
 - OPTIMIZE FOR THE PRIMARY METRIC: {obj.get('metric','rmse').upper()} — not RMSE unless that IS the metric.
   In LightGBM: metric='{obj.get('metric','rmse')}' in params. In XGBoost: eval_metric='{obj.get('metric','rmse')}'.
