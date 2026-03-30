@@ -1273,10 +1273,15 @@ INFERRED OBJECTIVE:
     )
     advice = _extract_json_blob(advice_raw)
 
-    # ── Minimal post-process: only fix factually wrong task language ──
+    # ── Minimal post-process: only fix factually wrong task language + strip generic openers ──
     if isinstance(advice, dict):
         _msg = advice.get("agent_message", "") or ""
         _task = obj.get("task", "")
+        # Strip generic dataset-scan openers if the LLM generates them anyway
+        _msg = re.sub(
+            r"^(I['']ve scanned your dataset[^.]*\.\s*|I analyzed your data[^.]*\.\s*|"
+            r"I found [0-9,]+ rows[^.]*\.\s*|After (scanning|analyzing)[^.]*\.\s*)",
+            "", _msg, flags=re.IGNORECASE).lstrip()
         if "classif" in _task.lower():
             _msg = re.sub(r'\bregression baseline\b', 'classification baseline', _msg, flags=re.IGNORECASE)
             _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
