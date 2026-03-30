@@ -1161,7 +1161,7 @@ def _extract_json_blob(txt):
     except Exception:
         return {}
 
-def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=None, provider="claude", model=None):
+def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=None, provider="claude", model=None, companion_profiles=None):
     key = api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key:
         raise RuntimeError("No API key.")
@@ -1210,6 +1210,22 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
             f"Your recommended_objective, recommended_metric, and plan MUST align with this.\n"
         )
 
+    # Build structured FILES section for LLM prompt (shows all Kaggle files with roles)
+    if companion_profiles:
+        _train_name = pathlib.Path(csv_path).name
+        _fl = [f"- {_train_name}: {profile['rows']:,} rows, {profile['cols']} cols,"
+               f" headers: {profile['headers'][:10]} → TRAINING FILE (has target labels)"]
+        for _fname, _fp in companion_profiles.items():
+            if _fp["role"] == "test":
+                _fl.append(f"- {_fname}: {_fp['rows']:,} rows, {_fp['cols']} cols,"
+                           f" headers: {_fp['headers']} → TEST FILE (no target column, needs predictions)")
+            else:
+                _fl.append(f"- {_fname}: {_fp['rows']:,} rows, {_fp['cols']} cols,"
+                           f" headers: {_fp['headers']} → SUBMISSION FORMAT (required output columns)")
+        _files_block = "FILES (all datasets in this competition):\n" + "\n".join(_fl)
+    else:
+        _files_block = ""
+
     advice_raw = ask(
         "You are a product-minded ML research copilot. Help clarify user intent before training. "
         "You are expert at interpreting ambiguous user corrections in context of what was previously proposed.",
@@ -1233,7 +1249,7 @@ Return STRICT JSON with keys:
   "agent_message": "2-4 sentence natural message to the user: briefly say what you found in the data, what you'd build and why, any key risk worth flagging, then invite them to type go to start or tell you what to change. Be direct and specific — mention the actual target column and task type. If this is a Kaggle competition (train/test/sample_submission files present), explicitly say you will train on train.csv, generate predictions for test.csv, and save a submission.csv. No bullet points, no markdown headers, no bold."
 }}
 
-DATA PROFILE:
+DATA PROFILE (train file):
 - rows: {profile['rows']}
 - cols: {profile['cols']}
 - headers: {profile['headers']}
@@ -1242,7 +1258,7 @@ DATA PROFILE:
 - datetime: {profile['datetime']}
 - text_columns: {profile.get('text', [])}
 - signals: {profile.get('signals', [])}
-
+{_files_block}
 COMPETITION CONTEXT: {"KAGGLE COMPETITION — train on train.csv, generate predictions for test.csv, save submission.csv" if ("competition" in (user_hint or "").lower() or "kaggle" in (user_hint or "").lower()) else "standard dataset"}
 
 INFERRED OBJECTIVE:
@@ -1269,31 +1285,42 @@ INFERRED OBJECTIVE:
             _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
             _msg = re.sub(r'\bstart with a regression\b', 'start with a classification', _msg, flags=re.IGNORECASE)
 
-        # Inject Kaggle competition workflow if not already mentioned
+        # Inject Kaggle competition workflow with specific file details
         if _is_comp and "submission" not in _msg.lower():
-            # Extract file details from hint for a specific, not generic, message
-            _hint_str = user_hint or ""
-            _train_file = "train.csv"
-            _test_file = "test.csv"
-            _sub_cols = None
-            _m_train = re.search(r'train on (\S+\.csv)', _hint_str, re.IGNORECASE)
-            _m_test  = re.search(r'for (\S+\.csv)', _hint_str, re.IGNORECASE)
-            _m_cols  = re.search(r'columns (\[.*?\])', _hint_str)
-            if _m_train: _train_file = _m_train.group(1)
-            if _m_test:  _test_file  = _m_test.group(1)
-            if _m_cols:
-                try:
-                    import json as _json
-                    _sub_cols = _json.loads(_m_cols.group(1))
-                except Exception: pass
-            _cols_note = f" (columns: {', '.join(_sub_cols)})" if _sub_cols else ""
-            _comp_sent = (
-                f" Kaggle competition setup: {_train_file} = training data with labels,"
-                f" {_test_file} = unlabelled test set to predict,"
-                f" submission.csv{_cols_note} = output to submit."
-                f" I'll train on {_train_file}, predict {_target} for {_test_file},"
-                f" and save submission.csv."
-            )
+            _train_name = pathlib.Path(csv_path).name
+            if companion_profiles:
+                # Use structured profiles — exact row counts and columns
+                _cp_test = next(((k, v) for k, v in companion_profiles.items() if v["role"] == "test"), None)
+                _cp_sub  = next(((k, v) for k, v in companion_profiles.items() if v["role"] == "submission"), None)
+                _test_str = (f"{_cp_test[0]} ({_cp_test[1]['rows']:,} rows, no {_target} column → needs predictions)"
+                             if _cp_test else "test.csv (needs predictions)")
+                _sub_str  = (f"{_cp_sub[0]} (columns: {', '.join(_cp_sub[1]['headers'])} → output format)"
+                             if _cp_sub else "sample_submission.csv")
+                _comp_sent = (
+                    f" 3 files: {_train_name} ({profile['rows']:,} rows, has {_target} labels → training data),"
+                    f" {_test_str},"
+                    f" {_sub_str}."
+                    f" I'll train on {_train_name} and save predictions as submission.csv."
+                )
+            else:
+                # Fallback: parse from hint string
+                _hint_str = user_hint or ""
+                _m_train = re.search(r'train on (\S+\.csv)', _hint_str, re.IGNORECASE)
+                _m_test  = re.search(r'for (\S+\.csv)', _hint_str, re.IGNORECASE)
+                _m_cols  = re.search(r'columns (\[.*?\])', _hint_str)
+                _tf = _m_train.group(1) if _m_train else _train_name
+                _xf = _m_test.group(1)  if _m_test  else "test.csv"
+                _sc = None
+                if _m_cols:
+                    try:
+                        import json as _json; _sc = _json.loads(_m_cols.group(1))
+                    except Exception: pass
+                _cols_note = f" (columns: {', '.join(_sc)})" if _sc else ""
+                _comp_sent = (
+                    f" Kaggle competition: {_tf} = training data, {_xf} = unlabelled test set,"
+                    f" submission.csv{_cols_note} = output."
+                    f" I'll train on {_tf}, predict {_target} for {_xf}, and save submission.csv."
+                )
             # Insert before the last sentence ("Type go to start...")
             if "type" in _msg.lower() and "go" in _msg.lower():
                 _parts = _msg.rstrip().rstrip('.').rsplit('.', 1)

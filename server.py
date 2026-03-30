@@ -1475,6 +1475,23 @@ async def discover(req: DiscoverRequest):
                 all_file_names = [p.name for p in all_file_paths]
                 _test_f  = next((p for p in all_file_paths if "test" in p.name.lower() and p.exists()), None)
                 _samp_f  = next((p for p in all_file_paths if ("sample" in p.name.lower() or "submission" in p.name.lower()) and p.exists()), None)
+                # Quick-profile companion files (headers + row count only)
+                _companion_profiles = {}
+                for _fp in all_file_paths:
+                    if _fp == primary_p or not _fp.exists():
+                        continue
+                    try:
+                        import pandas as _pd
+                        _cdf = _pd.read_csv(_fp, nrows=5)
+                        with open(_fp) as _fh:
+                            _nrows = sum(1 for _ in _fh) - 1
+                        _role = "test" if "test" in _fp.name.lower() else "submission"
+                        _companion_profiles[_fp.name] = {
+                            "rows": _nrows, "cols": len(_cdf.columns),
+                            "headers": list(_cdf.columns), "role": _role,
+                        }
+                    except Exception:
+                        pass
                 if _test_f or _samp_f:
                     _ctx_parts = [f"Workspace files: {', '.join(all_file_names)}."]
                     _ctx_parts.append(f"Train on {primary_p.name}.")
@@ -1510,7 +1527,7 @@ async def discover(req: DiscoverRequest):
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(data_path, user_hint=_effective_hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None)
+        result = discover_user_need(data_path, user_hint=_effective_hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None, companion_profiles=_companion_profiles or None)
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
