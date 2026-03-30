@@ -1860,7 +1860,23 @@ function onAuthSuccess(){
   // Upload any locally-stored keys to server (in case they were set before login)
   _syncLocalKeysToServer();
   loadSavedKeys();
-  // Restore run history from server and last active run
+  // Claim any runs created as guest before this login, then restore history
+  _claimLocalRunsThenRestore();
+}
+
+async function _claimLocalRunsThenRestore(){
+  // If we have local run IDs, try to assign them to this user on the server
+  // (handles: ran as guest → signed in on same device)
+  if(_authToken && runHistory.length){
+    const ids=runHistory.map(r=>r.id);
+    try{
+      await apiFetch(`${BASE}/api/runs/claim`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({run_ids:ids})
+      });
+    }catch(_){}
+  }
   _restoreRunHistory();
 }
 

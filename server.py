@@ -1509,6 +1509,38 @@ def rename_run(run_id: str, req: RenameRunRequest, request: Request):
         pass
     return {"ok": True, "label": label}
 
+# ── CLAIM ORPHANED RUNS (guest → auth user) ──────────────────────────────────
+class ClaimRunsRequest(BaseModel):
+    run_ids: list
+
+@app.post("/api/runs/claim")
+async def claim_runs(request: Request, body: ClaimRunsRequest):
+    """Claim ownerless (guest) runs by assigning them to the authenticated user."""
+    user = _get_user(_token_from_request(request))
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    run_ids = [str(r) for r in (body.run_ids or [])[:50]]
+    if not run_ids:
+        return {"claimed": 0}
+    claimed = 0
+    try:
+        conn = DBConn()
+        for rid in run_ids:
+            conn.execute(
+                "UPDATE runs SET user_id=? WHERE id=? AND user_id IS NULL",
+                (user["id"], rid)
+            )
+            claimed += conn._cur.rowcount or 0
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    # Also claim any in-memory runs that are ownerless and match these IDs
+    for rid in run_ids:
+        if rid in RUNS and RUNS[rid].get("owner_id") is None:
+            RUNS[rid]["owner_id"] = user["id"]
+    return {"claimed": claimed}
+
 # ── LIST RUNS ──────────────────────────────────────────────────
 @app.get("/api/runs")
 def list_runs(request: Request):
