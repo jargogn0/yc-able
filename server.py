@@ -1056,11 +1056,12 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
     stable = _models_dir / f"{run_id}.pkl"
     if stable.exists():
         return stable
-    ws = Path(run.get("ws", ""))
+    ws_str = run.get("ws", "")
+    ws = Path(ws_str) if ws_str else None  # empty string → None (avoids Path("") == cwd)
     result = run.get("result") or {}
     deploy_path = result.get("deploy_path")
     dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
-    search_dirs = [d for d in [dp, ws] if d and d.exists()]
+    search_dirs = [d for d in [dp, ws] if d and str(d) and d.exists()]
     for name in ["best_model.pkl", "model.pkl"]:
         for d in search_dirs:
             f = d / name
