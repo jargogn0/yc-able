@@ -1612,9 +1612,16 @@ async function initAuth(){
     if(payload){
       _authUser={id:payload.sub,email:payload.email||'',name:payload.name||''};
       hideAuthModal();onAuthSuccess();
-      // Silently refresh user info from server in background (non-blocking)
+      // Verify user still exists on server — if not, clear stale token
       fetch(`${BASE}/auth/me`,{headers:_authHeader()}).then(r=>{
-        if(r.ok)r.json().then(u=>{_authUser=u;});
+        if(r.ok){r.json().then(u=>{_authUser=u;});}
+        else if(r.status===401){
+          _authToken='';_authUser=null;localStorage.removeItem('19labs_auth_token');
+          document.getElementById('auth-btns').style.display='flex';
+          document.getElementById('user-btn').style.display='none';
+          document.getElementById('tb-prov').style.display='none';
+          _updateTrialBtn();
+        }
       }).catch(()=>{});
       return;
     }
