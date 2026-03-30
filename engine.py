@@ -1227,9 +1227,10 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
         _files_block = ""
 
     advice_raw = ask(
-        "You are a product-minded ML research copilot. Help clarify user intent before training. "
-        "You are expert at interpreting ambiguous user corrections in context of what was previously proposed.",
-        f"""Given this dataset profile and objective, propose the best next direction.
+        "You are a sharp, experienced ML engineer having a casual conversation with a colleague. "
+        "You think fast, notice what matters, and skip the filler. You never say 'I scanned your dataset' "
+        "or start with a generic status update. You lead with insight.",
+        f"""Analyze this dataset setup and respond naturally.
 {_prev_block}{_correction_block}
 Return STRICT JSON with keys:
 {{
@@ -1246,7 +1247,7 @@ Return STRICT JSON with keys:
   "experiment_directions": ["direction1", "direction2", "direction3"],
   "risks": ["risk1", "risk2"],
   "first_iteration_plan": "one concise paragraph",
-  "agent_message": "2-4 sentence natural message to the user: briefly say what you found in the data, what you'd build and why, any key risk worth flagging, then invite them to type go to start or tell you what to change. Be direct and specific — mention the actual target column and task type. If this is a Kaggle competition (train/test/sample_submission files present), explicitly say you will train on train.csv, generate predictions for test.csv, and save a submission.csv. No bullet points, no markdown headers, no bold."
+  "agent_message": "Write a sharp 2-3 sentence message like a senior data scientist talking to a colleague. Lead with the most interesting/important insight about this specific data. NEVER start with 'I scanned', 'I analyzed', 'I found', or any variant. If this is a Kaggle competition (FILES section shows train/test/submission), open with that — explain what each file is for and what you'll do. Be specific about the actual data (column names, row counts, class imbalance, anything notable). End with a single short invite to type go or ask questions. No bullet points, no bold, no markdown."
 }}
 
 DATA PROFILE (train file):
@@ -1272,78 +1273,14 @@ INFERRED OBJECTIVE:
     )
     advice = _extract_json_blob(advice_raw)
 
-    # ── Deterministic post-process: fix task language and inject competition context ──
+    # ── Minimal post-process: only fix factually wrong task language ──
     if isinstance(advice, dict):
         _msg = advice.get("agent_message", "") or ""
         _task = obj.get("task", "")
-        _target = obj.get("target", "")
-        _is_comp = "competition" in (user_hint or "").lower() or "kaggle" in (user_hint or "").lower()
-
-        # Fix wrong task language: if task is classification, replace "regression" language
         if "classif" in _task.lower():
             _msg = re.sub(r'\bregression baseline\b', 'classification baseline', _msg, flags=re.IGNORECASE)
             _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
             _msg = re.sub(r'\bstart with a regression\b', 'start with a classification', _msg, flags=re.IGNORECASE)
-
-        # Inject Kaggle competition workflow with specific file details
-        if _is_comp and "submission" not in _msg.lower():
-            _train_name = pathlib.Path(csv_path).name
-            if companion_profiles:
-                # Use structured profiles — exact row counts and columns
-                _cp_test = next(((k, v) for k, v in companion_profiles.items() if v["role"] == "test"), None)
-                _cp_sub  = next(((k, v) for k, v in companion_profiles.items() if v["role"] == "submission"), None)
-                _test_str = (f"{_cp_test[0]} ({_cp_test[1]['rows']:,} rows, no {_target} column → needs predictions)"
-                             if _cp_test else "test.csv (needs predictions)")
-                _sub_str  = (f"{_cp_sub[0]} (columns: {', '.join(_cp_sub[1]['headers'])} → output format)"
-                             if _cp_sub else "sample_submission.csv")
-                _comp_sent = (
-                    f" 3 files: {_train_name} ({profile['rows']:,} rows, has {_target} labels → training data),"
-                    f" {_test_str},"
-                    f" {_sub_str}."
-                    f" I'll train on {_train_name} and save predictions as submission.csv."
-                )
-            else:
-                # Fallback: parse from hint string
-                _hint_str = user_hint or ""
-                _m_train = re.search(r'train on (\S+\.csv)', _hint_str, re.IGNORECASE)
-                _m_test  = re.search(r'for (\S+\.csv)', _hint_str, re.IGNORECASE)
-                _m_cols  = re.search(r'columns (\[.*?\])', _hint_str)
-                _tf = _m_train.group(1) if _m_train else _train_name
-                _xf = _m_test.group(1)  if _m_test  else "test.csv"
-                _sc = None
-                if _m_cols:
-                    try:
-                        import json as _json; _sc = _json.loads(_m_cols.group(1))
-                    except Exception: pass
-                _cols_note = f" (columns: {', '.join(_sc)})" if _sc else ""
-                _comp_sent = (
-                    f" Kaggle competition: {_tf} = training data, {_xf} = unlabelled test set,"
-                    f" submission.csv{_cols_note} = output."
-                    f" I'll train on {_tf}, predict {_target} for {_xf}, and save submission.csv."
-                )
-            # Insert before the last sentence ("Type go to start...")
-            if "type" in _msg.lower() and "go" in _msg.lower():
-                _parts = _msg.rstrip().rstrip('.').rsplit('.', 1)
-                _msg = (_parts[0].rstrip() + '.' + _comp_sent + ' ' + _parts[-1].strip()) if len(_parts) > 1 else (_msg + _comp_sent)
-            else:
-                _msg = _msg.rstrip() + _comp_sent
-
-        # If this is a correction (user sent a hint after seeing a plan), acknowledge it
-        # so the conversation feels responsive, not like a stateless re-run
-        if previous_objective and user_hint:
-            _prev_target = previous_objective.get("target", "")
-            _prev_task = previous_objective.get("task", "")
-            _ack_needed = not any(_msg.lower().startswith(w) for w in
-                ("got it", "understood", "noted", "sure,", "ok,", "confirmed", "updated"))
-            if _ack_needed:
-                if _target != _prev_target:
-                    _ack = f"Got it — switching target to {_target}. "
-                elif _task != _prev_task:
-                    _ack = f"Got it — using {_task} as requested. "
-                else:
-                    _ack = "Got it. "
-                _msg = _ack + _msg[0].lower() + _msg[1:] if _msg else _ack
-
         advice["agent_message"] = _msg
     return {
         "profile": profile,
@@ -1554,21 +1491,22 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
             "  # Read sample_submission.csv to get the required output column names"
         )
         _kaggle_train_block = f"""
-KAGGLE COMPETITION MODE (MANDATORY — this is a Kaggle submission task):
-- DATA_PATH points to the TRAINING file. Train and tune on it as normal.
-- After fitting your best model, ALSO generate predictions for the unlabelled test set:
+KAGGLE COMPETITION MODE — MANDATORY RULES:
+1. DO NOT do a simple train_test_split for evaluation. Instead use StratifiedKFold (classification)
+   or KFold (regression) cross-validation on the full train.csv to estimate performance.
+2. After CV, retrain the FINAL model on ALL of train.csv (no holdout withheld).
+3. Load {repr(_kaggle_test)} separately — this is the unlabelled test set, NEVER train on it.
+4. Apply the EXACT same preprocessing pipeline (fitted on train only) to the test set.
+5. Generate predictions for test set and save submission.csv:
   import os
   test_path = os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_test)})
   test_df = pd.read_csv(test_path)
-  # Apply the EXACT same preprocessing pipeline (fitted on train only — no data leakage).
-  test_features = <your_preprocessor>.transform(test_df[feature_cols])
-  test_preds = model.predict(test_features)
-- Save submission.csv matching the required format:
+  test_features = preprocessor.transform(test_df[feature_cols])
+  test_preds = final_model.predict(test_features)
 {_sample_line}
   submission = pd.DataFrame({{sample_sub.columns[0]: test_df[sample_sub.columns[0]], sample_sub.columns[-1]: test_preds}})
   submission.to_csv('submission.csv', index=False)
-  print(f"submission.csv saved — {{len(submission)}} rows")
-- Your internal train/val split is only for metric estimation. The real evaluation is on {repr(_kaggle_test)}.
+  print(f"submission.csv saved — {{len(submission)}} rows, columns: {{list(submission.columns)}}")
 """
     else:
         _kaggle_train_block = ""
