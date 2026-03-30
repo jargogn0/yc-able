@@ -1029,14 +1029,62 @@ class PredictRequest(BaseModel):
 def _fallback_discovery(profile: dict, hint: str = ""):
     headers = profile.get("headers", [])
     numeric = profile.get("numeric", [])
+    categorical = profile.get("categorical", [])
     target_candidates = profile.get("target_candidates", [])
     target = target_candidates[0] if target_candidates else (numeric[-1] if numeric else (headers[-1] if headers else "target"))
+    rows = profile.get("rows", 0)
+    cols = profile.get("cols", 0)
+    signals = profile.get("signals", [])
+    class_balance = profile.get("class_balance", {})
+
+    # Detect task type from target column info
+    target_col = next((c for c in profile.get("columns", []) if c["name"] == target), None)
+    is_classification = target_col and target_col.get("type") in ("categorical", "high_cardinality") and target_col.get("unique", 99) <= 20
+    task = "BinaryClassification" if (is_classification and target_col and target_col.get("unique", 0) <= 2) else \
+           "MultiClassClassification" if is_classification else "Regression"
+    metric = "auc" if "classification" in task.lower() else "rmse"
+
+    # Detect Kaggle competition from hint
+    _hint_lo = (hint or "").lower()
+    _is_comp = "competition" in _hint_lo or "kaggle" in _hint_lo
+
+    # Build a smart, natural message from the actual data
+    _balance_note = ""
+    if target in class_balance:
+        _vals = list(class_balance[target].values())
+        _majority = max(_vals) if _vals else 0
+        if _majority > 0.7:
+            _balance_note = f" Class is {_majority*100:.0f}% imbalanced — AUC and stratified folds are the right call."
+
+    _signal_note = ""
+    for s in signals:
+        if "IMBALANCED" in s and target in s:
+            _balance_note = " Class imbalance detected — use stratified CV and AUC."
+            break
+        if "DATETIME" in s:
+            _signal_note = " Time series structure detected."
+            break
+
+    if _is_comp:
+        _agent_msg = (
+            f"Kaggle competition with {rows:,} training rows, {cols} features, target is '{target}'. "
+            f"{'Binary classification' if 'binary' in task.lower() else task} task — "
+            f"use StratifiedKFold CV to validate on train.csv, then predict test.csv and save submission.csv."
+            f"{_balance_note} Type go to start."
+        )
+    else:
+        _agent_msg = (
+            f"{rows:,} rows, {cols} features, predicting '{target}' ({'classification' if is_classification else 'regression'})."
+            f"{_balance_note}{_signal_note} "
+            f"Type go to start or tell me what to change."
+        )
+
     objective = {
         "domain": "General",
-        "task": "Regression",
+        "task": task,
         "target": target,
-        "metric": "rmse",
-        "direction": "lower_is_better",
+        "metric": metric,
+        "direction": "lower_is_better" if metric == "rmse" else "higher_is_better",
         "confidence": 0.45,
         "reasoning": "Fallback inference used because AI discovery was unavailable.",
         "good_enough": "",
@@ -1044,7 +1092,7 @@ def _fallback_discovery(profile: dict, hint: str = ""):
     }
     discovery = {
         "recommended_objective": f"Predict {target} from the available features.",
-        "recommended_metric": "rmse",
+        "recommended_metric": metric,
         "clarifying_questions": [
             f"Is `{target}` the business target you want to optimize?",
             "Should we optimize for prediction accuracy or explainability?",
@@ -1090,13 +1138,6 @@ def _fallback_discovery(profile: dict, hint: str = ""):
             },
         ],
     }
-    _risks_txt = " ".join(discovery.get("risks", []))
-    _agent_msg = (
-        f"I've scanned your dataset ({profile.get('rows',0):,} rows, {profile.get('cols',0)} columns). "
-        f"The most natural objective looks like predicting {target} — I'd start with a regression baseline and tune from there. "
-        + (f"{_risks_txt} " if _risks_txt else "")
-        + "Type \"go\" to kick off training, or tell me if you'd like a different target or approach."
-    )
     return {
         "profile": profile,
         "objective": objective,
