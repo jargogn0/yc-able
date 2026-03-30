@@ -272,7 +272,9 @@ def _get_user(token: str) -> dict | None:
 
 def _token_from_request(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
-    return auth.replace("Bearer ", "").strip()
+    if auth:
+        return auth.replace("Bearer ", "").strip()
+    return request.query_params.get("token", "")
 
 def _get_user_api_key(user_id: str, provider: str) -> str:
     try:
@@ -442,6 +444,9 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     token = request.query_params.get("token", "")
     if token == ACCESS_PASSWORD:
+        return await call_next(request)
+    # Also accept a valid user JWT passed as ?token= (for direct <img src> artifact loads)
+    if token and _verify_jwt(token):
         return await call_next(request)
     return JSONResponse(status_code=401, content={"error": "Unauthorized. Set your access token in Settings."})
 
