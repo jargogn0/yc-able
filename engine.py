@@ -4096,12 +4096,16 @@ BEHAVIOR:
 # ── INFERENCE SERVER GENERATOR ─────────────────────────────────
 def generate_inference_server(train_py: str, best: dict, obj: dict, api_key: str, provider: str = "claude") -> dict:
     """Generate a complete deployable FastAPI inference server from the trained model code."""
+    # Use the module-level client so we don't need to re-authenticate
+    _init_client(api_key, provider)
+
     model_name = best.get("model", "MLModel")
     task = obj.get("task", "regression")
     target = obj.get("target", "target")
     metric = obj.get("metric", "accuracy")
 
-    prompt = f"""Generate a production-ready FastAPI inference server for this trained ML model.
+    system_prompt = "You are a senior ML engineer. Generate clean, production-ready FastAPI server code."
+    user_prompt = f"""Generate a production-ready FastAPI inference server for this trained ML model.
 
 TRAINING CODE (first 3500 chars):
 ```python
@@ -4124,23 +4128,7 @@ Return ONLY valid JSON with keys: inference_server_py, requirements_txt, dockerf
 No markdown fences, no explanation — just the JSON object."""
 
     try:
-        if provider == "openai" and OpenAI:
-            client = OpenAI(api_key=api_key)
-            resp = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=3000,
-                response_format={"type": "json_object"}
-            )
-            raw = resp.choices[0].message.content
-        else:
-            client = Anthropic(api_key=api_key)
-            resp = client.messages.create(
-                model=CLAUDE_MODEL, max_tokens=3000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            raw = resp.content[0].text
-
+        raw = ask(system_prompt, user_prompt, 3000)
         try:
             return json.loads(raw)
         except Exception:

@@ -2578,17 +2578,28 @@ async def predict(run_id: str, req: PredictRequest):
         raise HTTPException(400, "Run not finished yet")
     ws = Path(run.get("ws", ""))
     deploy_path = result.get("deploy_path")
-    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else ws
+    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
 
-    # Find model file
+    # Find model file — check explicit names first, then recursive fallback
     model_path = None
-    for pattern in ["model.pkl", "*.pkl", "*.joblib"]:
-        for f in list(dp.glob(pattern)) + list(ws.glob(pattern)):
+    search_dirs = [d for d in [dp, ws] if d and d.exists()]
+    for name in ["best_model.pkl", "model.pkl"]:
+        for d in search_dirs:
+            f = d / name
             if f.is_file():
                 model_path = f
                 break
         if model_path:
             break
+    if not model_path:
+        # Recursive fallback — find any pkl/joblib anywhere in the workspace tree
+        for d in search_dirs:
+            for f in list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")):
+                if f.is_file() and "api_server" not in str(f):
+                    model_path = f
+                    break
+            if model_path:
+                break
 
     if not model_path:
         raise HTTPException(404, "No trained model found. Run may not have completed successfully.")
@@ -3076,17 +3087,27 @@ async def explain_model(run_id: str):
 
     ws = Path(run.get("ws", ""))
     deploy_path = result.get("deploy_path")
-    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else ws
+    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
 
-    # Find model
+    # Find model — explicit names first, then recursive fallback
     model_path = None
-    for pattern in ["model.pkl", "*.pkl", "*.joblib"]:
-        for f in list(dp.glob(pattern)) + list(ws.glob(pattern)):
+    search_dirs = [d for d in [dp, ws] if d and d.exists()]
+    for name in ["best_model.pkl", "model.pkl"]:
+        for d in search_dirs:
+            f = d / name
             if f.is_file():
                 model_path = f
                 break
         if model_path:
             break
+    if not model_path:
+        for d in search_dirs:
+            for f in list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")):
+                if f.is_file() and "api_server" not in str(f):
+                    model_path = f
+                    break
+            if model_path:
+                break
 
     if not model_path:
         return {"ok": False, "error": "No model found"}
