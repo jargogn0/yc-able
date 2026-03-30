@@ -1459,6 +1459,7 @@ async def discover(req: DiscoverRequest):
 
         # Resolve data path — media dataset or CSV
         _kaggle_context_hint = ""
+        _companion_profiles = {}
         if req.dataset_id:
             media = _MEDIA_DATASETS.get(req.dataset_id)
             if not media:
