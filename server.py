@@ -1581,7 +1581,30 @@ def list_runs(request: Request):
                 "historical": True,
             })
     out.sort(key=lambda x: x.get("started") or 0, reverse=True)
-    return {"runs": out[:100]}
+    # For authenticated users, also surface unclaimed guest runs so they can claim them
+    unclaimed = []
+    if user_id:
+        try:
+            conn2 = DBConn()
+            rows2 = conn2.execute(
+                "SELECT * FROM runs WHERE user_id IS NULL AND id LIKE 'guest-%' ORDER BY started DESC LIMIT 20"
+            ).fetchall()
+            conn2.close()
+            existing_ids = {r["id"] for r in out}
+            for row in rows2:
+                if row["id"] not in existing_ids:
+                    unclaimed.append({
+                        "id": row["id"],
+                        "status": row["status"],
+                        "started": row["started"],
+                        "filename": row.get("filename", ""),
+                        "provider": row.get("provider", ""),
+                        "best_model": row.get("best_model"),
+                        "unclaimed": True,
+                    })
+        except Exception:
+            pass
+    return {"runs": out[:100], "unclaimed": unclaimed}
 
 @app.get("/api/stats")
 def get_stats():

@@ -1913,6 +1913,7 @@ async function _claimLocalRunsThenRestore(){
   _restoreRunHistory();
 }
 
+let _unclaimedRuns=[];
 async function _restoreRunHistory(){
   // Merge server-side run list into local history
   try{
@@ -1927,7 +1928,6 @@ async function _restoreRunHistory(){
         if(!runHistory.find(rh=>rh.id===run.id))runHistory.push({id:run.id,status,label});
       });
       // Only purge stale local entries when the server returns a non-empty list
-      // (an empty response could be a transient DB issue — don't wipe local cache)
       if(serverIds.size>0){
         const before=runHistory.length;
         for(let i=runHistory.length-1;i>=0;i--){
@@ -1938,6 +1938,8 @@ async function _restoreRunHistory(){
           if(lastRun&&!serverIds.has(lastRun))localStorage.removeItem('19labs_last_run_id');
         }
       }
+      // Surface unclaimed guest runs so the user can claim them
+      _unclaimedRuns=(d.unclaimed||[]);
       _rhSave();
       renderRunHistory();
       _updateTrialBtn(); // re-evaluate lock state after syncing history
@@ -4309,25 +4311,50 @@ function addRunHistory(id,status,label){
 }
 function renderRunHistory(){
   const el=document.getElementById('run-history');
-  if(!runHistory.length){el.innerHTML='';return}
+  let h='';
   const isAuth=_authUser&&_authUser.id&&_authUser.id!=='local';
-  let h='<div class="side-sec">Recent Runs</div>';
-  runHistory.slice(0,20).forEach(r=>{
-    const dotCls=r.status==='done'?'done':r.status==='error'?'err':'run';
-    const actions=isAuth?`<div class="rh-actions">
-      <button class="rh-btn" title="Rename" onclick="event.stopPropagation();rhRename('${r.id}')">✎</button>
-      <button class="rh-btn del" title="Delete" onclick="event.stopPropagation();rhDelete('${r.id}')">✕</button>
-    </div>`:'';
-    h+=`<div class="rh-item" onclick="loadRunStatus('${r.id}')">
-      <div class="rh-dot ${dotCls}"></div>
-      <div style="flex:1;min-width:0">
-        <div class="rh-label">${esc(r.label)}</div>
-        <div class="rh-id">${r.id}</div>
-      </div>
-      ${actions}
-    </div>`;
-  });
+  if(runHistory.length){
+    h+='<div class="side-sec">Recent Runs</div>';
+    runHistory.slice(0,20).forEach(r=>{
+      const dotCls=r.status==='done'?'done':r.status==='error'?'err':'run';
+      const actions=isAuth?`<div class="rh-actions">
+        <button class="rh-btn" title="Rename" onclick="event.stopPropagation();rhRename('${r.id}')">✎</button>
+        <button class="rh-btn del" title="Delete" onclick="event.stopPropagation();rhDelete('${r.id}')">✕</button>
+      </div>`:'';
+      h+=`<div class="rh-item" onclick="loadRunStatus('${r.id}')">
+        <div class="rh-dot ${dotCls}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="rh-label">${esc(r.label)}</div>
+          <div class="rh-id">${r.id}</div>
+        </div>
+        ${actions}
+      </div>`;
+    });
+  }
+  if(_unclaimedRuns&&_unclaimedRuns.length){
+    h+=`<div class="side-sec" style="color:var(--amber);border-color:rgba(245,158,11,.2)">Unclaimed Runs <span style="font-size:9px;font-weight:400;color:var(--text-3)">created as guest</span></div>`;
+    _unclaimedRuns.forEach(r=>{
+      const label=r.filename||r.id;
+      h+=`<div class="rh-item" style="opacity:.75">
+        <div class="rh-dot done"></div>
+        <div class="rh-label" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
+        <button onclick="event.stopPropagation();claimRun('${r.id}')" style="font-size:9px;padding:2px 7px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:var(--amber);border-radius:4px;cursor:pointer;flex-shrink:0;white-space:nowrap">Claim</button>
+      </div>`;
+    });
+  }
   el.innerHTML=h;
+}
+async function claimRun(id){
+  try{
+    const r=await apiFetch(`${BASE}/api/runs/claim`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({run_ids:[id]})});
+    if(r.ok){
+      const run=_unclaimedRuns.find(u=>u.id===id)||{};
+      _unclaimedRuns=_unclaimedRuns.filter(u=>u.id!==id);
+      if(!runHistory.find(rh=>rh.id===id))runHistory.unshift({id,status:'done',label:run.filename||id});
+      _rhSave();renderRunHistory();
+      toast('Run claimed — now in your workspace','ok',3000);
+    }
+  }catch(_){toast('Could not claim run','err')}
 }
 async function rhRename(id){
   const run=runHistory.find(r=>r.id===id);
