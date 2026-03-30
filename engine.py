@@ -607,6 +607,30 @@ def profile_dataset(csv_path):
             return True
         return False
 
+    def _build_target_candidates(cols, n_rows):
+        # Well-known target column names — ranked highest
+        _TARGET_NAMES = {
+            "churn", "target", "label", "class", "y", "outcome", "default",
+            "fraud", "survived", "response", "converted", "clicked", "purchased",
+            "defaulted", "attrition", "cancelled", "retained", "approved",
+            "spam", "toxic", "sentiment", "result", "status", "success",
+        }
+        candidates = []
+        for c in cols:
+            name_lo = c["name"].lower()
+            is_id = _is_id_like(c)
+            is_known_target = name_lo in _TARGET_NAMES
+            # Include: low-cardinality categoricals (2–50 unique) — classification targets
+            is_cat_target = c["type"] in ("categorical", "high_cardinality") and 2 <= c["unique"] <= 50
+            # Include: numeric with enough signal, not ID-like
+            is_num_target = c["type"] == "numeric" and c["unique"] > 10 and not is_id
+            if is_known_target or is_cat_target or is_num_target:
+                # Score: known target names first, then low-cardinality cats, then numeric
+                score = 0 if is_known_target else (1 if is_cat_target else 2)
+                candidates.append((score, c["name"]))
+        candidates.sort(key=lambda x: x[0])
+        return [name for _, name in candidates[:5]]
+
     return dict(
         path=str(csv_path), rows=len(df), cols=len(df.columns),
         headers=list(df.columns), columns=cols,
@@ -616,7 +640,7 @@ def profile_dataset(csv_path):
         class_balance=class_balance,
         top_correlations=top_correlations,
         detected_sep=detected_sep,
-        target_candidates=[c["name"] for c in cols if c["type"] == "numeric" and c["unique"] > 10 and not _is_id_like(c)][:5],
+        target_candidates=_build_target_candidates(cols, _n_rows),
     )
 
 
