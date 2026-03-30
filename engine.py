@@ -1260,6 +1260,7 @@ INFERRED OBJECTIVE:
     if isinstance(advice, dict):
         _msg = advice.get("agent_message", "") or ""
         _task = obj.get("task", "")
+        _target = obj.get("target", "")
         _is_comp = "competition" in (user_hint or "").lower() or "kaggle" in (user_hint or "").lower()
 
         # Fix wrong task language: if task is classification, replace "regression" language
@@ -1280,6 +1281,22 @@ INFERRED OBJECTIVE:
                 _msg = (_parts[0].rstrip() + '.' + _comp_sent + ' ' + _parts[-1].strip()) if len(_parts) > 1 else (_msg + _comp_sent)
             else:
                 _msg = _msg.rstrip() + _comp_sent
+
+        # If this is a correction (user sent a hint after seeing a plan), acknowledge it
+        # so the conversation feels responsive, not like a stateless re-run
+        if previous_objective and user_hint:
+            _prev_target = previous_objective.get("target", "")
+            _prev_task = previous_objective.get("task", "")
+            _ack_needed = not any(_msg.lower().startswith(w) for w in
+                ("got it", "understood", "noted", "sure,", "ok,", "confirmed", "updated"))
+            if _ack_needed:
+                if _target != _prev_target:
+                    _ack = f"Got it — switching target to {_target}. "
+                elif _task != _prev_task:
+                    _ack = f"Got it — using {_task} as requested. "
+                else:
+                    _ack = "Got it. "
+                _msg = _ack + _msg[0].lower() + _msg[1:] if _msg else _ack
 
         advice["agent_message"] = _msg
     return {
