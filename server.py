@@ -153,9 +153,9 @@ def _init_db():
         conn.commit()
     except Exception:
         try:
-            conn._conn.rollback()  # reset PG transaction state after duplicate-column error
+            conn._conn.rollback()  # PostgreSQL: reset aborted transaction state
         except Exception:
-            pass
+            pass  # SQLite or already clean
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
