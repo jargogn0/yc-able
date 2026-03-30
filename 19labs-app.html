@@ -2723,7 +2723,7 @@ async function runDiscover(hint){
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){
-        showKeyPrompt();setBadge('KEY NEEDED','err');return;
+        openKeys();setBadge('KEY NEEDED','err');return;
       }
       throw new Error(dj.error||'Discovery failed');
     }
@@ -5205,13 +5205,7 @@ async function handleFile(f,preloadedText){
       document.getElementById('p-data').style.display='';
       document.getElementById('ws-empty').style.display='none';
       stab('data');
-      let msg=`Uploaded <strong>${esc(f.name)}</strong> — <strong>${info.total_files||0} ${info.media_type||'media'} files</strong>`;
-      if(info.num_classes>0){
-        const cls=Object.entries(info.classes||{}).map(([k,v])=>`<code>${esc(k)}</code> (${v})`).join(', ');
-        msg+=`, ${info.num_classes} classes: ${cls}`;
-      }
-      msg+=`.<br><br>Say <strong>"go"</strong> to train a classifier, or describe your goal.`;
-      chat('ai',msg);
+      autoDiscover();
     }catch(e){toast('Upload failed: '+e.message,'err');}
     return;
   }
