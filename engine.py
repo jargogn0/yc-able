@@ -1062,13 +1062,22 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
                         _forced_target = _mentioned[0]
 
     if _forced_target:
+        # Also derive the task from the target column's type — don't let the LLM guess
+        _target_col_info = next((c for c in profile.get('columns', []) if c['name'] == _forced_target), None)
+        if _target_col_info and _target_col_info['type'] in ('categorical', 'high_cardinality'):
+            _forced_task = "BinaryClassification" if _target_col_info['unique'] <= 2 else "MultiClassClassification"
+        else:
+            _forced_task = None
+        _task_note = f"TASK must be {_forced_task} (target is categorical with {_target_col_info['unique'] if _target_col_info else '?'} classes).\n" if _forced_task else ""
         _override_block = (
             f"\n\U0001f6a8 MANDATORY OVERRIDE — DO NOT IGNORE:\n"
             f"The target column is CONFIRMED as \"{_forced_target}\".\n"
             f"You MUST set TARGET: {_forced_target}\n"
+            f"{_task_note}"
             f"Setting TARGET to anything else (including 'id') is WRONG.\n"
         )
     else:
+        _forced_task = None
         _override_block = ""
 
     resp = ask(
@@ -1129,7 +1138,7 @@ HYPOTHESES:
 
     tc = profile["target_candidates"]
     return dict(domain=g("DOMAIN") or "General",
-        task   =task_inferred,
+        task   =_forced_task or task_inferred,
         target =_forced_target or g("TARGET") or (tc[0] if tc else profile["headers"][-1]),
         metric =metric,
         direction=g("DIRECTION") or "lower_is_better",
@@ -1221,7 +1230,7 @@ Return STRICT JSON with keys:
   "experiment_directions": ["direction1", "direction2", "direction3"],
   "risks": ["risk1", "risk2"],
   "first_iteration_plan": "one concise paragraph",
-  "agent_message": "2-4 sentence natural message to the user: briefly say what you found in the data, what you'd build and why, any key risk worth flagging, then invite them to type go to start or tell you what to change. Be direct and specific — mention the actual target column and task type. No bullet points, no markdown headers, no bold."
+  "agent_message": "2-4 sentence natural message to the user: briefly say what you found in the data, what you'd build and why, any key risk worth flagging, then invite them to type go to start or tell you what to change. Be direct and specific — mention the actual target column and task type. If this is a Kaggle competition (train/test/sample_submission files present), explicitly say you will train on train.csv, generate predictions for test.csv, and save a submission.csv. No bullet points, no markdown headers, no bold."
 }}
 
 DATA PROFILE:
@@ -1233,6 +1242,8 @@ DATA PROFILE:
 - datetime: {profile['datetime']}
 - text_columns: {profile.get('text', [])}
 - signals: {profile.get('signals', [])}
+
+COMPETITION CONTEXT: {"KAGGLE COMPETITION — train on train.csv, generate predictions for test.csv, save submission.csv" if ("competition" in (user_hint or "").lower() or "kaggle" in (user_hint or "").lower()) else "standard dataset"}
 
 INFERRED OBJECTIVE:
 - task: {obj['task']}
