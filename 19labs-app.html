@@ -1874,15 +1874,17 @@ async function _restoreRunHistory(){
         const status=run.status==='done'?'done':run.status==='error'?'error':'done';
         if(!runHistory.find(rh=>rh.id===run.id))runHistory.push({id:run.id,status,label});
       });
-      // Purge local entries that no longer exist on the server
-      const before=runHistory.length;
-      for(let i=runHistory.length-1;i>=0;i--){
-        if(!serverIds.has(runHistory[i].id))runHistory.splice(i,1);
-      }
-      if(runHistory.length!==before){
-        // Also clear last_run_id if it was deleted
-        const lastRun=localStorage.getItem('19labs_last_run_id');
-        if(lastRun&&!serverIds.has(lastRun))localStorage.removeItem('19labs_last_run_id');
+      // Only purge stale local entries when the server returns a non-empty list
+      // (an empty response could be a transient DB issue — don't wipe local cache)
+      if(serverIds.size>0){
+        const before=runHistory.length;
+        for(let i=runHistory.length-1;i>=0;i--){
+          if(!serverIds.has(runHistory[i].id))runHistory.splice(i,1);
+        }
+        if(runHistory.length!==before){
+          const lastRun=localStorage.getItem('19labs_last_run_id');
+          if(lastRun&&!serverIds.has(lastRun))localStorage.removeItem('19labs_last_run_id');
+        }
       }
       _rhSave();
       renderRunHistory();

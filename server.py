@@ -1265,6 +1265,8 @@ async def start_run(req: RunRequest, request: Request):
         hint=req.hint or "", budget=req.budget,
         cancel_event=cancel_event,
     )
+    # Persist immediately so the run survives a server restart
+    _save_run_to_db(run_id, RUNS[run_id])
 
     def background():
         import sys
