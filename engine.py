@@ -4096,8 +4096,9 @@ BEHAVIOR:
 # ── INFERENCE SERVER GENERATOR ─────────────────────────────────
 def generate_inference_server(train_py: str, best: dict, obj: dict, api_key: str, provider: str = "claude") -> dict:
     """Generate a complete deployable FastAPI inference server from the trained model code."""
-    # Use the module-level client so we don't need to re-authenticate
-    _init_client(api_key, provider)
+    # Reuse the already-initialized global client when possible (avoids Bedrock re-auth)
+    if _client is None or _provider != (provider or "claude").lower():
+        _init_client(api_key, provider)
 
     model_name = best.get("model", "MLModel")
     task = obj.get("task", "regression")
@@ -4128,12 +4129,11 @@ Return ONLY valid JSON with keys: inference_server_py, requirements_txt, dockerf
 No markdown fences, no explanation — just the JSON object."""
 
     try:
-        raw = ask(system_prompt, user_prompt, 3000)
-        try:
-            return json.loads(raw)
-        except Exception:
-            m = re.search(r'\{[\s\S]*\}', raw)
-            return json.loads(m.group()) if m else {"error": "Could not parse response"}
+        raw = ask(system_prompt, user_prompt, 6000)
+        result = _extract_json_blob(raw)
+        if isinstance(result, dict):
+            return result
+        return {"error": "Could not parse response"}
     except Exception as e:
         return {"error": str(e)}
 
