@@ -1572,7 +1572,8 @@ function _useTrialSlot(){
 function _updateTrialBtn(){
   const authBtns=document.getElementById('auth-btns');
   if(!authBtns)return;
-  authBtns.style.display=_authUser?'none':'flex';
+  const isRealAccount=_authUser&&_authUser.id&&_authUser.id!=='local';
+  authBtns.style.display=isRealAccount?'none':'flex';
   // If guest already has a run, show a locked hint in the input area
   const cin=document.getElementById('cin');
   const sendBtn=document.getElementById('send-btn');
