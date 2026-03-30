@@ -2441,7 +2441,11 @@ function renderDataTable(){
 
 function renderDataDashboard(){
   if(!S.cols||!S.rows)return;
-  const el=document.getElementById('p-data');
+  const el=document.getElementById('p-dash');
+  el.innerHTML=_buildDataDashboardHTML();
+}
+function _buildDataDashboardHTML(){
+  if(!S.cols||!S.rows)return'';
 
   // ── column index
   const ci=c=>S.cols.indexOf(c);
@@ -2644,7 +2648,7 @@ function renderDataDashboard(){
   tbl+='</tbody></table>';
   h+=`<div class="db-preview"><div class="db-preview-hd" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('.db-toggle').textContent=this.nextElementSibling.classList.contains('open')?'▲':'▼'"><span>Raw Data Preview (first 20 rows)</span><span class="db-toggle">▼</span></div><div class="db-preview-body">${tbl}</div></div>`;
 
-  el.innerHTML=`<div class="db-wrap">${h}</div>`;
+  return`<div class="db-wrap">${h}</div>`;
 }
 
 // ═══════════════════════════════════════════
@@ -4102,8 +4106,44 @@ function renderDashboard(){
   const panel=document.getElementById('p-dash');
   if(!panel)return;
   const exps=S.exps||[];
+
+  // Dataset profile is the primary dashboard — always show when data is loaded
+  if(S.cols&&S.rows){
+    const dataHtml=_buildDataDashboardHTML();
+    if(!exps.length){panel.innerHTML=dataHtml;return;}
+    // Experiments also exist — show data profile + ML summary below
+    const best=S.best||{};const obj=S.objective||{};
+    const isLower=(obj.direction||'lower_is_better')==='lower_is_better';
+    const metricName=(best.metric_name||exps[0]?.metric_name||'score').toUpperCase();
+    const fmtV=v=>{if(v==null)return'—';const n=Number(v);return Math.abs(n)<0.001?n.toExponential(2):n<1?n.toFixed(4):n<100?n.toFixed(2):n.toFixed(0)};
+    const GC={A:'#34d399',B:'#60a5fa',C:'#fbbf24',D:'#f87171',F:'#ef4444'};
+    function grade(name,val){try{return interpretMetric(name,val,obj.direction||'lower_is_better').grade}catch(_){return'—'}}
+    function gradeCol(g){return GC[g]||'#6b7280'}
+    const modelMap={};
+    exps.forEach(e=>{if(!e.success)return;const m=e.model;if(!modelMap[m]||(isLower?e.metric_val<modelMap[m].metric_val:e.metric_val>modelMap[m].metric_val))modelMap[m]=e;});
+    const leaders=Object.values(modelMap).sort((a,b)=>isLower?a.metric_val-b.metric_val:b.metric_val-a.metric_val);
+    const bestVal=leaders[0]?.metric_val,worstVal=leaders[leaders.length-1]?.metric_val,span=Math.abs(bestVal-worstVal)||Math.abs(bestVal||1)*0.2||1;
+    const topGrade=grade(best.metric_name||'',best.metric_val),topGradeCol=gradeCol(topGrade);
+    const kpiClass={A:'green',B:'blue',C:'amber',D:'red',F:'red'}[topGrade]||'accent';
+    const kept=exps.filter(e=>e.status==='keep'&&e.success).length;
+    const lbHtml=leaders.slice(0,8).map((e,i)=>{
+      const pct=isLower?(span>0?Math.round((1-Math.abs(e.metric_val-bestVal)/span)*100):100):(span>0?Math.round(Math.abs(e.metric_val-worstVal+span)/span*100):100);
+      const g=grade(e.metric_name||best.metric_name,e.metric_val),gc=gradeCol(g);
+      const medals=['🥇','🥈','🥉'],rank=i<3?medals[i]:`${i+1}`;
+      return`<div class="dash-lb-row"><div class="dash-lb-rank">${rank}</div><div class="dash-lb-name">${esc(e.model)}</div><div class="dash-lb-bar-wrap"><div class="dash-lb-bar" style="width:${Math.max(4,pct)}%;background:${gc}"></div></div><div class="dash-lb-val">${fmtV(e.metric_val)}</div><div class="dash-lb-grade" style="color:${gc}">${g}</div></div>`;
+    }).join('');
+    panel.innerHTML=dataHtml+`<div class="db-wrap" style="padding-top:0"><div style="border-top:1px solid var(--border);margin-bottom:20px"></div>
+      <div class="db-section-title" style="margin-bottom:12px">ML Experiment Results</div>
+      <div class="dash-kpis">
+        <div class="dash-kpi ${kpiClass}"><div class="dash-kpi-label">Best Model</div><div class="dash-kpi-val" style="font-size:15px;margin-top:4px">${esc(best.model||'—')}</div><div class="dash-kpi-sub">${metricName}: ${fmtV(best.metric_val)}</div><div class="dash-kpi-badge" style="background:${topGradeCol}22;color:${topGradeCol}">${topGrade}</div></div>
+        <div class="dash-kpi blue"><div class="dash-kpi-label">Experiments</div><div class="dash-kpi-val">${exps.length}</div><div class="dash-kpi-sub">${kept} kept</div><div class="dash-kpi-badge" style="background:rgba(96,165,250,.15);color:#60a5fa">🧪</div></div>
+      </div>
+      <div class="dash-card" style="margin-top:8px"><div class="dash-card-title"><span>Model Leaderboard</span><small>${leaders.length} models · ${metricName}</small></div>${lbHtml}</div>
+    </div>`;
+    return;
+  }
   if(!exps.length){
-    panel.innerHTML=`<div class="dash-empty"><div class="dash-empty-icon">📊</div><div class="dash-empty-msg">Run an experiment to unlock your dashboard</div></div>`;
+    panel.innerHTML=`<div class="dash-empty"><div class="dash-empty-icon">📊</div><div class="dash-empty-msg">Upload a dataset to see your dashboard</div></div>`;
     return;
   }
 
@@ -4269,7 +4309,6 @@ function renderDashboard(){
   const kpiClass={A:'green',B:'blue',C:'amber',D:'red',F:'red'}[topGrade]||'accent';
 
   panel.innerHTML=`<div class="dash">
-
     <div class="dash-kpis">
       <div class="dash-kpi ${kpiClass}">
         <div class="dash-kpi-label">Best Model</div>
@@ -4296,7 +4335,6 @@ function renderDashboard(){
         <div class="dash-kpi-badge" style="background:rgba(52,211,153,.15);color:#34d399">🏆</div>
       </div>
     </div>
-
     <div class="dash-row cols-3">
       <div class="dash-card">
         <div class="dash-card-title"><span>Experiment Progress</span><small>${metricName} over ${expCount} runs</small></div>
@@ -4307,7 +4345,6 @@ function renderDashboard(){
         ${buildMetrics()}
       </div>
     </div>
-
     <div class="dash-row cols-2">
       <div class="dash-card">
         <div class="dash-card-title"><span>Model Leaderboard</span><small>${leaders.length} models</small></div>
@@ -4318,7 +4355,6 @@ function renderDashboard(){
         ${gapRows.length?buildGaps():'<div style="color:var(--text-3);font-size:12px">No train/test split data available</div>'}
       </div>
     </div>
-
     <div class="dash-card" style="margin-top:0">
       <div class="dash-card-title"><span>Run Intelligence</span></div>
       <div class="dash-meta-grid">
@@ -4330,9 +4366,9 @@ function renderDashboard(){
         <div class="dash-meta-item"><div class="dash-meta-key">Provider</div><div class="dash-meta-val">${esc(provider)}</div></div>
       </div>
     </div>
-
   </div>`;
 }
+
 
 // ═══════════════════════════════════════════
 // RUN HISTORY (sidebar)
