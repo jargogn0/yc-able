@@ -1125,7 +1125,8 @@ Return STRICT JSON with keys:
   ],
   "experiment_directions": ["direction1", "direction2", "direction3"],
   "risks": ["risk1", "risk2"],
-  "first_iteration_plan": "one concise paragraph"
+  "first_iteration_plan": "one concise paragraph",
+  "agent_message": "2-4 sentence natural message to the user: briefly say what you found in the data, what you'd build and why, any key risk worth flagging, then invite them to type go to start or tell you what to change. Be direct and specific — mention the actual target column and task type. No bullet points, no markdown headers, no bold."
 }}
 
 DATA PROFILE:
@@ -1145,7 +1146,7 @@ INFERRED OBJECTIVE:
 - domain: {obj['domain']}
 - reasoning: {obj['reasoning']}
 """,
-        1200
+        1500
     )
     advice = _extract_json_blob(advice_raw)
     return {

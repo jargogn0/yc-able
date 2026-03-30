@@ -1086,10 +1086,17 @@ def _fallback_discovery(profile: dict, hint: str = ""):
             },
         ],
     }
+    _risks_txt = " ".join(discovery.get("risks", []))
+    _agent_msg = (
+        f"I've scanned your dataset ({profile.get('rows',0):,} rows, {profile.get('cols',0)} columns). "
+        f"The most natural objective looks like predicting {target} — I'd start with a regression baseline and tune from there. "
+        + (f"{_risks_txt} " if _risks_txt else "")
+        + "Type \"go\" to kick off training, or tell me if you'd like a different target or approach."
+    )
     return {
         "profile": profile,
         "objective": objective,
-        "discovery": discovery,
+        "discovery": {**discovery, "agent_message": _agent_msg},
         "raw": "fallback",
         "used_fallback": True,
         "warning": hint and "Used fallback discovery; user hint captured." or "Used fallback discovery; add API key for richer guidance.",
