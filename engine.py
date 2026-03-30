@@ -1255,6 +1255,33 @@ INFERRED OBJECTIVE:
         1500
     )
     advice = _extract_json_blob(advice_raw)
+
+    # ── Deterministic post-process: fix task language and inject competition context ──
+    if isinstance(advice, dict):
+        _msg = advice.get("agent_message", "") or ""
+        _task = obj.get("task", "")
+        _is_comp = "competition" in (user_hint or "").lower() or "kaggle" in (user_hint or "").lower()
+
+        # Fix wrong task language: if task is classification, replace "regression" language
+        if "classif" in _task.lower():
+            _msg = re.sub(r'\bregression baseline\b', 'classification baseline', _msg, flags=re.IGNORECASE)
+            _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
+            _msg = re.sub(r'\bstart with a regression\b', 'start with a classification', _msg, flags=re.IGNORECASE)
+
+        # Inject Kaggle competition workflow if not already mentioned
+        if _is_comp and "submission" not in _msg.lower():
+            _comp_sent = (
+                " This is a Kaggle competition: I'll train on train.csv, "
+                "generate predictions for test.csv, and save a submission.csv ready to submit."
+            )
+            # Insert before the last sentence ("Type go to start...")
+            if "type" in _msg.lower() and "go" in _msg.lower():
+                _parts = _msg.rstrip().rstrip('.').rsplit('.', 1)
+                _msg = (_parts[0].rstrip() + '.' + _comp_sent + ' ' + _parts[-1].strip()) if len(_parts) > 1 else (_msg + _comp_sent)
+            else:
+                _msg = _msg.rstrip() + _comp_sent
+
+        advice["agent_message"] = _msg
     return {
         "profile": profile,
         "objective": obj,
