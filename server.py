@@ -1230,12 +1230,22 @@ async def upload_media_dataset(file: UploadFile = File(...)):
                         "primary": str(primary),
                         "all_files": [str(f) for f in tabular_files],
                     }
+                    # Include a small preview (first 100 rows) so the frontend can show a data table
+                    try:
+                        import io as _io
+                        _preview_df = __import__("pandas").read_csv(primary, nrows=100)
+                        _preview_buf = _io.StringIO()
+                        _preview_df.to_csv(_preview_buf, index=False)
+                        _preview_csv = _preview_buf.getvalue()
+                    except Exception:
+                        _preview_csv = ""
                     return {
                         "dataset_id": dataset_id,
                         "type": "tabular_dir",
                         "filename": primary.name,
                         "all_files": all_names,
                         "num_files": len(tabular_files),
+                        "preview_csv": _preview_csv,
                     }
             except Exception as e:
                 # Fall through to media profiling if read/convert fails

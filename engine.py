@@ -507,17 +507,26 @@ def profile_dataset(csv_path):
 
         if typ == "numeric":
             num = pd.to_numeric(s, errors='coerce').dropna()
+            def _sf(v, digits=4):
+                """Safe float — converts NaN/inf to None for JSON compliance."""
+                try:
+                    f = float(v)
+                    if f != f or f == float('inf') or f == float('-inf'):
+                        return None
+                    return round(f, digits)
+                except Exception:
+                    return None
             col_info.update(
-                mean=round(float(num.mean()), 4),
-                std=round(float(num.std()), 4),
-                min=round(float(num.min()), 4),
-                max=round(float(num.max()), 4),
-                p25=round(float(num.quantile(0.25)), 4),
-                p50=round(float(num.quantile(0.50)), 4),
-                p75=round(float(num.quantile(0.75)), 4),
-                skew=round(float(num.skew()), 3),
+                mean=_sf(num.mean()),
+                std=_sf(num.std()),
+                min=_sf(num.min()),
+                max=_sf(num.max()),
+                p25=_sf(num.quantile(0.25)),
+                p50=_sf(num.quantile(0.50)),
+                p75=_sf(num.quantile(0.75)),
+                skew=_sf(num.skew(), 3),
                 # Serial correlation — high value suggests time-series ordering
-                serial_corr=round(float(num.autocorr(lag=1)) if len(num) > 2 else 0.0, 3),
+                serial_corr=_sf(num.autocorr(lag=1) if len(num) > 2 else 0.0, 3),
             )
         elif typ in ("categorical", "high_cardinality"):
             vc = s.value_counts()
@@ -560,7 +569,9 @@ def profile_dataset(csv_path):
             pairs = (corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
                      .stack().sort_values(ascending=False))
             for (c1, c2), v in pairs.head(8).items():
-                top_correlations.append({"cols": [c1, c2], "corr": round(float(v), 3)})
+                fv = float(v)
+                if fv == fv and fv != float('inf'):  # skip NaN/inf
+                    top_correlations.append({"cols": [c1, c2], "corr": round(fv, 3)})
         except Exception:
             pass
 
@@ -1347,6 +1358,36 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
         for h in history
     ) if history else "- (none)"
 
+    # Pre-compute Kaggle competition block
+    _is_kaggle = bool(obj.get('is_kaggle'))
+    _kaggle_test = obj.get('kaggle_test_file') or ''
+    _kaggle_sample = obj.get('kaggle_sample_file') or ''
+    if _is_kaggle and _kaggle_test:
+        _sample_line = (
+            f"  sample_sub = pd.read_csv(os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_sample)}))"
+            if _kaggle_sample else
+            "  # Read sample_submission.csv to get the required output column names"
+        )
+        _kaggle_train_block = f"""
+KAGGLE COMPETITION MODE (MANDATORY — this is a Kaggle submission task):
+- DATA_PATH points to the TRAINING file. Train and tune on it as normal.
+- After fitting your best model, ALSO generate predictions for the unlabelled test set:
+  import os
+  test_path = os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_test)})
+  test_df = pd.read_csv(test_path)
+  # Apply the EXACT same preprocessing pipeline (fitted on train only — no data leakage).
+  test_features = <your_preprocessor>.transform(test_df[feature_cols])
+  test_preds = model.predict(test_features)
+- Save submission.csv matching the required format:
+{_sample_line}
+  submission = pd.DataFrame({{sample_sub.columns[0]: test_df[sample_sub.columns[0]], sample_sub.columns[-1]: test_preds}})
+  submission.to_csv('submission.csv', index=False)
+  print(f"submission.csv saved — {{len(submission)}} rows")
+- Your internal train/val split is only for metric estimation. The real evaluation is on {repr(_kaggle_test)}.
+"""
+    else:
+        _kaggle_train_block = ""
+
     # Pre-compute media-specific strings (avoids backslash-in-f-string issues on Python < 3.12)
     _is_media = bool(profile.get('is_media'))
     if _is_media:
@@ -1465,7 +1506,7 @@ KARPATHY DISCIPLINE (MANDATORY):
   # If a date/time column was found, insert it as first column: pred_df.insert(0, 'date', test_dates_values)
   pred_df.to_csv('predictions.csv', index=False)
   This enables the forecast comparison table in the UI. Never skip this.
-
+{_kaggle_train_block}
 - OPTIMIZE FOR THE PRIMARY METRIC: {obj.get('metric','rmse').upper()} — not RMSE unless that IS the metric.
   In LightGBM: metric='{obj.get('metric','rmse')}' in params. In XGBoost: eval_metric='{obj.get('metric','rmse')}'.
   In sklearn GridSearchCV/cross_val_score: scoring='neg_{obj.get('metric','rmse')}' or a custom scorer.
@@ -3259,6 +3300,20 @@ def run_research(
     artifacts = initialize_workspace_artifacts(ws, csv_path, profile, obj)
     log.engine("Initialized project artifacts (prepare.py, analysis.ipynb, progress.png)")
 
+    # ── Detect Kaggle / competition context ──────────────────────────────
+    _hint_lower = (user_hint or "").lower()
+    _is_kaggle = "kaggle" in _hint_lower or "competition" in _hint_lower
+    # Also auto-detect from workspace files: train + test + sample_submission = Kaggle pattern
+    _ws = pathlib.Path(ws)
+    _ws_csv_names = {p.name.lower() for p in _ws.glob("*.csv")}
+    if not _is_kaggle and "test.csv" in _ws_csv_names and any(n.startswith("sample") for n in _ws_csv_names):
+        _is_kaggle = True
+    _kaggle_files = [p.name for p in _ws.glob("*.csv") if p.name.lower() != pathlib.Path(csv_path).name.lower()]
+    _kaggle_test_file = next((n for n in _kaggle_files if "test" in n.lower()), None)
+    _kaggle_sample_file = next((n for n in _kaggle_files if "sample" in n.lower() or "submission" in n.lower()), None)
+    if _is_kaggle:
+        log.engine(f"Kaggle competition detected — test={_kaggle_test_file}, sample={_kaggle_sample_file}")
+
     # ── INIT: program.md (mutable spec) + train.py (the ONLY file AI edits) ──
     history = []
     insights = []
@@ -3270,6 +3325,9 @@ def run_research(
     obj["reliability_mode"] = mode
     obj["execution_policy"] = mode_cfg["policy"]
     obj["time_budget"] = TIME_BUDGET
+    obj["is_kaggle"] = _is_kaggle
+    obj["kaggle_test_file"] = _kaggle_test_file
+    obj["kaggle_sample_file"] = _kaggle_sample_file
     no_improve_rounds = 0
     consecutive_crashes = 0
 
