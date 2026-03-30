@@ -2564,7 +2564,7 @@ async function deployAsAPI(runId){
     const a=document.createElement('a');a.href=url;a.download=`19labs_api_${runId.slice(0,8)}.zip`;a.click();URL.revokeObjectURL(url);
     chat('ai',`<strong>API server ready!</strong> Your <code>api_server.zip</code> contains:<br><br>• <code>inference_server.py</code> — FastAPI server with <code>/predict</code> &amp; <code>/health</code><br>• <code>Dockerfile</code> — container-ready<br>• <code>railway.json</code> — one-click Railway deploy<br>• <code>README.md</code> — deployment instructions<br><br>Deploy in 1 command: <code>railway login &amp;&amp; railway up</code>`);
     toast('API server downloaded','ok',5000);
-  }catch(e){typing(false);chat('err',`Deploy failed: ${esc(e.message.slice(0,80))}`);toast('API generation failed','err')}
+  }catch(e){typing(false);chat('err',`Deploy failed: ${esc(e.message.slice(0,80))}`)}
 }
 
 // ═══════════════════════════════════════════
@@ -2756,7 +2756,6 @@ async function runDiscover(hint){
   }catch(e){
     typing(false);chat('err',`Analysis failed: ${esc(e.message)}`);setBadge('ERROR','err');
     sbUpdate({status:'Analysis failed',running:false,error:true});
-    toast(`Analysis failed: ${e.message.slice(0,60)}`,'err');
   }
 }
 
@@ -2998,7 +2997,6 @@ async function launchRun(){
   }catch(e){
     chat('err',`Run failed: ${esc(e.message)}`);setBadge('ERROR','err');document.getElementById('cdot').className='chat-dot';
     addRunHistory(S.runId||'?','error','Failed');
-    toast(`Run failed: ${e.message.slice(0,80)}`,'err',6000);
     sbUpdate({status:'Error',running:false,error:true,stopTimer:true});
   }
   S.running=false;S.continuous=false;
@@ -3021,10 +3019,10 @@ function procMsg(d){
     return;
   }
 
-  if(msg.includes('Profiling dataset')){setProg(10);toast('Profiling dataset...','info',2000)}
-  else if(msg.includes('Inferring task')){setProg(22);toast('Inferring task type...','info',2000)}
+  if(msg.includes('Profiling dataset'))setProg(10);
+  else if(msg.includes('Inferring task'))setProg(22);
   else if(msg.includes('objective.md'))setProg(30);
-  else if(msg.includes('Generating report')){setProg(85);toast('Generating final report...','info',3000)}
+  else if(msg.includes('Generating report'))setProg(85);
   else if(msg.includes('Git repo initialized'))toast('Git initialized — version control active','ok',3000);
   else if(msg.includes('Git commit')&&msg.includes('KEEP'))toast('Committed — experiment kept','ok',2500);
   else if(msg.includes('Git reset'))toast('Reverted to last good state','warn',3000);
@@ -3061,10 +3059,10 @@ function procMsg(d){
         updStatus();
       }
     }
-    if(msg.includes('recovery succeeded'))toast('Auto-repair succeeded','ok',3000);
+    if(msg.includes('recovery succeeded')){}// silent — agent narrates this
   }
-  if(tag==='error'){S.m.fail++;updStatus();toast('Experiment failed — auto-repairing...','warn',3000)}
-  if(msg.includes('hard resetting')){chat('ai','<strong>3 crashes in a row</strong> — hard resetting to last good checkpoint via git');toast('Hard reset — 3 crashes','err',4000)}
+  if(tag==='error'){S.m.fail++;updStatus()}
+  if(msg.includes('hard resetting')){chat('ai','<strong>3 crashes in a row</strong> — hard resetting to last good checkpoint via git')}
   if(msg.includes('train.py written')||msg.includes('Updated requirements')){
     fetchTrainPy();
   }
@@ -5263,23 +5261,8 @@ async function handleFile(f,preloadedText){
   showTransformBar();
   stab('data');
 
-  const numCols=S.cols.filter(c=>S.colTypes[c]==='numeric');
-  const catCols=S.cols.filter(c=>S.colTypes[c]==='categorical');
-  const lastNum=numCols.length?numCols[numCols.length-1]:'';
-
-  let msg=`Loaded <strong>${esc(f.name)}</strong> — ${S.totalRows.toLocaleString()} rows, ${S.cols.length} columns.`;
-  msg+=`<br><br>`;
-  msg+=`<strong>Numeric columns:</strong> ${numCols.length?numCols.map(c=>`<code>${esc(c)}</code>`).join(', '):'none'}`;
-  msg+=`<br><strong>Categorical columns:</strong> ${catCols.length?catCols.map(c=>`<code>${esc(c)}</code>`).join(', '):'none'}`;
-  if(lastNum){
-    msg+=`<br><br>Looks like <code>${esc(lastNum)}</code> could be a prediction target. Want me to predict that, or do you have something else in mind?`;
-    msg+=`<br><br>Say <strong>"go"</strong> to let me handle everything, or describe your specific goal.`;
-  } else {
-    msg+=`<br><br>What would you like to do with this data?`;
-  }
-  // On mobile: show workspace so user sees data preview, then switch to chat for the AI message
-  if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),600);}
-  chat('ai',msg);
+  // On mobile: briefly show data preview then switch to chat for agent response
+  if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),800);}
   autoDiscover();
 }
 
