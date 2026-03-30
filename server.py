@@ -1048,36 +1048,49 @@ def _fallback_discovery(profile: dict, hint: str = ""):
     _hint_lo = (hint or "").lower()
     _is_comp = "competition" in _hint_lo or "kaggle" in _hint_lo
 
-    # Build a smart, natural message from the actual data
-    _balance_note = ""
+    # Build a smart, signal-driven message from the actual data
+    _balance_pct = 0
+    _majority_class = ""
     if target in class_balance:
-        _vals = list(class_balance[target].values())
-        _majority = max(_vals) if _vals else 0
-        if _majority > 0.7:
-            _balance_note = f" Class is {_majority*100:.0f}% imbalanced — AUC and stratified folds are the right call."
+        _bal_items = list(class_balance[target].items())
+        if _bal_items:
+            _majority_class, _majority_val = max(_bal_items, key=lambda x: x[1])
+            _balance_pct = _majority_val
 
-    _signal_note = ""
-    for s in signals:
-        if "IMBALANCED" in s and target in s:
-            _balance_note = " Class imbalance detected — use stratified CV and AUC."
-            break
-        if "DATETIME" in s:
-            _signal_note = " Time series structure detected."
-            break
+    _has_datetime = any("DATETIME" in s for s in signals)
+    _has_imbalance = _balance_pct > 0.7 or any("IMBALANCED" in s for s in signals)
+    _high_dim = cols > 50
+    _large = rows > 100_000
+
+    # Pick the single most notable data characteristic as the opening hook
+    if _has_imbalance and _balance_pct > 0:
+        _hook = f"'{target}' is {_balance_pct*100:.0f}% '{_majority_class}' — heavy class imbalance, so AUC with stratified folds is the way to go."
+    elif _has_datetime:
+        _hook = f"There's a datetime column in here — this has time-series structure, so order matters for validation."
+    elif _high_dim:
+        _hook = f"{cols} features is a lot — feature selection and regularization will matter to avoid overfitting."
+    elif _large:
+        _hook = f"{rows:,} rows is solid — enough data to be confident in CV estimates without too much overfitting risk."
+    elif numeric and len(numeric) > len(categorical):
+        _hook = f"Mostly numeric features ({len(numeric)} of them) targeting '{target}' — clean setup for gradient boosting."
+    elif categorical:
+        _hook = f"{len(categorical)} categorical features — encoding strategy will matter here, especially for high-cardinality ones."
+    else:
+        _hook = f"Predicting '{target}' from {cols} features across {rows:,} rows."
 
     if _is_comp:
         _agent_msg = (
-            f"Kaggle competition with {rows:,} training rows, {cols} features, target is '{target}'. "
-            f"{'Binary classification' if 'binary' in task.lower() else task} task — "
-            f"use StratifiedKFold CV to validate on train.csv, then predict test.csv and save submission.csv."
-            f"{_balance_note} Type go to start."
+            f"Kaggle competition — {rows:,} training rows, predict '{target}' for test.csv, save submission.csv. "
+            f"{_hook} "
+            f"Type go to kick it off."
         )
     else:
+        _task_label = "binary classification" if "binary" in task.lower() else ("classification" if is_classification else "regression")
         _agent_msg = (
-            f"{rows:,} rows, {cols} features, predicting '{target}' ({'classification' if is_classification else 'regression'})."
-            f"{_balance_note}{_signal_note} "
+            f"{_hook} "
+            f"{'Treating this as ' + _task_label + '.' if not _has_imbalance and not _has_datetime else ''} "
             f"Type go to start or tell me what to change."
-        )
+        ).replace("  ", " ").strip()
 
     objective = {
         "domain": "General",

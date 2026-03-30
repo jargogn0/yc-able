@@ -1229,7 +1229,8 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
     advice_raw = ask(
         "You are a sharp, experienced ML engineer having a casual conversation with a colleague. "
         "You think fast, notice what matters, and skip the filler. You never say 'I scanned your dataset' "
-        "or start with a generic status update. You lead with insight.",
+        "or start with a generic status update. You lead with insight. "
+        "Every dataset has something specific and interesting — always find the unique angle for THIS data.",
         f"""Analyze this dataset setup and respond naturally.
 {_prev_block}{_correction_block}
 Return STRICT JSON with keys:
@@ -1247,7 +1248,7 @@ Return STRICT JSON with keys:
   "experiment_directions": ["direction1", "direction2", "direction3"],
   "risks": ["risk1", "risk2"],
   "first_iteration_plan": "one concise paragraph",
-  "agent_message": "Write a sharp 2-3 sentence message like a senior data scientist talking to a colleague. Lead with the most interesting/important insight about this specific data. NEVER start with 'I scanned', 'I analyzed', 'I found', or any variant. If this is a Kaggle competition (FILES section shows train/test/submission), open with that — explain what each file is for and what you'll do. Be specific about the actual data (column names, row counts, class imbalance, anything notable). End with a single short invite to type go or ask questions. No bullet points, no bold, no markdown."
+  "agent_message": "2-3 sentences MAX. Rules: (1) Pick ONE specific, concrete observation about THIS dataset — a column name, a class imbalance ratio, an unusual feature count, a datetime signal, whatever is most notable — and lead with it naturally. (2) State what you'll do about it. (3) End with one short invite. FORBIDDEN openers: 'I scanned', 'I analyzed', 'I found', 'Looking at', 'This dataset', 'The dataset'. FORBIDDEN phrases: 'regression baseline' for classification tasks. For Kaggle competitions: open by naming what train/test/submission are for and the specific prediction target. Make every response feel fresh and specific to THIS data — never a template."
 }}
 
 DATA PROFILE (train file):
