@@ -2281,6 +2281,7 @@ function stab(name){
   if(em)em.style.display=(name==='data'&&!S.cols)?'':'none';
   if(name==='code'&&monacoEditor)monacoEditor.layout();
   if(name==='results'&&S.runId)loadForecastTable(S.runId);
+  if(name==='data')renderDataDashboard();
   if(name==='dash')renderDashboard();
 }
 
@@ -2386,9 +2387,9 @@ function parseCSV(text){
   return{headers,rows:rows.map(r=>r.map(v=>String(v).trim())),types,nulls,totalRows};
 }
 
-function showDataPreview(){ renderDashboard(); }
+function showDataPreview(){ renderDataDashboard(); }
 
-function renderDashboard(){
+function renderDataDashboard(){
   if(!S.cols||!S.rows)return;
   const el=document.getElementById('p-data');
 
