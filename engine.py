@@ -1031,13 +1031,35 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
         if _m and _m.group(1).lower() in _headers_lo:
             _forced_target = _headers_lo[_m.group(1).lower()]
         if not _forced_target:
-            # Pattern 2: natural language — "predict churn", "predicting churn",
-            # "target is churn", "target column = churn", "target column: churn"
-            _m2 = re.search(
-                r'(?:predict(?:ing)?|target(?:\s+(?:is|column\s*[=:]?))?)\s+["\']?(\w+)["\']?',
-                hint, re.IGNORECASE)
-            if _m2 and _m2.group(1).lower() in _headers_lo:
-                _forced_target = _headers_lo[_m2.group(1).lower()]
+            # Pattern 2: scan ALL words in the hint for any column name match.
+            # If multiple columns are mentioned, prefer the one that is a known
+            # target-like name or appears after a predict/target keyword.
+            _TARGET_NAMES = {
+                "churn","target","label","class","y","outcome","default","fraud",
+                "survived","response","converted","clicked","purchased","defaulted",
+                "attrition","cancelled","retained","approved","spam","toxic",
+                "sentiment","result","status","success",
+            }
+            _hint_words = re.findall(r'\w+', hint.lower())
+            # First pass: exact column name mentioned anywhere in hint
+            _mentioned = [_headers_lo[w] for w in _hint_words if w in _headers_lo]
+            if _mentioned:
+                # Prefer known target names, then columns after "predict/target" keywords
+                _known = [c for c in _mentioned if c.lower() in _TARGET_NAMES]
+                if _known:
+                    _forced_target = _known[0]
+                else:
+                    # Find column name that appears after "predict" / "predicting" / "forecast"
+                    _predict_idx = next(
+                        (i for i, w in enumerate(_hint_words)
+                         if w in ("predict","predicting","forecast","forecasting","classify","classifying")),
+                        None)
+                    if _predict_idx is not None:
+                        _after = [_headers_lo[w] for w in _hint_words[_predict_idx+1:]
+                                  if w in _headers_lo]
+                        _forced_target = _after[0] if _after else _mentioned[0]
+                    else:
+                        _forced_target = _mentioned[0]
 
     if _forced_target:
         _override_block = (
