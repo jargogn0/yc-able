@@ -2738,6 +2738,69 @@ async def predict_csv(run_id: str, request: Request):
     return await predict(run_id, req)
 
 
+@app.post("/api/run/{run_id}/predict-file")
+async def predict_file(run_id: str, file: UploadFile = File(...)):
+    """Accept a CSV file upload, run predictions with the stored model, return submission.csv."""
+    import joblib, pandas as pd, numpy as np, io as _io
+    run = _get_run_or_404(run_id)
+    result = run.get("result")
+    if not result:
+        raise HTTPException(400, "Run not finished yet")
+
+    model_path = _find_model_path(run_id, run)
+    if not model_path:
+        raise HTTPException(404, "No trained model found. Run a training job first.")
+
+    try:
+        model = joblib.load(model_path)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load model: {e}")
+
+    contents = await file.read()
+    try:
+        df = pd.read_csv(_io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(400, f"Could not parse CSV: {e}")
+
+    obj = result.get("objective") or result.get("best") or {}
+    target = obj.get("target", "")
+
+    # Keep ID column aside so we can include it in submission
+    id_col = next((c for c in df.columns if c.lower() in ("id", "customerid", "customer_id", "passengerid")), None)
+    id_vals = df[id_col] if id_col else pd.RangeIndex(len(df))
+
+    # Drop target if present
+    features = df.drop(columns=[c for c in [target] if c and c in df.columns])
+
+    # Try prediction; fallback to label-encoded version
+    preds = None
+    try:
+        preds = model.predict(features)
+    except Exception:
+        try:
+            from sklearn.preprocessing import LabelEncoder
+            fe = features.copy()
+            for col in fe.select_dtypes(include=["object", "category"]).columns:
+                le = LabelEncoder()
+                fe[col] = le.fit_transform(fe[col].astype(str))
+            fe = fe.fillna(0)
+            preds = model.predict(fe)
+        except Exception as e2:
+            raise HTTPException(400, f"Prediction failed: {e2}")
+
+    # Build submission dataframe
+    sub_target = target or "prediction"
+    sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
+
+    csv_out = sub.to_csv(index=False)
+    filename = "submission.csv"
+    return StreamingResponse(
+        _io.BytesIO(csv_out.encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── TIER 2: URL Data Connector ────────────────────────────────
 
 class FetchURLRequest(BaseModel):

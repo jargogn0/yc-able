@@ -2285,6 +2285,7 @@ function stab(name){
   if(name==='results'&&S.runId)loadForecastTable(S.runId);
   if(name==='data')renderDataTable();
   if(name==='dash')renderDashboard();
+  if(name==='predict')showPredictPanel();
 }
 
 // ═══════════════════════════════════════════
@@ -4890,8 +4891,54 @@ function showPredictPanel(){
     el.innerHTML=`<div class="empty-panel"><div class="empty-icon">🔮</div><div class="empty-title">No model ready</div><div class="empty-sub">Complete a training run first, then you can test predictions on new data here.</div></div>`;
     return;
   }
-  const target=S.discovery?.objective?.target||'target';
-  el.innerHTML=`<div class="predict-panel"><h3>Test Predictions</h3><p>Paste CSV data (with headers) or JSON array of objects. The <strong>${esc(S.best.model)}</strong> model will predict <code>${esc(target)}</code> for each row.</p><textarea class="predict-textarea" id="predict-input" placeholder="col1,col2,col3\n1.0,category_a,5\n2.5,category_b,8\n\nOR paste JSON:\n[{&quot;col1&quot;: 1.0, &quot;col2&quot;: &quot;category_a&quot;}]"></textarea><div class="predict-actions"><button class="abtn p" onclick="runPrediction()">Predict</button><button class="abtn" onclick="loadSampleForPredict()">Load sample from dataset</button><span id="predict-status" style="font-size:11px;color:var(--text-3)"></span></div><div class="predict-result" id="predict-result"></div></div>`;
+  const target=S.best?.target||S.discovery?.objective?.target||S.objective?.target||'target';
+  const model=S.best?.model||'Model';
+  el.innerHTML=`<div class="predict-panel">
+<h3>Predict</h3>
+<p style="margin:0 0 16px;font-size:12px;color:var(--text-2)"><strong>${esc(model)}</strong> → predicting <code>${esc(target)}</code></p>
+
+<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+  <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text-1)">Bulk CSV prediction</div>
+  <p style="font-size:11px;color:var(--text-3);margin:0 0 10px">Upload test.csv — model predicts every row and returns a downloadable submission.csv</p>
+  <input type="file" id="predict-file-input" accept=".csv" style="display:none" onchange="uploadAndPredict()">
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="abtn p" onclick="document.getElementById('predict-file-input').click()">Upload CSV file</button>
+    <span id="predict-file-status" style="font-size:11px;color:var(--text-3)"></span>
+  </div>
+</div>
+
+<div style="border:1px solid var(--border);border-radius:8px;padding:16px">
+  <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text-1)">Single / small batch</div>
+  <textarea class="predict-textarea" id="predict-input" placeholder="col1,col2,col3&#10;1.0,category_a,5&#10;2.5,category_b,8&#10;&#10;OR paste JSON:&#10;[{&quot;col1&quot;: 1.0, &quot;col2&quot;: &quot;category_a&quot;}]"></textarea>
+  <div class="predict-actions"><button class="abtn p" onclick="runPrediction()">Predict</button><button class="abtn" onclick="loadSampleForPredict()">Load sample</button><span id="predict-status" style="font-size:11px;color:var(--text-3)"></span></div>
+  <div class="predict-result" id="predict-result"></div>
+</div>
+</div>`;
+}
+
+async function uploadAndPredict(){
+  const inp=document.getElementById('predict-file-input');
+  const st=document.getElementById('predict-file-status');
+  if(!inp.files||!inp.files[0])return;
+  const file=inp.files[0];
+  st.textContent=`Uploading ${file.name}...`;
+  const fd=new FormData();
+  fd.append('file',file);
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${S.runId}/predict-file`,{method:'POST',body:fd});
+    if(!r.ok){const e=await r.json();throw new Error(e.detail||e.error||'Failed');}
+    const blob=await r.blob();
+    const cd=r.headers.get('content-disposition')||'';
+    const fname=cd.match(/filename="?([^"]+)"?/)?.[1]||'submission.csv';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+    URL.revokeObjectURL(url);
+    st.textContent=`Done — ${fname} downloaded`;
+    toast(`${fname} ready`,'ok',3000);
+  }catch(e){
+    st.textContent=`Failed: ${e.message}`;
+    toast(`Prediction failed: ${e.message.slice(0,60)}`,'err');
+  }
 }
 
 function loadSampleForPredict(){
