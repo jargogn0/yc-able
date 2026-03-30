@@ -303,6 +303,39 @@ input[type=file]{display:none}
 .dp-col-null{font-size:10px;color:var(--text-3)}
 .dp-cols{display:flex;flex-direction:column;gap:4px;margin-top:12px}
 
+/* ── DASHBOARD ── */
+.db-wrap{padding:16px;display:flex;flex-direction:column;gap:20px}
+.db-kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.db-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px}
+.db-kpi-v{font-size:20px;font-weight:800;font-family:var(--mono);letter-spacing:-.5px;line-height:1}
+.db-kpi-l{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+.db-section-title{font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.db-section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+.db-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.db-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;display:flex;flex-direction:column;gap:8px;animation:si .2s ease}
+.db-card-hd{display:flex;align-items:center;gap:6px;min-width:0}
+.db-col-name{font-size:13px;font-weight:700;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.db-type-badge{font-size:8px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.5px;flex-shrink:0}
+.db-type-badge.num{background:rgba(59,130,246,.12);color:var(--accent);border:1px solid rgba(59,130,246,.2)}
+.db-type-badge.cat{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
+.db-null-badge{font-size:8px;font-weight:600;color:var(--amber);background:var(--amber-soft);border:1px solid rgba(245,158,11,.2);padding:2px 6px;border-radius:4px;flex-shrink:0}
+.db-stat-row{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.db-mini-stat{flex:1;padding:6px 8px;text-align:center;border-right:1px solid var(--border)}
+.db-mini-stat:last-child{border-right:none}
+.db-ms-l{display:block;font-size:8.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.db-ms-v{display:block;font-size:11px;font-weight:700;font-family:var(--mono);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.db-chart{background:var(--bg);border-radius:var(--r);padding:6px 4px 2px;overflow:hidden}
+.db-corr{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px}
+.db-corr-legend{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:10px;color:var(--text-3)}
+.db-corr-grad{width:80px;height:7px;background:linear-gradient(to right,#ef4444,#27272a,#3b82f6);border-radius:3px;flex-shrink:0}
+.db-preview{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden}
+.db-preview-hd{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.db-preview-hd:hover{background:var(--surface-2)}
+.db-preview-hd span{font-size:12px;font-weight:600;color:var(--text-2)}
+.db-preview-hd .db-toggle{font-size:10px;color:var(--text-3)}
+.db-preview-body{display:none;overflow-x:auto}
+.db-preview-body.open{display:block}
+
 /* Experiment feed */
 .exp-feed{padding:16px;display:flex;flex-direction:column;gap:8px}
 .exp-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;display:flex;align-items:center;gap:14px;animation:si .25s ease;cursor:pointer;transition:all var(--t)}
@@ -2346,30 +2379,214 @@ function parseCSV(text){
   return{headers,rows:rows.map(r=>r.map(v=>String(v).trim())),types,nulls,totalRows};
 }
 
-function showDataPreview(){
-  if(!S.cols)return;
+function showDataPreview(){ renderDashboard(); }
+
+function renderDashboard(){
+  if(!S.cols||!S.rows)return;
   const el=document.getElementById('p-data');
-  const numCols=S.cols.filter(c=>S.colTypes[c]==='numeric').length;
-  const catCols=S.cols.length-numCols;
-  let h=`<div class="dp-stats">
-    <div class="dp-stat"><div class="dp-stat-l">Rows</div><div class="dp-stat-v">${S.totalRows.toLocaleString()}</div></div>
-    <div class="dp-stat"><div class="dp-stat-l">Columns</div><div class="dp-stat-v">${S.cols.length}</div></div>
-    <div class="dp-stat"><div class="dp-stat-l">Numeric</div><div class="dp-stat-v">${numCols}</div></div>
-    <div class="dp-stat"><div class="dp-stat-l">Categorical</div><div class="dp-stat-v">${catCols}</div></div>
+
+  // ── column index
+  const ci=c=>S.cols.indexOf(c);
+
+  // ── numeric values (non-null) for a column
+  function numVals(col){
+    const idx=ci(col);
+    return S.rows.map(r=>{const v=String(r[idx]||'').trim();return v&&v!==''&&v.toLowerCase()!=='nan'&&v.toLowerCase()!=='null'&&v!=='NA'?Number(v):NaN}).filter(v=>!isNaN(v));
+  }
+
+  // ── string values (non-null) for a column
+  function catVals(col){
+    const idx=ci(col);
+    return S.rows.map(r=>String(r[idx]||'').trim()).filter(v=>v&&v!==''&&v.toLowerCase()!=='nan'&&v.toLowerCase()!=='null'&&v!=='NA');
+  }
+
+  // ── numeric stats
+  function colStats(vals){
+    if(!vals.length)return{min:0,max:0,mean:0,median:0,std:0};
+    const s=[...vals].sort((a,b)=>a-b);
+    const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+    const mid=Math.floor(s.length/2);
+    const median=s.length%2?s[mid]:(s[mid-1]+s[mid])/2;
+    const std=Math.sqrt(vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length);
+    return{min:s[0],max:s[s.length-1],mean,median,std};
+  }
+
+  // ── value counts for categorical
+  function valCounts(col){
+    const m={};
+    catVals(col).forEach(v=>{m[v]=(m[v]||0)+1});
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  }
+
+  // ── format number compactly
+  function fmt(v){
+    if(v===undefined||v===null||isNaN(v))return'—';
+    const a=Math.abs(v);
+    if(a>=1e9)return`${(v/1e9).toFixed(1)}B`;
+    if(a>=1e6)return`${(v/1e6).toFixed(1)}M`;
+    if(a>=1e3)return`${(v/1e3).toFixed(1)}k`;
+    if(a===0)return'0';
+    return v%1===0?String(v):(a<0.01?v.toExponential(1):v.toFixed(a<1?3:2));
+  }
+
+  // ── histogram SVG (numeric)
+  function histogram(vals){
+    if(!vals.length)return`<div style="padding:16px;text-align:center;font-size:10px;color:var(--text-3)">no data</div>`;
+    const {min,max}=colStats(vals);
+    if(min===max)return`<div style="padding:8px;font-size:10px;color:var(--text-3);text-align:center">constant: ${fmt(min)}</div>`;
+    const BINS=Math.min(18,Math.max(5,Math.ceil(Math.sqrt(vals.length))));
+    const bw=(max-min)/BINS;
+    const counts=new Array(BINS).fill(0);
+    vals.forEach(v=>{let b=Math.min(BINS-1,Math.floor((v-min)/bw));counts[b]++});
+    const peak=Math.max(...counts);
+    const W=220,H=64,pl=2,pr=2,pt=4,pb=14;
+    const cw=(W-pl-pr)/BINS,ch=H-pt-pb;
+    let bars=counts.map((c,i)=>{
+      const x=pl+i*cw,bh=peak?(c/peak)*ch:0,y=pt+ch-bh;
+      // color by density: lighter = more
+      const op=0.45+0.55*(peak?c/peak:0);
+      return`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,cw-0.8).toFixed(1)}" height="${bh.toFixed(1)}" fill="#3b82f6" opacity="${op.toFixed(2)}" rx="1"/>`;
+    }).join('');
+    const lx=pl,mx=W/2,rx=W-pr;
+    bars+=`<text x="${lx}" y="${H}" font-size="8" fill="#52525b" font-family="monospace">${fmt(min)}</text>`;
+    bars+=`<text x="${mx}" y="${H}" font-size="8" fill="#52525b" text-anchor="middle" font-family="monospace">${fmt((min+max)/2)}</text>`;
+    bars+=`<text x="${rx}" y="${H}" font-size="8" fill="#52525b" text-anchor="end" font-family="monospace">${fmt(max)}</text>`;
+    return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${bars}</svg>`;
+  }
+
+  // ── horizontal bar chart SVG (categorical)
+  function barChart(vc){
+    const top=vc.slice(0,8);
+    if(!top.length)return`<div style="padding:8px;font-size:10px;color:var(--text-3)">no values</div>`;
+    const maxC=top[0][1];
+    const total=S.rows.length||1;
+    const RH=13,PL=72,PR=36,W=240,PAD=4;
+    const H=top.length*RH+PAD*2;
+    let rects=top.map(([val,cnt],i)=>{
+      const y=PAD+i*RH;
+      const bw=maxC?(cnt/maxC)*(W-PL-PR):0;
+      const pct=Math.round(cnt/total*100);
+      const label=val.length>10?val.slice(0,9)+'…':val;
+      const tc=i===0?'#a78bfa':'#7c6ead';
+      const op=0.5+0.5*(maxC?cnt/maxC:0);
+      return`<text x="${PL-5}" y="${y+RH-3}" font-size="8.5" fill="#71717a" text-anchor="end" font-family="sans-serif">${esc(label)}</text>`+
+        `<rect x="${PL}" y="${y+1}" width="${bw.toFixed(1)}" height="${RH-3}" rx="2" fill="${tc}" opacity="${op.toFixed(2)}"/>`+
+        `<text x="${PL+bw+4}" y="${y+RH-3}" font-size="8" fill="#52525b" font-family="monospace">${cnt>999?fmt(cnt):cnt} (${pct}%)</text>`;
+    }).join('');
+    return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${rects}</svg>`;
+  }
+
+  // ── Pearson correlation
+  function pearson(a,b){
+    const n=a.length;if(!n)return 0;
+    const ma=a.reduce((s,v)=>s+v,0)/n,mb=b.reduce((s,v)=>s+v,0)/n;
+    let num=0,da=0,db=0;
+    for(let i=0;i<n;i++){const ra=a[i]-ma,rb=b[i]-mb;num+=ra*rb;da+=ra*ra;db+=rb*rb}
+    const d=Math.sqrt(da*db);return d?num/d:0;
+  }
+
+  // ── correlation color: red=-1, surface=0, blue=+1
+  function corrColor(r){
+    const t=Math.abs(r),sr=39,sg=39,sb=42;
+    if(r>=0){const er=59,eg=130,eb=246;return`rgb(${Math.round(sr+(er-sr)*t)},${Math.round(sg+(eg-sg)*t)},${Math.round(sb+(eb-sb)*t)})`}
+    const er=239,eg=68,eb=68;return`rgb(${Math.round(sr+(er-sr)*t)},${Math.round(sg+(eg-sg)*t)},${Math.round(sb+(eb-sb)*t)})`;
+  }
+
+  // ── overall numbers
+  const numList=S.cols.filter(c=>S.colTypes[c]==='numeric');
+  const catList=S.cols.filter(c=>S.colTypes[c]==='categorical');
+  const totalMissing=S.cols.reduce((a,c)=>a+(S.colNulls[c]||0),0);
+  const totalCells=(S.rows.length||1)*S.cols.length;
+  const completeness=Math.round((1-totalMissing/totalCells)*100);
+
+  // ── KPI row
+  let h=`<div class="db-kpi-row">
+    <div class="db-kpi"><div class="db-kpi-v">${S.totalRows.toLocaleString()}</div><div class="db-kpi-l">Rows</div></div>
+    <div class="db-kpi"><div class="db-kpi-v">${S.cols.length}</div><div class="db-kpi-l">Columns</div></div>
+    <div class="db-kpi"><div class="db-kpi-v">${numList.length}</div><div class="db-kpi-l">Numeric</div></div>
+    <div class="db-kpi"><div class="db-kpi-v">${catList.length}</div><div class="db-kpi-l">Categorical</div></div>
+    <div class="db-kpi"><div class="db-kpi-v" style="color:${completeness>=95?'#4ade80':completeness>=80?'#f59e0b':'#ef4444'}">${completeness}%</div><div class="db-kpi-l">Complete</div></div>
+    ${totalMissing>0?`<div class="db-kpi"><div class="db-kpi-v" style="color:var(--amber)">${totalMissing.toLocaleString()}</div><div class="db-kpi-l">Missing</div></div>`:''}
   </div>`;
-  h+=`<div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px">Columns</div><div class="dp-cols">`;
-  S.cols.forEach(c=>{
-    const nullPct=S.rows.length?Math.round((S.colNulls[c]||0)/S.rows.length*100):0;
-    h+=`<div class="dp-col-card"><div class="dp-col-name">${esc(c)}</div><div class="dp-col-type">${S.colTypes[c]}</div>${nullPct?`<div class="dp-col-null">${nullPct}% null</div>`:''}</div>`;
+
+  // ── column distributions
+  h+=`<div><div class="db-section-title">Column Profiles</div><div class="db-grid">`;
+  S.cols.forEach(col=>{
+    const type=S.colTypes[col];
+    const nullCnt=S.colNulls[col]||0;
+    const nullPct=S.rows.length?Math.round(nullCnt/S.rows.length*100):0;
+    h+=`<div class="db-card">`;
+    h+=`<div class="db-card-hd"><span class="db-col-name" title="${esc(col)}">${esc(col)}</span><span class="db-type-badge ${type==='numeric'?'num':'cat'}">${type==='numeric'?'NUM':'CAT'}</span>${nullPct?`<span class="db-null-badge">${nullPct}% null</span>`:''}</div>`;
+    if(type==='numeric'){
+      const vals=numVals(col);
+      const st=colStats(vals);
+      h+=`<div class="db-stat-row">
+        <div class="db-mini-stat"><span class="db-ms-l">min</span><span class="db-ms-v">${fmt(st.min)}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">mean</span><span class="db-ms-v">${fmt(st.mean)}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">max</span><span class="db-ms-v">${fmt(st.max)}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">std</span><span class="db-ms-v">${fmt(st.std)}</span></div>
+      </div>`;
+      h+=`<div class="db-chart">${histogram(vals)}</div>`;
+    } else {
+      const vc=valCounts(col);
+      const unique=vc.length;
+      const topFreq=vc[0]?Math.round(vc[0][1]/S.rows.length*100):0;
+      h+=`<div class="db-stat-row">
+        <div class="db-mini-stat"><span class="db-ms-l">unique</span><span class="db-ms-v">${unique.toLocaleString()}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">top value</span><span class="db-ms-v" title="${esc(vc[0]?.[0]||'')}">${esc((vc[0]?.[0]||'—').slice(0,12))}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">top freq</span><span class="db-ms-v">${topFreq}%</span></div>
+      </div>`;
+      h+=`<div class="db-chart">${barChart(vc)}</div>`;
+    }
+    h+=`</div>`;
   });
-  h+=`</div>`;
-  h+=`<div style="font-size:12px;font-weight:600;color:var(--text-2);margin:16px 0 8px">Sample (first 10 rows)</div>`;
-  h+='<table><thead><tr>';
-  S.cols.forEach(c=>{h+=`<th>${esc(c)}</th>`});
-  h+='</tr></thead><tbody>';
-  S.rows.slice(0,10).forEach(r=>{h+='<tr>';r.forEach(v=>{h+=`<td>${esc(v)}</td>`});h+='</tr>'});
-  h+='</tbody></table>';
-  el.innerHTML=h;
+  h+=`</div></div>`;
+
+  // ── correlation matrix (2+ numeric cols)
+  if(numList.length>=2){
+    const N=Math.min(numList.length,12);
+    const cols=numList.slice(0,N);
+    // build aligned value arrays (rows where all are valid)
+    const colVals={};
+    cols.forEach(c=>{colVals[c]=[]});
+    S.rows.forEach(r=>{
+      if(cols.every(c=>{const v=String(r[ci(c)]||'').trim();return v&&!isNaN(Number(v))})){
+        cols.forEach(c=>colVals[c].push(Number(r[ci(c)])));
+      }
+    });
+    const n=colVals[cols[0]].length;
+    const CELL=Math.max(22,Math.min(36,Math.floor(320/N)));
+    const LW=80,LH=56,W=LW+N*CELL,H=LH+N*CELL;
+    let cells='',rowLabels='',colLabels='';
+    cols.forEach((col,i)=>{
+      const lbl=col.length>10?col.slice(0,9)+'…':col;
+      const x=LW+i*CELL+CELL/2,y=LH+i*CELL+CELL/2+3;
+      colLabels+=`<text x="${x}" y="${LH-3}" font-size="8.5" fill="#71717a" text-anchor="end" transform="rotate(-40,${x},${LH-3})" font-family="sans-serif">${esc(lbl)}</text>`;
+      rowLabels+=`<text x="${LW-4}" y="${y}" font-size="8.5" fill="#71717a" text-anchor="end" font-family="sans-serif">${esc(lbl)}</text>`;
+      for(let j=0;j<N;j++){
+        const x2=LW+j*CELL,y2=LH+i*CELL;
+        const r=i===j?1:pearson(colVals[cols[i]],colVals[cols[j]]);
+        cells+=`<rect x="${x2}" y="${y2}" width="${CELL}" height="${CELL}" fill="${corrColor(r)}" rx="1.5"/>`;
+        if(N<=8){
+          const tc=Math.abs(r)>0.45?'#fff':'#52525b';
+          cells+=`<text x="${(x2+CELL/2).toFixed(0)}" y="${(y2+CELL/2+3).toFixed(0)}" font-size="7.5" fill="${tc}" text-anchor="middle" font-family="monospace">${r.toFixed(2)}</text>`;
+        }
+      }
+    });
+    h+=`<div><div class="db-section-title">Correlation Matrix <span style="font-size:10px;color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">${n} rows · ${N} numeric cols</span></div>
+    <div class="db-corr"><div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:${Math.min(W,560)}px;display:block">${colLabels}${rowLabels}${cells}</svg></div>
+    <div class="db-corr-legend"><div class="db-corr-grad"></div><span>Negative (red) → No correlation → Positive (blue)</span></div></div></div>`;
+  }
+
+  // ── data preview table (collapsed by default)
+  let tbl='<table class="dp"><thead><tr>';
+  S.cols.forEach(c=>{tbl+=`<th>${esc(c)}</th>`});
+  tbl+='</tr></thead><tbody>';
+  S.rows.slice(0,20).forEach(r=>{tbl+='<tr>';r.forEach(v=>{tbl+=`<td>${esc(v)}</td>`});tbl+='</tr>'});
+  tbl+='</tbody></table>';
+  h+=`<div class="db-preview"><div class="db-preview-hd" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('.db-toggle').textContent=this.nextElementSibling.classList.contains('open')?'▲':'▼'"><span>Raw Data Preview (first 20 rows)</span><span class="db-toggle">▼</span></div><div class="db-preview-body">${tbl}</div></div>`;
+
+  el.innerHTML=`<div class="db-wrap">${h}</div>`;
 }
 
 // ═══════════════════════════════════════════
