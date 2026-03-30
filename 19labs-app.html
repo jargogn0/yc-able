@@ -1637,16 +1637,15 @@ async function initAuth(){
     runHistory.splice(0, runHistory.length);
   }
   renderRunHistory();
-  // Hide provider button — guest users always use server Bedrock, no config needed
+  // Guest — show auth buttons, hide provider button
   document.getElementById('tb-prov').style.display='none';
-  // Already in trial mode with slots left — stay in app
+  document.getElementById('auth-btns').style.display='flex';
+  document.getElementById('user-btn').style.display='none';
   if(_isTrialMode&&_trialRemaining()>0){
-    _updateTrialBtn();
-    _restoreRunHistory(); // restore any in-progress guest run
+    _restoreRunHistory();
     return;
   }
-  _updateTrialBtn();
-  _restoreRunHistory(); // restore guest run history and reconnect if running
+  _restoreRunHistory();
 }
 
 async function _refreshTokenSilently(){
