@@ -1308,6 +1308,23 @@ async def start_run(req: RunRequest, request: Request):
                 if src_p.exists():
                     shutil.copy2(src_p, ws / src_p.name)
             csv_path = ws / Path(media["primary"]).name
+            # Append Kaggle context to user hint so engine detects competition automatically
+            _all_names = [Path(f).name for f in media.get("all_files", [])]
+            _samp = next((Path(f) for f in media.get("all_files", []) if ("sample" in Path(f).name.lower() or "submission" in Path(f).name.lower()) and Path(f).exists()), None)
+            _test = next((Path(f) for f in media.get("all_files", []) if "test" in Path(f).name.lower() and Path(f).exists()), None)
+            if _test or _samp:
+                _kparts = [f"Files in workspace: {', '.join(_all_names)}."]
+                if _test:
+                    _kparts.append(f"Generate predictions for {_test.name} using the trained model.")
+                if _samp:
+                    try:
+                        import pandas as _pd2
+                        _sc = list(_pd2.read_csv(_samp, nrows=2).columns)
+                        _kparts.append(f"Save submission.csv with columns {_sc} matching {_samp.name}. Target column = {_sc[-1]}.")
+                    except Exception:
+                        _kparts.append(f"Save submission.csv matching {_samp.name}.")
+                _ctx = " [KAGGLE COMPETITION: " + " ".join(_kparts) + "]"
+                req.hint = ((req.hint or "") + _ctx).strip()
         else:
             # Image / audio media dataset — pass directory to engine
             csv_path = Path(media["path"])
@@ -1430,6 +1447,7 @@ async def discover(req: DiscoverRequest):
         from engine import discover_user_need, profile_dataset, profile_media_dataset
 
         # Resolve data path — media dataset or CSV
+        _kaggle_context_hint = ""
         if req.dataset_id:
             media = _MEDIA_DATASETS.get(req.dataset_id)
             if not media:
@@ -1441,6 +1459,25 @@ async def discover(req: DiscoverRequest):
                 shutil.copy2(primary_p, csv_path)
                 data_path = str(csv_path)
                 profile = profile_dataset(data_path)
+                # Build Kaggle context hint from companion files
+                all_file_paths = [Path(f) for f in media.get("all_files", [])]
+                all_file_names = [p.name for p in all_file_paths]
+                _test_f  = next((p for p in all_file_paths if "test" in p.name.lower() and p.exists()), None)
+                _samp_f  = next((p for p in all_file_paths if ("sample" in p.name.lower() or "submission" in p.name.lower()) and p.exists()), None)
+                if _test_f or _samp_f:
+                    _ctx_parts = [f"Workspace files: {', '.join(all_file_names)}."]
+                    _ctx_parts.append(f"Train on {primary_p.name}.")
+                    if _test_f:
+                        _ctx_parts.append(f"Generate predictions for {_test_f.name} (no target column — unlabelled holdout).")
+                    if _samp_f:
+                        try:
+                            import pandas as _pd
+                            _samp_cols = list(_pd.read_csv(_samp_f, nrows=3).columns)
+                            _ctx_parts.append(f"Output must match {_samp_f.name} format: columns={_samp_cols}. The last column is the TARGET to predict.")
+                            _ctx_parts.append(f"Save final predictions as submission.csv.")
+                        except Exception:
+                            _ctx_parts.append(f"Save final predictions as submission.csv matching {_samp_f.name}.")
+                    _kaggle_context_hint = " [COMPETITION CONTEXT: " + " ".join(_ctx_parts) + "]"
             else:
                 data_path = media["path"]
                 profile = profile_media_dataset(data_path)
@@ -1451,15 +1488,18 @@ async def discover(req: DiscoverRequest):
             data_path = str(csv_path)
             profile = profile_dataset(data_path)
 
+        # Merge user hint with Kaggle context so the LLM sees both
+        _effective_hint = ((req.hint or "") + _kaggle_context_hint).strip()
+
         resolved_api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
         if not resolved_api_key:
-            fallback = _fallback_discovery(profile, req.hint)
+            fallback = _fallback_discovery(profile, _effective_hint)
             fallback["ok"] = True
             fallback["provider_note"] = "Using smart fallback discovery. Add an API key for richer AI analysis."
             return fallback
 
-        result = discover_user_need(data_path, user_hint=req.hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None)
+        result = discover_user_need(data_path, user_hint=_effective_hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None)
         result["used_fallback"] = False
         return {"ok": True, **result}
     except Exception as e:
