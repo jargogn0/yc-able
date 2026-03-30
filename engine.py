@@ -1271,9 +1271,28 @@ INFERRED OBJECTIVE:
 
         # Inject Kaggle competition workflow if not already mentioned
         if _is_comp and "submission" not in _msg.lower():
+            # Extract file details from hint for a specific, not generic, message
+            _hint_str = user_hint or ""
+            _train_file = "train.csv"
+            _test_file = "test.csv"
+            _sub_cols = None
+            _m_train = re.search(r'train on (\S+\.csv)', _hint_str, re.IGNORECASE)
+            _m_test  = re.search(r'for (\S+\.csv)', _hint_str, re.IGNORECASE)
+            _m_cols  = re.search(r'columns (\[.*?\])', _hint_str)
+            if _m_train: _train_file = _m_train.group(1)
+            if _m_test:  _test_file  = _m_test.group(1)
+            if _m_cols:
+                try:
+                    import json as _json
+                    _sub_cols = _json.loads(_m_cols.group(1))
+                except Exception: pass
+            _cols_note = f" (columns: {', '.join(_sub_cols)})" if _sub_cols else ""
             _comp_sent = (
-                " This is a Kaggle competition: I'll train on train.csv, "
-                "generate predictions for test.csv, and save a submission.csv ready to submit."
+                f" Kaggle competition setup: {_train_file} = training data with labels,"
+                f" {_test_file} = unlabelled test set to predict,"
+                f" submission.csv{_cols_note} = output to submit."
+                f" I'll train on {_train_file}, predict {_target} for {_test_file},"
+                f" and save submission.csv."
             )
             # Insert before the last sentence ("Type go to start...")
             if "type" in _msg.lower() and "go" in _msg.lower():
