@@ -2283,7 +2283,7 @@ function stab(name){
   if(em)em.style.display=(name==='data'&&!S.cols)?'':'none';
   if(name==='code'&&monacoEditor)monacoEditor.layout();
   if(name==='results'&&S.runId)loadForecastTable(S.runId);
-  if(name==='data')renderDataDashboard();
+  if(name==='data')renderDataTable();
   if(name==='dash')renderDashboard();
 }
 
@@ -2410,7 +2410,34 @@ function parseCSV(text){
   return{headers,rows:rows.map(r=>r.map(v=>String(v).trim())),types,nulls,totalRows};
 }
 
-function showDataPreview(){ renderDataDashboard(); }
+function showDataPreview(){ renderDataTable(); }
+
+function renderDataTable(){
+  if(!S.cols||!S.rows)return;
+  const el=document.getElementById('p-data');
+  const numList=S.cols.filter(c=>S.colTypes[c]==='numeric');
+  const catList=S.cols.filter(c=>S.colTypes[c]==='categorical');
+  const totalMissing=S.cols.reduce((a,c)=>a+(S.colNulls[c]||0),0);
+  const totalCells=(S.rows.length||1)*S.cols.length;
+  const completeness=Math.round((1-totalMissing/totalCells)*100);
+  // KPI strip
+  let h=`<div class="db-kpi-row" style="padding:16px 16px 0">
+    <div class="db-kpi"><div class="db-kpi-v">${S.totalRows.toLocaleString()}</div><div class="db-kpi-l">Rows</div></div>
+    <div class="db-kpi"><div class="db-kpi-v">${S.cols.length}</div><div class="db-kpi-l">Columns</div></div>
+    <div class="db-kpi"><div class="db-kpi-v">${numList.length}</div><div class="db-kpi-l">Numeric</div></div>
+    <div class="db-kpi"><div class="db-kpi-v">${catList.length}</div><div class="db-kpi-l">Categorical</div></div>
+    <div class="db-kpi"><div class="db-kpi-v" style="color:${completeness>=95?'#4ade80':completeness>=80?'#f59e0b':'#ef4444'}">${completeness}%</div><div class="db-kpi-l">Complete</div></div>
+  </div>`;
+  // Raw table
+  h+=`<div style="padding:12px 16px 16px;overflow-x:auto"><table class="dp"><thead><tr>`;
+  S.cols.forEach(c=>{h+=`<th>${esc(c)}</th>`});
+  h+=`</tr></thead><tbody>`;
+  S.rows.slice(0,100).forEach(r=>{h+='<tr>';r.forEach(v=>{h+=`<td>${esc(v)}</td>`});h+='</tr>'});
+  h+=`</tbody></table>`;
+  if(S.totalRows>100)h+=`<div style="font-size:11px;color:var(--text-3);padding:8px 0">Showing first 100 of ${S.totalRows.toLocaleString()} rows</div>`;
+  h+=`</div>`;
+  el.innerHTML=h;
+}
 
 function renderDataDashboard(){
   if(!S.cols||!S.rows)return;
