@@ -596,6 +596,17 @@ def profile_dataset(csv_path):
     if _single_col_warning:
         signals.insert(0, _single_col_warning)
 
+    _n_rows = len(df)
+    def _is_id_like(c):
+        if c["type"] != "numeric":
+            return False
+        name_lo = c["name"].lower()
+        if name_lo in ("id", "index", "row_id", "rowid", "record_id") or name_lo.endswith("_id") or name_lo.endswith("id"):
+            return True
+        if _n_rows > 0 and c["unique"] / _n_rows > 0.95:
+            return True
+        return False
+
     return dict(
         path=str(csv_path), rows=len(df), cols=len(df.columns),
         headers=list(df.columns), columns=cols,
@@ -605,7 +616,7 @@ def profile_dataset(csv_path):
         class_balance=class_balance,
         top_correlations=top_correlations,
         detected_sep=detected_sep,
-        target_candidates=[c["name"] for c in cols if c["type"] == "numeric" and c["unique"] > 10][:5],
+        target_candidates=[c["name"] for c in cols if c["type"] == "numeric" and c["unique"] > 10 and not _is_id_like(c)][:5],
     )
 
 
@@ -987,10 +998,37 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
     else:
         _hint_block = ""
 
+    # --- Hard-override: parse hint for an explicit target column name ---
+    _forced_target = None
+    if hint:
+        _headers_lo = {h.lower(): h for h in profile["headers"]}
+        # Pattern 1: TARGET="Churn" or TARGET='Churn' (from Kaggle context injection)
+        _m = re.search(r'TARGET\s*=\s*["\']?(\w+)["\']?', hint, re.IGNORECASE)
+        if _m and _m.group(1).lower() in _headers_lo:
+            _forced_target = _headers_lo[_m.group(1).lower()]
+        if not _forced_target:
+            # Pattern 2: natural language — "predict churn", "predicting churn",
+            # "target is churn", "target column = churn", "target column: churn"
+            _m2 = re.search(
+                r'(?:predict(?:ing)?|target(?:\s+(?:is|column\s*[=:]?))?)\s+["\']?(\w+)["\']?',
+                hint, re.IGNORECASE)
+            if _m2 and _m2.group(1).lower() in _headers_lo:
+                _forced_target = _headers_lo[_m2.group(1).lower()]
+
+    if _forced_target:
+        _override_block = (
+            f"\n\U0001f6a8 MANDATORY OVERRIDE — DO NOT IGNORE:\n"
+            f"The target column is CONFIRMED as \"{_forced_target}\".\n"
+            f"You MUST set TARGET: {_forced_target}\n"
+            f"Setting TARGET to anything else (including 'id') is WRONG.\n"
+        )
+    else:
+        _override_block = ""
+
     resp = ask(
         "You are 19Labs. Given a deep expert domain analysis, produce precise ML objective parameters. "
         "When the user gives an instruction, interpret it in context of the current plan to find their true intent.",
-        f"""Based on the expert domain analysis below, extract the exact ML objective parameters.
+        f"""{_override_block}Based on the expert domain analysis below, extract the exact ML objective parameters.
 {_hint_block}
 EXPERT DOMAIN ANALYSIS:
 {domain_analysis or "(not available — reason from profile)"}
@@ -1046,7 +1084,7 @@ HYPOTHESES:
     tc = profile["target_candidates"]
     return dict(domain=g("DOMAIN") or "General",
         task   =task_inferred,
-        target =g("TARGET") or (tc[0] if tc else profile["headers"][-1]),
+        target =_forced_target or g("TARGET") or (tc[0] if tc else profile["headers"][-1]),
         metric =metric,
         direction=g("DIRECTION") or "lower_is_better",
         confidence=_safe_float(g("CONFIDENCE"), 0.7),
