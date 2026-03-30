@@ -2142,7 +2142,7 @@ async function saveBedrockKey(){
   }catch(e){toast('Network error','err');}
 }
 
-const S={file:null,csv:null,dataset_id:null,media_info:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent',_seenNarrations:new Set(),_chatHistory:[]};
+const S={file:null,csv:null,dataset_id:null,media_info:null,allFiles:null,kaggleContext:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent',_seenNarrations:new Set(),_chatHistory:[]};
 
 // ═══════════════════════════════════════════
 // SETTINGS
@@ -2306,8 +2306,18 @@ const _ico={
 function updSide(){
   const fl=document.getElementById('file-list');
   if(!S.file){fl.innerHTML='';return}
-  const kb=(S.file.size/1024).toFixed(1);
-  fl.innerHTML=`<div class="side-sec">Dataset</div><div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
+  let h=`<div class="side-sec">Dataset</div>`;
+  if(S.allFiles&&S.allFiles.length>1){
+    // Multi-file ZIP — show all files, primary highlighted
+    S.allFiles.forEach(name=>{
+      const isPrimary=name===S.file.name;
+      h+=`<div class="side-item${isPrimary?' act':''}"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isPrimary?'var(--accent)':'#3f3f46'};font-size:9px">${isPrimary?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':''}</div></div>`;
+    });
+  } else {
+    const kb=(S.file.size/1024).toFixed(1);
+    h+=`<div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
+  }
+  fl.innerHTML=h;
 }
 function updStatus(){
   const s=document.getElementById('run-stat');
@@ -2321,7 +2331,7 @@ function updStatus(){
   document.getElementById('s-run').textContent=S.runId||'--';
 }
 function newExperiment(){
-  // Reset run state — keep dataset loaded
+  // Reset run state — keep dataset and Kaggle context loaded
   S.runId=null;S.exps=[];S.best=null;S.artifacts=null;S.report=null;
   S.logs=[];S.m={exp:0,fail:0,best:'--'};S.analyzed=false;S.confirmed=false;
   S.continuous=false;S.hint='';S.discovery=null;S._seenNarrations=new Set();
@@ -3014,9 +3024,10 @@ async function runDiscover(hint){
     // e.g. agent proposed "predict shipped_weight", user says "no revenue forecast"
     // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
     const _prevObj = S.discovery?.objective || null;
+    const _effectiveHint=((hint||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
-      :{filename:S.file.name,csv:S.csv,hint:hint||'',previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
@@ -3096,9 +3107,10 @@ async function launchRun(){
   const isGuest=!_authUser&&!C.key;
   const effectiveBudget=isGuest?Math.min(S.budget,_serverConfig.guest_max_budget||4):S.budget;
   try{
+    const _runHint=((obj||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:obj,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:obj,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();
@@ -5505,7 +5517,7 @@ async function handleFile(f,preloadedText){
     chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset. Click <strong>Join All Datasets</strong> in the sidebar to merge them.`);
     return;
   }
-  S.file=f;S.dataset_id=null;S.media_info=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
+  S.file=f;S.dataset_id=null;S.media_info=null;S.allFiles=null;S.kaggleContext=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
   document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
   document.getElementById('dz-title').textContent=f.name;
   document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
@@ -5543,7 +5555,18 @@ async function handleFile(f,preloadedText){
       // Large or multi-file tabular ZIP (e.g. Kaggle competition) — kept server-side
       if(info.type==='tabular_dir'){
         S.dataset_id=info.dataset_id;S.media_info=null;
+        S.allFiles=info.all_files||[];
         S.file={name:info.filename,size:0};
+        // Build Kaggle context hint from sample_submission columns
+        const _sampCols=info.sample_submission_cols||[];
+        if(_sampCols.length>1){
+          const _target=_sampCols[_sampCols.length-1];
+          const _testFile=(info.all_files||[]).find(n=>n.toLowerCase().startsWith('test'))||'test.csv';
+          const _sampFile=(info.all_files||[]).find(n=>n.toLowerCase().includes('sample')||n.toLowerCase().includes('submission'))||'sample_submission.csv';
+          S.kaggleContext=`[COMPETITION: train on ${info.filename}, predict TARGET="${_target}" for ${_testFile}, save submission.csv with columns ${JSON.stringify(_sampCols)} matching ${_sampFile}]`;
+        } else if((info.all_files||[]).some(n=>n.toLowerCase().startsWith('test'))){
+          S.kaggleContext=`[COMPETITION: train on ${info.filename}, generate predictions for test.csv, save as submission.csv]`;
+        }
         document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
         document.getElementById('dz-title').textContent=info.filename;
         document.getElementById('dz-sub').textContent=`${info.num_files} files in ZIP`;
