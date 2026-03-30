@@ -1026,6 +1026,53 @@ class PredictRequest(BaseModel):
     data: list[dict] = []  # list of rows as dicts
     csv_text: str = ""     # alternative: raw CSV text
 
+def _get_run_or_404(run_id: str):
+    """Return run dict from memory or reconstruct from DB. Raises HTTPException if not found."""
+    if run_id in RUNS:
+        return RUNS[run_id]
+    try:
+        conn = DBConn()
+        row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+        conn.close()
+        if row and row["result_json"]:
+            result = json.loads(row["result_json"])
+            # Reconstruct minimal run dict — ws won't exist but stable model path will
+            run = {
+                "id": run_id,
+                "status": row["status"],
+                "ws": "",  # temp dir is gone after restart
+                "result": result,
+                "hint": row.get("hint", ""),
+            }
+            return run
+    except Exception:
+        pass
+    raise HTTPException(404, "Run not found")
+
+
+def _find_model_path(run_id: str, run: dict) -> "Path | None":
+    """Find model file — checks stable run_models/ dir first, then workspace."""
+    _models_dir = Path(__file__).parent / "run_models"
+    stable = _models_dir / f"{run_id}.pkl"
+    if stable.exists():
+        return stable
+    ws = Path(run.get("ws", ""))
+    result = run.get("result") or {}
+    deploy_path = result.get("deploy_path")
+    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
+    search_dirs = [d for d in [dp, ws] if d and d.exists()]
+    for name in ["best_model.pkl", "model.pkl"]:
+        for d in search_dirs:
+            f = d / name
+            if f.is_file():
+                return f
+    for d in search_dirs:
+        for f in list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")):
+            if f.is_file() and "api_server" not in str(f):
+                return f
+    return None
+
+
 def _fallback_discovery(profile: dict, hint: str = ""):
     headers = profile.get("headers", [])
     numeric = profile.get("numeric", [])
@@ -1459,6 +1506,25 @@ async def start_run(req: RunRequest, request: Request):
             result["run_logs"] = [{"tag": l["tag"], "msg": l["msg"], "ts": l.get("ts", "")}
                                   for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
             RUNS[run_id]["result"] = result
+            # ── Persist model to stable path so it survives server restarts ──
+            try:
+                _models_dir = Path(__file__).parent / "run_models"
+                _models_dir.mkdir(exist_ok=True)
+                _saved = False
+                for _mname in ["best_model.pkl", "model.pkl"]:
+                    _mp = ws / _mname
+                    if _mp.exists():
+                        shutil.copy2(_mp, _models_dir / f"{run_id}.pkl")
+                        _saved = True
+                        break
+                if not _saved:
+                    # Recursive fallback — grab first pkl in workspace tree
+                    for _mp in ws.rglob("*.pkl"):
+                        if _mp.is_file():
+                            shutil.copy2(_mp, _models_dir / f"{run_id}.pkl")
+                            break
+            except Exception:
+                pass
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
                 _save_run_to_db(run_id, RUNS[run_id])
@@ -2501,27 +2567,31 @@ async def create_api_server(run_id: str, request: Request):
     body = await request.json()
     api_key = body.get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
     provider = body.get("provider", "claude")
-    if run_id not in RUNS:
-        raise HTTPException(404, "Run not found")
-    run = RUNS[run_id]
+    run = _get_run_or_404(run_id)
     result = run.get("result")
     if not result:
         raise HTTPException(400, "Run not finished yet")
-    ws = Path(run.get("ws", ""))
+    ws = Path(run.get("ws", "")) if run.get("ws") else None
     deploy_path = result.get("deploy_path")
-    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else ws
-    train_py = ""
-    for candidate in [dp / "train.py", ws / "train.py"]:
-        if candidate.exists():
-            train_py = candidate.read_text()
-            break
+    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
+    # train_py from result_json (persisted) or workspace file
+    train_py = result.get("train_code", "")
+    if not train_py:
+        for candidate_dir in [d for d in [dp, ws] if d and d.exists()]:
+            candidate = candidate_dir / "train.py"
+            if candidate.exists():
+                train_py = candidate.read_text()
+                break
     best = result.get("best") or {}
     obj = result.get("objective") or {}
     from engine import generate_inference_server
     generated = generate_inference_server(train_py, best, obj, api_key, provider)
     if "error" in generated and not generated.get("inference_server_py"):
         raise HTTPException(500, f"Generation failed: {generated['error']}")
-    api_dir = ws / "api_server"
+    # Use stable dir for api output (ws may be gone after restart)
+    _models_dir = Path(__file__).parent / "run_models"
+    _models_dir.mkdir(exist_ok=True)
+    api_dir = _models_dir / f"{run_id}_api"
     api_dir.mkdir(exist_ok=True)
     inference_py = generated.get("inference_server_py", "")
     requirements = generated.get("requirements_txt", "fastapi\nuvicorn\njoblib\nnumpy\npandas\nscikit-learn\n")
@@ -2545,22 +2615,23 @@ async def create_api_server(run_id: str, request: Request):
         f"## Predict\n```bash\ncurl -X POST http://localhost:8000/predict \\\n"
         f"  -H 'Content-Type: application/json' \\\n  -d '{{\"feature1\": 1.0, \"feature2\": \"value\"}}'\n```\n"
     )
-    # Copy model files — prefer best_model.pkl (preserved per new-best event)
+    # Copy model — check stable run_models/ first, then workspace
+    stable_model = _models_dir / f"{run_id}.pkl"
     model_copied = False
-    for src_name in ["best_model.pkl", "model.pkl"]:
-        for search_dir in [dp, ws]:
-            src = search_dir / src_name
-            if src.exists() and src.is_file():
-                shutil.copy2(src, api_dir / "model.pkl")
-                model_copied = True
+    if stable_model.exists():
+        shutil.copy2(stable_model, api_dir / "model.pkl")
+        model_copied = True
+    if not model_copied:
+        for src_name in ["best_model.pkl", "model.pkl"]:
+            for search_dir in [d for d in [dp, ws] if d and d.exists()]:
+                src = search_dir / src_name
+                if src.exists() and src.is_file():
+                    shutil.copy2(src, api_dir / "model.pkl")
+                    model_copied = True
+                    break
+            if model_copied:
                 break
-        if model_copied:
-            break
-    for pattern in ["*.joblib", "*.pt", "*.h5"]:
-        for f in list(dp.glob(pattern)) + list(ws.glob(pattern)):
-            if f.is_file() and f.parent != api_dir:
-                shutil.copy2(f, api_dir / f.name)
-    zip_path = ws / f"api_server_{run_id[:8]}.zip"
+    zip_path = _models_dir / f"api_server_{run_id[:8]}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in api_dir.rglob("*"):
             if f.is_file():
@@ -2570,37 +2641,12 @@ async def create_api_server(run_id: str, request: Request):
 # ── BATCH PREDICTION ───────────────────────────────────────────
 @app.post("/api/run/{run_id}/predict")
 async def predict(run_id: str, req: PredictRequest):
-    if run_id not in RUNS:
-        raise HTTPException(404, "Run not found")
-    run = RUNS[run_id]
+    run = _get_run_or_404(run_id)
     result = run.get("result")
     if not result:
         raise HTTPException(400, "Run not finished yet")
-    ws = Path(run.get("ws", ""))
-    deploy_path = result.get("deploy_path")
-    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
 
-    # Find model file — check explicit names first, then recursive fallback
-    model_path = None
-    search_dirs = [d for d in [dp, ws] if d and d.exists()]
-    for name in ["best_model.pkl", "model.pkl"]:
-        for d in search_dirs:
-            f = d / name
-            if f.is_file():
-                model_path = f
-                break
-        if model_path:
-            break
-    if not model_path:
-        # Recursive fallback — find any pkl/joblib anywhere in the workspace tree
-        for d in search_dirs:
-            for f in list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")):
-                if f.is_file() and "api_server" not in str(f):
-                    model_path = f
-                    break
-            if model_path:
-                break
-
+    model_path = _find_model_path(run_id, run)
     if not model_path:
         raise HTTPException(404, "No trained model found. Run may not have completed successfully.")
 
@@ -3078,37 +3124,12 @@ async def transform_data(req: TransformRequest):
 @app.get("/api/run/{run_id}/explain")
 async def explain_model(run_id: str):
     """Generate SHAP-based model explainability data."""
-    if run_id not in RUNS:
-        raise HTTPException(404, "Run not found")
-    run = RUNS[run_id]
+    run = _get_run_or_404(run_id)
     result = run.get("result")
     if not result:
         raise HTTPException(400, "Run not finished yet")
 
-    ws = Path(run.get("ws", ""))
-    deploy_path = result.get("deploy_path")
-    dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
-
-    # Find model — explicit names first, then recursive fallback
-    model_path = None
-    search_dirs = [d for d in [dp, ws] if d and d.exists()]
-    for name in ["best_model.pkl", "model.pkl"]:
-        for d in search_dirs:
-            f = d / name
-            if f.is_file():
-                model_path = f
-                break
-        if model_path:
-            break
-    if not model_path:
-        for d in search_dirs:
-            for f in list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")):
-                if f.is_file() and "api_server" not in str(f):
-                    model_path = f
-                    break
-            if model_path:
-                break
-
+    model_path = _find_model_path(run_id, run)
     if not model_path:
         return {"ok": False, "error": "No model found"}
 
