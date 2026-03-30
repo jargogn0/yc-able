@@ -391,7 +391,6 @@ if ALLOWED_ORIGINS == ["*"]:
     ALLOWED_ORIGINS = ["*"]
 
 ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "").strip()
-CSV_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 
 # Guest limits: 1 run total, max 4 experiments per run
 GUEST_MAX_RUNS = 1
@@ -1177,37 +1176,69 @@ async def upload_media_dataset(file: UploadFile = File(...)):
 
         # ── Check for tabular files inside the ZIP ──────────────────
         _TABULAR_EXTS = {".csv", ".tsv", ".xlsx", ".xls", ".json", ".parquet"}
-        tabular_files = sorted(
-            [f for f in data_dir.rglob("*") if f.is_file() and f.suffix.lower() in _TABULAR_EXTS
-             and not f.name.startswith(".")],
-            key=lambda f: f.stat().st_size, reverse=True  # largest first
-        )
+        tabular_files = [
+            f for f in data_dir.rglob("*")
+            if f.is_file() and f.suffix.lower() in _TABULAR_EXTS and not f.name.startswith(".")
+        ]
         if tabular_files:
-            # Return CSV content directly so frontend treats it like a normal CSV upload
+            # Prefer train.csv / train*.csv as primary; fall back to largest file
+            def _primary_rank(f):
+                n = f.name.lower()
+                if n == "train.csv": return 0
+                if n.startswith("train"): return 1
+                return 2
+            tabular_files.sort(key=lambda f: (_primary_rank(f), -f.stat().st_size))
             primary = tabular_files[0]
             try:
+                # Convert non-CSV formats to CSV in-place
                 if primary.suffix.lower() in (".xlsx", ".xls"):
                     import pandas as _pd
-                    csv_text = _pd.read_excel(primary).to_csv(index=False)
+                    csv_path_conv = primary.with_suffix(".csv")
+                    _pd.read_excel(primary).to_csv(csv_path_conv, index=False)
+                    primary = csv_path_conv
                 elif primary.suffix.lower() == ".parquet":
                     import pandas as _pd
-                    csv_text = _pd.read_parquet(primary).to_csv(index=False)
+                    csv_path_conv = primary.with_suffix(".csv")
+                    _pd.read_parquet(primary).to_csv(csv_path_conv, index=False)
+                    primary = csv_path_conv
                 elif primary.suffix.lower() == ".json":
                     import pandas as _pd
-                    csv_text = _pd.read_json(primary).to_csv(index=False)
-                else:
-                    csv_text = primary.read_text(errors="replace")
+                    csv_path_conv = primary.with_suffix(".csv")
+                    _pd.read_json(primary).to_csv(csv_path_conv, index=False)
+                    primary = csv_path_conv
+
                 all_names = [f.name for f in tabular_files]
-                return {
-                    "dataset_id": dataset_id,
-                    "type": "csv",
-                    "filename": primary.name,
-                    "csv": csv_text,
-                    "all_files": all_names,
-                    "num_files": len(tabular_files),
-                }
+                is_large = primary.stat().st_size > 8 * 1024 * 1024
+                is_multi = len(tabular_files) > 1
+
+                if not is_large and not is_multi:
+                    # Small single file — return inline so frontend shows a data preview table
+                    csv_text = primary.read_text(errors="replace")
+                    return {
+                        "dataset_id": dataset_id,
+                        "type": "csv",
+                        "filename": primary.name,
+                        "csv": csv_text,
+                        "all_files": all_names,
+                        "num_files": len(tabular_files),
+                    }
+                else:
+                    # Large or multi-file (e.g. Kaggle train/test/sample) — keep server-side
+                    _MEDIA_DATASETS[dataset_id] = {
+                        "path": str(data_dir),
+                        "type": "tabular_dir",
+                        "primary": str(primary),
+                        "all_files": [str(f) for f in tabular_files],
+                    }
+                    return {
+                        "dataset_id": dataset_id,
+                        "type": "tabular_dir",
+                        "filename": primary.name,
+                        "all_files": all_names,
+                        "num_files": len(tabular_files),
+                    }
             except Exception as e:
-                # Fall through to media profiling if CSV read fails
+                # Fall through to media profiling if read/convert fails
                 pass
     else:
         data_dir = tmp_dir / "data"
@@ -1256,15 +1287,22 @@ async def start_run(req: RunRequest, request: Request):
     ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
 
     if req.dataset_id:
-        # Media dataset (images / audio) — use pre-uploaded directory
         media = _MEDIA_DATASETS.get(req.dataset_id)
         if not media:
-            raise HTTPException(404, "Media dataset not found. Please re-upload.")
-        csv_path = Path(media["path"])  # directory, not a CSV file
+            raise HTTPException(404, "Dataset not found. Please re-upload.")
+        if media.get("type") == "tabular_dir":
+            # Copy all tabular files into the workspace so the engine and AI-generated code can use them
+            src_dir = Path(media["path"])
+            for src_str in media["all_files"]:
+                src_p = Path(src_str)
+                if src_p.exists():
+                    shutil.copy2(src_p, ws / src_p.name)
+            csv_path = ws / Path(media["primary"]).name
+        else:
+            # Image / audio media dataset — pass directory to engine
+            csv_path = Path(media["path"])
     else:
-        if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
-            raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
-        # Write CSV to disk
+        # Direct CSV text upload
         csv_path = ws / req.filename
         csv_path.write_text(req.csv, encoding="utf-8")
 
@@ -1385,13 +1423,19 @@ async def discover(req: DiscoverRequest):
         if req.dataset_id:
             media = _MEDIA_DATASETS.get(req.dataset_id)
             if not media:
-                return {"ok": False, "error": "Media dataset not found. Please re-upload."}
-            data_path = media["path"]
-            profile = profile_media_dataset(data_path)
+                return {"ok": False, "error": "Dataset not found. Please re-upload."}
+            if media.get("type") == "tabular_dir":
+                # Copy primary CSV to temp workspace for profiling
+                primary_p = Path(media["primary"])
+                csv_path = ws / primary_p.name
+                shutil.copy2(primary_p, csv_path)
+                data_path = str(csv_path)
+                profile = profile_dataset(data_path)
+            else:
+                data_path = media["path"]
+                profile = profile_media_dataset(data_path)
             cleanup_ws = False  # don't delete the media dataset dir
         else:
-            if len(req.csv.encode("utf-8")) > CSV_MAX_BYTES:
-                raise HTTPException(413, f"CSV too large. Max 10 MB, got {len(req.csv.encode('utf-8')) / (1024*1024):.1f} MB.")
             csv_path = ws / req.filename
             csv_path.write_text(req.csv, encoding="utf-8")
             data_path = str(csv_path)
@@ -2527,8 +2571,8 @@ async def fetch_url_data(req: FetchURLRequest):
         req_obj = urllib.request.Request(url, headers={"User-Agent": "19Labs/1.0"})
         with urllib.request.urlopen(req_obj, timeout=30) as resp:
             data = resp.read()
-            if len(data) > 10 * 1024 * 1024:
-                raise HTTPException(413, "File too large (>10MB)")
+            if len(data) > 500 * 1024 * 1024:
+                raise HTTPException(413, "File too large (>500MB)")
             text = data.decode("utf-8", errors="replace")
 
         # Detect if JSON

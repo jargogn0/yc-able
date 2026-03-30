@@ -5530,13 +5530,37 @@ async function handleFile(f,preloadedText){
       if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.detail||'Upload failed','err');return;}
       const info=await r.json();
 
-      // ZIP containing tabular data (CSV/Excel/JSON/Parquet) — treat like a regular CSV upload
+      // ZIP containing tabular data — small single file: treat like a regular CSV upload
       if(info.type==='csv'&&info.csv){
         const csvName=info.filename||f.name.replace(/\.zip$/i,'.csv');
         const fakeFile=new File([info.csv],csvName,{type:'text/csv'});
         toast(`Extracted ${esc(csvName)} from ZIP`,'ok',3000);
-        if(info.num_files>1)chat('sys',`Found ${info.num_files} files in ZIP: ${info.all_files.map(n=>esc(n)).join(', ')}. Using <strong>${esc(info.filename)}</strong> (largest).`);
+        if(info.num_files>1)chat('sys',`Found ${info.num_files} files in ZIP: ${info.all_files.map(n=>esc(n)).join(', ')}. Using <strong>${esc(info.filename)}</strong>.`);
         await handleFile(fakeFile,info.csv);
+        return;
+      }
+
+      // Large or multi-file tabular ZIP (e.g. Kaggle competition) — kept server-side
+      if(info.type==='tabular_dir'){
+        S.dataset_id=info.dataset_id;S.media_info=null;S.csv=null;
+        S.file={name:info.filename};
+        S.cols=[];S.rows=[];S.colTypes={};S.colNulls={};S.totalRows=0;
+        document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
+        document.getElementById('dz-title').textContent=info.filename;
+        document.getElementById('dz-sub').textContent=`${info.num_files} file${info.num_files!==1?'s':''} · server-side`;
+        const fileChips=info.all_files.map(n=>`<code style="background:var(--surface-2,#1e2130);padding:2px 6px;border-radius:4px;font-size:11px">${esc(n)}</code>`).join(' ');
+        document.getElementById('p-data').innerHTML=`<div style="padding:20px 16px">
+          <div style="font-size:13px;font-weight:600;color:var(--text-1);margin-bottom:8px">Dataset loaded — ${info.num_files} file${info.num_files!==1?'s':''}</div>
+          <div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:6px">${fileChips}</div>
+          <div style="font-size:12px;color:var(--text-3)">Training on <strong style="color:var(--text-2)">${esc(info.filename)}</strong>. All files copied to the AI workspace.</div>
+        </div>`;
+        document.getElementById('p-data').style.display='';
+        document.getElementById('ws-empty').style.display='none';
+        dz.classList.add('loaded');stab('data');updSide();updStatus();
+        toast(`Loaded ${info.num_files} files from ZIP`,'ok',3000);
+        const fileList=info.all_files.map(n=>`<code>${esc(n)}</code>`).join(', ');
+        chat('sys',`Loaded <strong>${info.num_files} files</strong> from ZIP: ${fileList}. Primary: <strong>${esc(info.filename)}</strong>.`);
+        autoDiscover();
         return;
       }
 
