@@ -1787,7 +1787,7 @@ try:
                               'axes.spines.left': False, 'xtick.color': '#71717a', 'ytick.color': '#71717a'}})
         fig, ax = plt.subplots(figsize=(9, max(4, len(_fi) * 0.38)), facecolor=BG)
         ax.barh(_fi.index, _fi['importance'], color=BLUE, height=0.65)
-        ax.set_title(f'Feature Importance  ({_best_name})', color='#fafafa', fontsize=12, pad=10)
+        ax.set_title(f'Feature Importance  ({{_best_name}})', color='#fafafa', fontsize=12, pad=10)
         plt.tight_layout(pad=1.5)
         fig.savefig('shap.png', dpi=140, facecolor=BG, bbox_inches='tight'); plt.close(fig)
         print("shap.png (feature importance) saved")
