@@ -329,6 +329,21 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
 
 _init_db()
 
+# Standalone migration: ensure run_models table exists (handles DBs initialized before this table was added)
+try:
+    _mc = DBConn()
+    _blob_t = "BYTEA" if _mc._pg else "BLOB"
+    _mc.execute(f"""CREATE TABLE IF NOT EXISTS run_models (
+        run_id TEXT PRIMARY KEY,
+        model_data {_blob_t} NOT NULL,
+        model_ext TEXT DEFAULT '.pkl',
+        created REAL
+    )""")
+    _mc.commit()
+    _mc.close()
+except Exception as _mce:
+    print(f"[models] migration warning: {_mce}", flush=True)
+
 def _save_run_to_db(run_id: str, run: dict):
     """Persist run summary (and full result JSON) to DB."""
     try:
