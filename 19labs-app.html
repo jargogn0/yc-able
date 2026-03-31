@@ -2828,7 +2828,15 @@ async function send(){
   }
 
   if(!S.analyzed){S.hint=text;if(isGo){await autoDiscover();if(S.analyzed){S.confirmed=true;await launchRun()}return}await runDiscover(text);return}
-  if(S.analyzed&&!S.confirmed){if(isYes||isGo){S.confirmed=true;await launchRun();return}if(isNo){return}S.hint=text;await runDiscover(text);return}
+  if(S.analyzed&&!S.confirmed){
+    if(isYes||isGo){S.confirmed=true;await launchRun();return}
+    if(isNo){S.hint='';S.analyzed=false;chat('ai',"Tell me what target or approach you want and I'll re-analyze.");return}
+    // Check if this sounds like a correction to target/task/metric vs a question
+    const isCorrection=/\b(target|predict|classif|regress|metric|column|feature|use|churn|price|revenue|fraud|sales|auc|rmse|mae|f1|accuracy|instead|not|change|wrong|different)\b/i.test(lo);
+    if(isCorrection){S.hint=text;await runDiscover(text);return}
+    // Otherwise just answer the question conversationally — don't re-analyze
+    await chatWithAI(text);return;
+  }
   if(S.confirmed&&!S.running){if(isGo||isYes){await launchRun();return}S.hint=text;S.confirmed=false;S.analyzed=false;await runDiscover(text);return}
   chat('ai',"Tell me what you'd like to predict or analyze.");
 }
