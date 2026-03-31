@@ -1694,16 +1694,37 @@ predictor.fit(
 )
 
 # ── 5. EVALUATE ────────────────────────────────────────────────────────
+_best_name = 'AutoGluon'  # guaranteed default — overwritten below if leaderboard succeeds
+_val_score = 0.0
+_lb = None
 try:
-    _lb = predictor.leaderboard(val_df, silent=True)
-except Exception as _lbe:
-    print(f"Leaderboard with val_df failed ({{_lbe}}), using training leaderboard")
-    _lb = predictor.leaderboard(silent=True)
-if _lb is None or len(_lb) == 0:
-    # Fallback: at least one model must exist
-    _lb = pd.DataFrame({{'model': [predictor.get_model_best()], 'score_val': [0.0], 'fit_time': [0.0]}})
+    try:
+        _lb = predictor.leaderboard(val_df, silent=True)
+    except Exception:
+        try:
+            _lb = predictor.leaderboard(silent=True)
+        except Exception:
+            pass
+    if _lb is not None and len(_lb) > 0:
+        _best_name = str(_lb.iloc[0]['model'])
+        _val_score = float(abs(_lb.iloc[0]['score_val']))
+    else:
+        try:
+            _best_name = str(predictor.get_model_best())
+        except Exception:
+            pass
+        _lb = pd.DataFrame(
+            {{'model': [_best_name], 'score_val': [_val_score], 'fit_time': [0.0]}}
+        )
+except Exception as _eval_err:
+    print(f"Evaluation fallback: {{_eval_err}}")
+    _lb = pd.DataFrame({{'model': [_best_name], 'score_val': [0.0], 'fit_time': [0.0]}})
+
 print("\\n=== AutoGluon Leaderboard ===")
-print(_lb[['model', 'score_val', 'fit_time']].head(10).to_string(index=False))
+try:
+    print(_lb[['model', 'score_val', 'fit_time']].head(10).to_string(index=False))
+except Exception:
+    print(str(_lb.head(5)))
 _best_name  = str(_lb.iloc[0]['model'])
 _val_score  = float(abs(_lb.iloc[0]['score_val']))
 
