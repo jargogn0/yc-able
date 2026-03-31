@@ -1093,7 +1093,19 @@ def _get_run_or_404(run_id: str):
 
 
 def _find_model_path(run_id: str, run: dict) -> "Path | None":
-    """Find model file — checks persistent /data/run_models/ first, then workspace."""
+    """Find model file — checks result_json base64, filesystem, then DB BLOB."""
+    # 0. Best: model_b64 embedded in result_json — survives any restart, no BYTEA issues
+    result_d = run.get("result") or {}
+    if result_d.get("model_b64"):
+        try:
+            import base64 as _b64
+            _ext = result_d.get("model_ext", ".pkl")
+            _tmp = Path(tempfile.gettempdir()) / f"19labs_model_{run_id}{_ext}"
+            _tmp.write_bytes(_b64.b64decode(result_d["model_b64"]))
+            print(f"[predict] loaded model from result_json base64 → {_tmp}", flush=True)
+            return _tmp
+        except Exception as _b64e:
+            print(f"[predict] model_b64 decode failed: {_b64e}", flush=True)
     # 1. Persistent stable path (survives restarts)
     for ext in [".pkl", ".joblib"]:
         stable = _MODELS_DIR / f"{run_id}{ext}"
@@ -1580,8 +1592,7 @@ async def start_run(req: RunRequest, request: Request):
             result["run_logs"] = [{"tag": l["tag"], "msg": l["msg"], "ts": l.get("ts", "")}
                                   for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
             RUNS[run_id]["result"] = result
-            # ── Persist model to DB BLOB (primary) + filesystem (secondary) ──
-            # Step 1: find model file in workspace
+            # ── Persist model — embed as base64 in result_json (survives any restart) ──
             _model_src = None
             for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
                 _mp = ws / _mname
@@ -1590,14 +1601,23 @@ async def start_run(req: RunRequest, request: Request):
                     break
             if not _model_src:
                 for _mp in (list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib"))
-                            + list(ws.rglob("*.ubj")) + list(ws.rglob("model.json"))):
-                    if _mp.is_file():
+                            + list(ws.rglob("*.ubj")) + list(ws.rglob("model.json"))
+                            + list(ws.rglob("best_model.json")) + list(ws.rglob("*.json"))):
+                    if _mp.is_file() and "objective" not in _mp.name and "program" not in _mp.name and "report" not in _mp.name:
                         _model_src = _mp
                         break
             if _model_src:
-                # Step 2: save to SQLite BLOB — this MUST happen first, filesystem is unreliable
                 try:
+                    import base64 as _b64
                     _blob = _model_src.read_bytes()
+                    result["model_b64"] = _b64.b64encode(_blob).decode()
+                    result["model_ext"] = _model_src.suffix or ".pkl"
+                    RUNS[run_id]["result"] = result  # update with model embedded
+                    print(f"[models] Embedded {len(_blob)//1024}KB model ({_model_src.name}) as base64 in result for {run_id}", flush=True)
+                except Exception as _mbe:
+                    print(f"[models] model_b64 embed failed: {_mbe}", flush=True)
+                # Also try run_models BLOB table and filesystem (best-effort backups)
+                try:
                     _dbc = DBConn()
                     _dbc.execute(
                         "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?)"
@@ -1606,18 +1626,15 @@ async def start_run(req: RunRequest, request: Request):
                         (run_id, _blob, _model_src.suffix or ".pkl", time.time()))
                     _dbc.commit()
                     _dbc.close()
-                    print(f"[models] Saved {len(_blob)//1024}KB to DB BLOB for {run_id}", flush=True)
+                    print(f"[models] Also saved to run_models BLOB table for {run_id}", flush=True)
                 except Exception as _dbe:
-                    print(f"[models] DB BLOB save failed: {_dbe}", flush=True)
-                # Step 3: also try filesystem copy (best-effort, don't abort if fails)
+                    print(f"[models] run_models BLOB save failed (non-fatal): {_dbe}", flush=True)
                 try:
-                    _ext = _model_src.suffix or ".pkl"
-                    shutil.copy2(_model_src, _MODELS_DIR / f"{run_id}{_ext}")
-                    print(f"[models] Copied to filesystem: {_MODELS_DIR}/{run_id}{_ext}", flush=True)
-                except Exception as _fse:
-                    print(f"[models] Filesystem copy skipped (read-only?): {_fse}", flush=True)
+                    shutil.copy2(_model_src, _MODELS_DIR / f"{run_id}{_model_src.suffix or '.pkl'}")
+                except Exception:
+                    pass
             else:
-                print(f"[models] WARNING: no model file found in workspace for {run_id}", flush=True)
+                print(f"[models] WARNING: no model file found in workspace for {run_id} — files: {list(ws.rglob('*'))[:20] if ws.exists() else 'ws gone'}", flush=True)
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
                 _save_run_to_db(run_id, RUNS[run_id])
