@@ -1591,6 +1591,11 @@ async def start_run(req: RunRequest, request: Request):
                     pass
             result["run_logs"] = [{"tag": l["tag"], "msg": l["msg"], "ts": l.get("ts", "")}
                                   for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
+            # Record what files exist in workspace for diagnostics
+            try:
+                result["_ws_files"] = [f.name for f in ws.rglob("*") if f.is_file()][:40]
+            except Exception:
+                result["_ws_files"] = []
             RUNS[run_id]["result"] = result
             # ── Persist model — embed as base64 in result_json (survives any restart) ──
             _model_src = None
@@ -2770,9 +2775,8 @@ async def predict(run_id: str, req: PredictRequest):
     model_path = _find_model_path(run_id, run)
     if not model_path:
         _has_b64b = bool((result or {}).get("model_b64"))
-        _arts_b = list((result or {}).get("artifacts", {}).values())
-        _ws_b = (result or {}).get("workspace", "")
-        raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64b else 'NO'}, ws={_ws_b}, artifacts={[str(a).split('/')[-1] for a in _arts_b[:10]]}")
+        _ws_files_b = (result or {}).get("_ws_files", [])
+        raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64b else 'NO'}, ws_files={_ws_files_b}")
 
     import joblib
     import pandas as pd
@@ -2879,18 +2883,8 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     model_path = _find_model_path(run_id, run)
     if not model_path:
         _has_b64 = bool((result or {}).get("model_b64"))
-        _db_info = "not_checked"
-        try:
-            _dc = DBConn()
-            _dr = _dc.execute("SELECT model_ext FROM run_models WHERE run_id=?", (run_id,)).fetchone()
-            _dc.close()
-            _db_info = f"row_in_db={_dr is not None}"
-        except Exception as _de:
-            _db_info = f"db_err:{type(_de).__name__}"
-        # Show what files were in workspace during training (from result artifacts)
-        _arts = list((result or {}).get("artifacts", {}).values())
-        _ws_root = (result or {}).get("workspace", "")
-        raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64 else 'NO'}, {_db_info}, ws={_ws_root}, artifacts={[str(a).split('/')[-1] for a in _arts[:10]]}")
+        _ws_files = (result or {}).get("_ws_files", [])
+        raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64 else 'NO'}, ws_files={_ws_files}")
 
     try:
         model = joblib.load(model_path)
