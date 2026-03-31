@@ -192,6 +192,12 @@ def _init_db():
         api_key TEXT NOT NULL,
         PRIMARY KEY (user_id, provider)
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS run_models (
+        run_id TEXT PRIMARY KEY,
+        model_data BLOB NOT NULL,
+        model_ext TEXT DEFAULT '.pkl',
+        created REAL
+    )""")
     conn.commit()
     conn.close()
 
@@ -1106,6 +1112,18 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
             if f.is_file() and "api_server" not in str(f) and "sample_sub" not in str(f.name):
                 print(f"[predict] found model via rglob: {f}", flush=True)
                 return f
+    # 3. SQLite BLOB fallback — works even after container restart wipes /tmp
+    try:
+        _conn = DBConn()
+        _row = _conn.execute("SELECT model_data, model_ext FROM run_models WHERE run_id=?", (run_id,)).fetchone()
+        _conn.close()
+        if _row and _row["model_data"]:
+            _tmp_path = Path(tempfile.gettempdir()) / f"19labs_model_{run_id}{_row['model_ext']}"
+            _tmp_path.write_bytes(bytes(_row["model_data"]))
+            print(f"[predict] loaded model from DB BLOB → {_tmp_path}", flush=True)
+            return _tmp_path
+    except Exception as _dbe:
+        print(f"[predict] DB model lookup failed: {_dbe}", flush=True)
     print(f"[predict] WARNING: no model found for {run_id}", flush=True)
     return None
 
@@ -1563,6 +1581,39 @@ async def start_run(req: RunRequest, request: Request):
                             _saved = True
                             break
                 print(f"[models] {'Saved' if _saved else 'WARNING: no model found to save'} → {_MODELS_DIR}/{run_id}.*", flush=True)
+                # Also save to SQLite BLOB — survives container restarts without persistent volume
+                if _saved:
+                    _stable_f = next((_MODELS_DIR / f"{run_id}{e}" for e in [".pkl", ".joblib", ".ubj", ".json"]
+                                      if (_MODELS_DIR / f"{run_id}{e}").exists()), None)
+                    if _stable_f:
+                        try:
+                            _blob = _stable_f.read_bytes()
+                            _dbc = DBConn()
+                            _dbc.execute(
+                                "INSERT OR REPLACE INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?)",
+                                (run_id, _blob, _stable_f.suffix, time.time()))
+                            _dbc.commit()
+                            _dbc.close()
+                            print(f"[models] Saved {len(_blob)//1024}KB to DB BLOB for {run_id}", flush=True)
+                        except Exception as _dbe:
+                            print(f"[models] DB BLOB save failed: {_dbe}", flush=True)
+                elif not _saved:
+                    # Filesystem save failed — try to save directly from workspace to DB
+                    for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
+                        _mp = ws / _mname
+                        if _mp.exists():
+                            try:
+                                _blob = _mp.read_bytes()
+                                _dbc = DBConn()
+                                _dbc.execute(
+                                    "INSERT OR REPLACE INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?)",
+                                    (run_id, _blob, _mp.suffix, time.time()))
+                                _dbc.commit()
+                                _dbc.close()
+                                print(f"[models] Saved {len(_blob)//1024}KB from ws to DB BLOB for {run_id}", flush=True)
+                                break
+                            except Exception as _dbe:
+                                print(f"[models] DB BLOB save from ws failed: {_dbe}", flush=True)
             except Exception as _me:
                 print(f"[models] WARNING: could not persist model for {run_id}: {_me}", flush=True)
             if RUNS[run_id]["status"] == "stopping":
@@ -2655,7 +2706,7 @@ async def create_api_server(run_id: str, request: Request):
         f"## Predict\n```bash\ncurl -X POST http://localhost:8000/predict \\\n"
         f"  -H 'Content-Type: application/json' \\\n  -d '{{\"feature1\": 1.0, \"feature2\": \"value\"}}'\n```\n"
     )
-    # Copy model — check stable run_models/ first, then workspace
+    # Copy model — check stable run_models/ first, then workspace, then DB BLOB
     stable_model = next((_MODELS_DIR / f"{run_id}{ext}" for ext in [".pkl", ".joblib"] if (_MODELS_DIR / f"{run_id}{ext}").exists()), None)
     model_copied = False
     if stable_model:
@@ -2671,6 +2722,17 @@ async def create_api_server(run_id: str, request: Request):
                     break
             if model_copied:
                 break
+    if not model_copied:
+        # Last resort: load from DB BLOB
+        try:
+            _dbc = DBConn()
+            _row = _dbc.execute("SELECT model_data, model_ext FROM run_models WHERE run_id=?", (run_id,)).fetchone()
+            _dbc.close()
+            if _row and _row["model_data"]:
+                (api_dir / "model.pkl").write_bytes(bytes(_row["model_data"]))
+                model_copied = True
+        except Exception:
+            pass
     zip_path = _models_dir / f"api_server_{run_id[:8]}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in api_dir.rglob("*"):
