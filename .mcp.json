@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "19labs-datascientist": {
+      "command": "python3",
+      "args": ["mcp/19labs_mcp_server.py"],
+      "env": {
+        "NINETEENLABS_API_BASE": "http://localhost:8019"
+      }
+    }
+  }
+}
