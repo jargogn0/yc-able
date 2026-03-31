@@ -1697,7 +1697,7 @@ predictor.fit(
 try:
     _lb = predictor.leaderboard(val_df, silent=True)
 except Exception as _lbe:
-    print(f"Leaderboard with val_df failed ({_lbe}), using training leaderboard")
+    print(f"Leaderboard with val_df failed ({{_lbe}}), using training leaderboard")
     _lb = predictor.leaderboard(silent=True)
 if _lb is None or len(_lb) == 0:
     # Fallback: at least one model must exist
