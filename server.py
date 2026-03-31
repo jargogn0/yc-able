@@ -3097,67 +3097,94 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     # Drop target if present
     features = df.drop(columns=[c for c in [target] if c and c in df.columns])
 
-    # Try prediction with progressive fallbacks
+    # ── Universal prediction engine ────────────────────────────────────────
+    # Works for: sklearn, XGBRegressor/Booster, LightGBM, CatBoost, pipelines
     preds = None
+    _last_err = None
+
     from sklearn.preprocessing import LabelEncoder as _LE
-    def _encode_features(f):
+    import numpy as _np
+
+    def _encode_cats(f):
+        """Label-encode all categorical/object columns and fill NaN."""
         fe = f.copy()
         for col in fe.select_dtypes(include=["object", "category"]).columns:
             le = _LE()
             fe[col] = le.fit_transform(fe[col].astype(str))
         return fe.fillna(0)
 
-    # Determine expected feature count / names from model
-    _expected_features = None
-    try:
-        import xgboost as _xgb_mod
-        if isinstance(model, _xgb_mod.Booster) and getattr(model, 'feature_names', None):
-            _expected_features = model.feature_names
-        elif hasattr(model, 'feature_names_in_'):
-            _expected_features = list(model.feature_names_in_)
-        elif hasattr(model, 'n_features_in_'):
-            pass  # count known but names unknown
-    except Exception:
-        pass
+    def _model_feature_names(m):
+        """Extract expected feature names from any model type."""
+        # sklearn / XGBRegressor / LGBMRegressor / CatBoost sklearn API
+        if hasattr(m, 'feature_names_in_'):
+            return list(m.feature_names_in_)
+        # LightGBM Booster
+        if hasattr(m, 'feature_name') and callable(m.feature_name):
+            try: return m.feature_name()
+            except Exception: pass
+        # XGBoost Booster
+        if hasattr(m, 'feature_names') and m.feature_names:
+            return list(m.feature_names)
+        # sklearn Pipeline — check final step
+        if hasattr(m, 'steps'):
+            return _model_feature_names(m.steps[-1][1])
+        return None
 
-    def _align_to_model(fe):
-        """Reindex to model's expected features if known, filling missing with 0."""
-        if _expected_features:
-            return fe.reindex(columns=_expected_features, fill_value=0)
-        return fe
+    def _align(f, feat_names):
+        """Reindex DataFrame columns to match model's expected features."""
+        if feat_names:
+            return f.reindex(columns=feat_names, fill_value=0)
+        return f
 
-    # Attempt 1: raw DataFrame (aligned)
-    try:
-        preds = model.predict(_align_to_model(features))
-    except Exception:
-        pass
+    feat_names = _model_feature_names(model)
+    encoded = _align(_encode_cats(features), feat_names)
 
-    # Attempt 2: encoded + aligned DataFrame
-    if preds is None:
+    def _try(fn):
+        nonlocal preds, _last_err
+        if preds is not None:
+            return
         try:
-            preds = model.predict(_align_to_model(_encode_features(features)))
-        except Exception:
-            pass
+            result = fn()
+            if result is not None:
+                preds = _np.asarray(result).flatten()
+        except Exception as e:
+            _last_err = e
 
-    # Attempt 3: numpy array — skips sklearn feature_names check entirely
-    if preds is None:
-        try:
-            preds = model.predict(_align_to_model(_encode_features(features)).values)
-        except Exception:
-            pass
+    # 1. Encoded + aligned DataFrame  (works for: sklearn, LightGBM, CatBoost, XGBRegressor)
+    _try(lambda: model.predict(encoded))
 
-    # Attempt 4: XGBoost — detect Booster vs sklearn and use right format
+    # 2. Numpy array  (bypasses sklearn feature_names_in_ check; works for all sklearn-API models)
+    _try(lambda: model.predict(encoded.values))
+
+    # 3. XGBoost Booster → must use DMatrix
     if preds is None:
         try:
             import xgboost as _xgb
-            fe = _align_to_model(_encode_features(features))
             if isinstance(model, _xgb.Booster):
-                preds = model.predict(_xgb.DMatrix(fe))
-            else:
-                # XGBRegressor/Classifier: pass numpy to bypass feature_names check
-                preds = model.predict(fe.values)
-        except Exception as e4:
-            raise HTTPException(400, f"Prediction failed: {e4}")
+                preds = _np.asarray(model.predict(_xgb.DMatrix(encoded))).flatten()
+        except Exception as e:
+            _last_err = e
+
+    # 4. LightGBM native Booster
+    if preds is None:
+        try:
+            import lightgbm as _lgb
+            if isinstance(model, _lgb.Booster):
+                preds = _np.asarray(model.predict(encoded)).flatten()
+        except Exception as e:
+            _last_err = e
+
+    # 5. CatBoost native (Pool)
+    if preds is None:
+        try:
+            import catboost as _cb
+            if isinstance(model, (_cb.CatBoostRegressor, _cb.CatBoostClassifier)):
+                preds = _np.asarray(model.predict(encoded)).flatten()
+        except Exception as e:
+            _last_err = e
+
+    if preds is None:
+        raise HTTPException(400, f"Prediction failed: {_last_err}")
 
     # Build submission dataframe
     sub_target = target or "prediction"
