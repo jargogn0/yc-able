@@ -3097,21 +3097,47 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     # Drop target if present
     features = df.drop(columns=[c for c in [target] if c and c in df.columns])
 
-    # Try prediction; fallback to label-encoded version
+    # Try prediction with progressive fallbacks
     preds = None
+    from sklearn.preprocessing import LabelEncoder as _LE
+    def _encode_features(f):
+        fe = f.copy()
+        for col in fe.select_dtypes(include=["object", "category"]).columns:
+            le = _LE()
+            fe[col] = le.fit_transform(fe[col].astype(str))
+        return fe.fillna(0)
+
+    # Attempt 1: raw DataFrame
     try:
         preds = model.predict(features)
     except Exception:
+        pass
+
+    # Attempt 2: label-encoded DataFrame (handles categoricals)
+    if preds is None:
         try:
-            from sklearn.preprocessing import LabelEncoder
-            fe = features.copy()
-            for col in fe.select_dtypes(include=["object", "category"]).columns:
-                le = LabelEncoder()
-                fe[col] = le.fit_transform(fe[col].astype(str))
-            fe = fe.fillna(0)
-            preds = model.predict(fe)
-        except Exception as e2:
-            raise HTTPException(400, f"Prediction failed: {e2}")
+            preds = model.predict(_encode_features(features))
+        except Exception:
+            pass
+
+    # Attempt 3: numpy array — bypasses feature_names mismatch for XGBoost/sklearn
+    if preds is None:
+        try:
+            preds = model.predict(_encode_features(features).values)
+        except Exception:
+            pass
+
+    # Attempt 4: XGBoost DMatrix with feature alignment
+    if preds is None:
+        try:
+            import xgboost as _xgb
+            fe = _encode_features(features)
+            # Align columns to what XGBoost model expects
+            if hasattr(model, 'feature_names') and model.feature_names:
+                fe = fe.reindex(columns=model.feature_names, fill_value=0)
+            preds = model.predict(_xgb.DMatrix(fe))
+        except Exception as e4:
+            raise HTTPException(400, f"Prediction failed: {e4}")
 
     # Build submission dataframe
     sub_target = target or "prediction"
