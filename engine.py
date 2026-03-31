@@ -1515,13 +1515,14 @@ KNOWN API BREAKAGES — avoid these exactly:
 EXPERT DOMAIN ANALYSIS (written by a senior data scientist — treat as ground truth):
 {_domain_analysis_text(domain_analysis) or "(not available)"}
 
+{('⚠️  USER EXPLICIT INSTRUCTION (HIGHEST PRIORITY — ALL experiments MUST follow this direction): "' + obj.get('user_hint','') + '"') if obj.get('user_hint') else ""}
+
 OBJECTIVE:
 - Task: {obj.get('task', 'Regression')}
 - Target: {obj.get('target', '')}
 - Metric: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
 - Domain: {obj.get('domain', 'General')}
 - Good enough: {obj.get('good_enough', '')}
-- User hint: {obj.get('user_hint', '')}
 - Reliability mode: {obj.get('reliability_mode', 'balanced')}
 - Execution policy: {obj.get('execution_policy', 'Balance reliability and performance.')}
 
@@ -1948,6 +1949,8 @@ KAGGLE COMPETITION MODE — MANDATORY RULES:
         "You never write generic code when expert-level code is possible.",
         f"""Write `train.py` — experiment {exp_num} ({_tier} tier) — for this specific domain and task.
 
+{('⚠️  USER EXPLICIT INSTRUCTION (HIGHEST PRIORITY — your code MUST implement this direction): "' + obj.get('user_hint','') + '"') if obj.get('user_hint') else ""}
+
 ENVIRONMENT:
 - Auto-install available for any pip-installable package.
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
@@ -2137,6 +2140,8 @@ def revise_after_iteration(program_md, train_py, score, error, history, domain_a
 
 EXPERT DOMAIN ANALYSIS (use this to guide your next approach):
 {_domain_analysis_text(domain_analysis)[:3000] if domain_analysis else "(not available)"}
+
+{('⚠️  USER EXPLICIT INSTRUCTION (HIGHEST PRIORITY — you MUST follow this): "' + (obj or {}).get('user_hint','') + '"') if (obj or {}).get('user_hint') else ""}
 
 KEEP CRITERIA:
 - KEEP if the primary metric improved vs previous best in history.
