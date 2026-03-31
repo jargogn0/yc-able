@@ -1694,39 +1694,43 @@ predictor.fit(
 )
 
 # ── 5. EVALUATE ────────────────────────────────────────────────────────
-_best_name = 'AutoGluon'  # guaranteed default — overwritten below if leaderboard succeeds
+# Step 1: best model name — use the most reliable API, never fails
+try:
+    _best_name = str(predictor.get_model_best())
+except Exception:
+    _best_name = 'AutoGluon'
+
+# Step 2: validation score — try evaluate() then leaderboard, then 0
 _val_score = 0.0
+try:
+    _eval_scores = predictor.evaluate(val_df, silent=True)
+    _val_score = float(abs(list(_eval_scores.values())[0]))
+except Exception:
+    pass
+
+# Step 3: full leaderboard — best-effort, never blocks metrics output
 _lb = None
 try:
+    _lb = predictor.leaderboard(val_df, silent=True)
+except Exception:
     try:
-        _lb = predictor.leaderboard(val_df, silent=True)
+        _lb = predictor.leaderboard(silent=True)
     except Exception:
-        try:
-            _lb = predictor.leaderboard(silent=True)
-        except Exception:
-            pass
-    if _lb is not None and len(_lb) > 0:
-        _best_name = str(_lb.iloc[0]['model'])
-        _val_score = float(abs(_lb.iloc[0]['score_val']))
-    else:
-        try:
-            _best_name = str(predictor.get_model_best())
-        except Exception:
-            pass
-        _lb = pd.DataFrame(
-            {{'model': [_best_name], 'score_val': [_val_score], 'fit_time': [0.0]}}
-        )
-except Exception as _eval_err:
-    print(f"Evaluation fallback: {{_eval_err}}")
-    _lb = pd.DataFrame({{'model': [_best_name], 'score_val': [0.0], 'fit_time': [0.0]}})
+        pass
+if _lb is None or len(_lb) == 0:
+    _lb = pd.DataFrame({{'model': [_best_name], 'score_val': [_val_score], 'fit_time': [0.0]}})
+else:
+    # Update val_score from leaderboard if it has meaningful data
+    try:
+        _val_score = float(abs(_lb.iloc[0]['score_val'])) or _val_score
+    except Exception:
+        pass
 
 print("\\n=== AutoGluon Leaderboard ===")
 try:
     print(_lb[['model', 'score_val', 'fit_time']].head(10).to_string(index=False))
 except Exception:
-    print(str(_lb.head(5)))
-_best_name  = str(_lb.iloc[0]['model'])
-_val_score  = float(abs(_lb.iloc[0]['score_val']))
+    print(f"Best model: {{_best_name}}, score: {{_val_score}}")
 
 # ── 6. COMPUTE STANDARD METRICS ───────────────────────────────────────
 y_pred = predictor.predict(val_df)
