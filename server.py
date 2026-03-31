@@ -1129,6 +1129,7 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
                 print(f"[predict] found model via rglob: {f}", flush=True)
                 return f
     # 3. SQLite BLOB fallback — works even after container restart wipes /tmp
+    _db_status = "not_tried"
     try:
         _conn = DBConn()
         _row = _conn.execute("SELECT model_data, model_ext FROM run_models WHERE run_id=?", (run_id,)).fetchone()
@@ -1138,9 +1139,11 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
             _tmp_path.write_bytes(bytes(_row["model_data"]))
             print(f"[predict] loaded model from DB BLOB → {_tmp_path}", flush=True)
             return _tmp_path
+        _db_status = f"row_found={_row is not None},has_data={bool(_row and _row['model_data']) if _row else False}"
     except Exception as _dbe:
+        _db_status = f"error:{_dbe}"
         print(f"[predict] DB model lookup failed: {_dbe}", flush=True)
-    print(f"[predict] WARNING: no model found for {run_id}", flush=True)
+    print(f"[predict] WARNING: no model found for {run_id} | db_status={_db_status}", flush=True)
     return None
 
 
@@ -2749,7 +2752,15 @@ async def predict(run_id: str, req: PredictRequest):
 
     model_path = _find_model_path(run_id, run)
     if not model_path:
-        raise HTTPException(404, "No trained model found. Run may not have completed successfully.")
+        _db_info2 = "not_checked"
+        try:
+            _dc2 = DBConn()
+            _dr2 = _dc2.execute("SELECT model_ext, created FROM run_models WHERE run_id=?", (run_id,)).fetchone()
+            _dc2.close()
+            _db_info2 = f"row_in_db={_dr2 is not None}" + (f",ext={_dr2['model_ext']}" if _dr2 else "")
+        except Exception as _de2:
+            _db_info2 = f"db_error:{_de2}"
+        raise HTTPException(404, f"No trained model found. db_status={_db_info2}. Please run training again.")
 
     import joblib
     import pandas as pd
@@ -2855,16 +2866,15 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
 
     model_path = _find_model_path(run_id, run)
     if not model_path:
-        # List actual files to show user exactly what's on disk
-        _file_list = []
-        _ws_p = Path(run.get("ws","")) if run.get("ws") else None
-        _dp_p = Path((run.get("result") or {}).get("deploy_path","") or "")
-        for _d in [_MODELS_DIR, _ws_p, _dp_p if str(_dp_p) else None]:
-            if _d and Path(_d).exists():
-                for _f in Path(_d).rglob("*"):
-                    if _f.is_file():
-                        _file_list.append(_f.name)
-        raise HTTPException(404, f"No model file found. workspace files: {_file_list[:30] or 'workspace empty/gone — please run training again'}")
+        _db_info = "not_checked"
+        try:
+            _dc = DBConn()
+            _dr = _dc.execute("SELECT model_ext, created FROM run_models WHERE run_id=?", (run_id,)).fetchone()
+            _dc.close()
+            _db_info = f"row_in_db={_dr is not None}" + (f",ext={_dr['model_ext']}" if _dr else "")
+        except Exception as _de:
+            _db_info = f"db_error:{_de}"
+        raise HTTPException(404, f"No model file found. db_status={_db_info}. Please run training again — model will be saved to DB on next run.")
 
     try:
         model = joblib.load(model_path)
