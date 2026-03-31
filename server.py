@@ -1131,10 +1131,11 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
             if f.is_file():
                 print(f"[predict] found model: {f}", flush=True)
                 return f
-    # Full recursive fallback — any pkl/joblib/xgb native in workspace
+    # Full recursive fallback — pkl/joblib/ubj only; avoid random JSON files
+    _MODEL_JSON_NAMES = {"model.json", "best_model.json"}
     for d in search_dirs:
-        all_files = (list(d.rglob("*.pkl")) + list(d.rglob("*.joblib"))
-                     + list(d.rglob("*.ubj")) + list(d.rglob("*.json")))
+        all_files = (list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")) + list(d.rglob("*.ubj"))
+                     + [f for f in d.rglob("*.json") if f.name in _MODEL_JSON_NAMES])
         print(f"[predict] rglob in {d}: {[str(f) for f in all_files[:10]]}", flush=True)
         for f in all_files:
             if f.is_file() and "api_server" not in str(f) and "sample_sub" not in str(f.name):
@@ -1605,10 +1606,10 @@ async def start_run(req: RunRequest, request: Request):
                     _model_src = _mp
                     break
             if not _model_src:
-                for _mp in (list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib"))
-                            + list(ws.rglob("*.ubj")) + list(ws.rglob("model.json"))
-                            + list(ws.rglob("best_model.json")) + list(ws.rglob("*.json"))):
-                    if _mp.is_file() and "objective" not in _mp.name and "program" not in _mp.name and "report" not in _mp.name:
+                _json_ok = {"model.json", "best_model.json"}
+                for _mp in (list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib")) + list(ws.rglob("*.ubj"))
+                            + [f for f in ws.rglob("*.json") if f.name in _json_ok]):
+                    if _mp.is_file():
                         _model_src = _mp
                         break
             if _model_src:
@@ -2782,15 +2783,24 @@ async def predict(run_id: str, req: PredictRequest):
     import pandas as pd
     import numpy as np
 
+    model = None
     try:
         model = joblib.load(model_path)
     except Exception:
+        pass
+    if model is None:
         try:
-            import xgboost as xgb
-            model = xgb.Booster()
-            model.load_model(str(model_path))
-        except Exception as e2:
-            raise HTTPException(500, f"Failed to load model: {e2}")
+            import xgboost as xgb; _b = xgb.Booster(); _b.load_model(str(model_path)); model = _b
+        except Exception:
+            pass
+    if model is None:
+        try:
+            import catboost as cb; _c = cb.CatBoostClassifier(); _c.load_model(str(model_path)); model = _c
+        except Exception:
+            try:
+                import catboost as cb; _c = cb.CatBoostRegressor(); _c.load_model(str(model_path)); model = _c
+            except Exception as _le:
+                raise HTTPException(500, f"Failed to load model: {_le}")
 
     # Build dataframe from input
     if req.csv_text:
@@ -2886,16 +2896,36 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         _ws_files = (result or {}).get("_ws_files", [])
         raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64 else 'NO'}, ws_files={_ws_files}")
 
+    model = None
+    load_err = None
     try:
         model = joblib.load(model_path)
-    except Exception:
-        # Try XGBoost native format
+    except Exception as _e1:
+        load_err = _e1
+    if model is None:
         try:
             import xgboost as xgb
-            model = xgb.Booster()
-            model.load_model(str(model_path))
-        except Exception as e2:
-            raise HTTPException(500, f"Failed to load model ({model_path.suffix}): {e2}")
+            _bst = xgb.Booster()
+            _bst.load_model(str(model_path))
+            model = _bst
+        except Exception as _e2:
+            load_err = _e2
+    if model is None:
+        try:
+            import catboost as cb
+            _cbt = cb.CatBoostClassifier()
+            _cbt.load_model(str(model_path))
+            model = _cbt
+        except Exception:
+            try:
+                import catboost as cb
+                _cbt = cb.CatBoostRegressor()
+                _cbt.load_model(str(model_path))
+                model = _cbt
+            except Exception as _e3:
+                load_err = _e3
+    if model is None:
+        raise HTTPException(500, f"Failed to load model ({model_path.suffix}): {load_err}")
 
     contents = await file.read()
     try:
