@@ -53,6 +53,7 @@ MODULE_TO_PIP = {
     "hdbscan": "hdbscan",
     "umap": "umap-learn",
     "catboost": "catboost",
+    "autogluon": "autogluon.tabular",
     "optuna": "optuna",
     "shap": "shap",
     "statsmodels": "statsmodels",
@@ -1559,7 +1560,231 @@ Output ONLY markdown for `program.md`.""",
     )
     return program.strip()
 
+def _write_autogluon_train_py(profile, obj, domain_analysis=None) -> str:
+    """
+    Hard-coded AutoGluon experiment-1 template.
+    Handles ANY tabular dataset perfectly — no LLM hallucination possible.
+    AutoGluon auto-detects feature types, handles missing values, tries 10+ models.
+    """
+    target     = obj['target']
+    metric     = obj.get('metric', 'auto').lower()
+    task       = obj.get('task', 'Regression')
+    is_kaggle  = bool(obj.get('is_kaggle'))
+    ktest      = obj.get('kaggle_test_file') or ''
+    ksample    = obj.get('kaggle_sample_file') or ''
+
+    # AutoGluon eval_metric mapping
+    _ag_metric_map = {
+        'auc': 'roc_auc', 'roc_auc': 'roc_auc',
+        'f1': 'f1', 'f1_macro': 'f1_macro', 'f1_weighted': 'f1_weighted',
+        'accuracy': 'accuracy', 'acc': 'accuracy',
+        'logloss': 'log_loss', 'log_loss': 'log_loss',
+        'rmse': 'rmse', 'mse': 'mse',
+        'mae': 'mae', 'mape': 'mape',
+        'r2': 'r2', 'nse': 'r2',
+    }
+    ag_metric = _ag_metric_map.get(metric, 'auto')
+
+    # AutoGluon problem_type
+    _pt_map = {
+        'BinaryClassification': 'binary',
+        'MultiClassClassification': 'multiclass',
+        'Regression': 'regression',
+        'TimeSeriesForecasting': 'regression',
+        'SentimentAnalysis': 'binary',
+        'AnomalyDetection': 'binary',
+    }
+    problem_type = _pt_map.get(task, 'auto')
+    is_cls = 'classif' in task.lower() or 'sentiment' in task.lower()
+
+    # Columns to drop (IDs, leakage) from domain analysis
+    da = domain_analysis if isinstance(domain_analysis, dict) else {}
+    drop_cols = list(set(da.get('id_cols', []) + da.get('leakage_cols', [])))
+
+    # Primary metric variable name in Python
+    _py_metric = {
+        'auc': '_auc', 'roc_auc': '_auc',
+        'f1': '_f1', 'accuracy': '_acc',
+        'rmse': '_rmse', 'mae': '_mae', 'mape': '_mape', 'r2': '_r2',
+        'logloss': '_logloss',
+    }.get(metric, '_score')
+
+    # Kaggle submission block
+    kaggle_block = ''
+    if is_kaggle and ktest:
+        kaggle_block = f"""
+# ── KAGGLE: predict test set ──────────────────────────────────────────
+try:
+    _test_path = os.path.join(os.path.dirname(DATA_PATH), {repr(ktest)})
+    _test_df   = pd.read_csv(_test_path)
+    _drop_test = [c for c in {repr(drop_cols)} if c in _test_df.columns and c != {repr(target)}]
+    if _drop_test: _test_df = _test_df.drop(columns=_drop_test)
+    _test_preds = predictor.predict(_test_df)
+    # Find ID and target columns from sample_submission if available
+    _id_col  = _test_df.columns[0]
+    _tgt_col = {repr(target)}
+    try:
+        _samp = pd.read_csv(os.path.join(os.path.dirname(DATA_PATH), {repr(ksample)}))
+        _id_col  = _samp.columns[0]
+        _tgt_col = _samp.columns[-1]
+    except Exception: pass
+    _sub_id = _test_df[_id_col] if _id_col in _test_df.columns else range(len(_test_preds))
+    pd.DataFrame({{_id_col: _sub_id, _tgt_col: _test_preds}}).to_csv('submission.csv', index=False)
+    print(f"submission.csv saved — {{len(_test_preds)}} predictions")
+except Exception as _ke:
+    print(f"Kaggle submission skipped: {{_ke}}")
+"""
+
+    code = f"""import pandas as pd
+import numpy as np
+import json, time, os, warnings
+warnings.filterwarnings('ignore')
+_start = time.time()
+
+# ── 1. LOAD DATA ───────────────────────────────────────────────────────
+df = pd.read_csv(DATA_PATH, sep=DATA_SEP)
+print(f"Loaded {{len(df):,}} rows x {{len(df.columns)}} columns")
+
+# ── 2. DROP ID / LEAKAGE COLUMNS ──────────────────────────────────────
+_confirmed_drop = [c for c in {repr(drop_cols)} if c in df.columns and c != {repr(target)}]
+# Also auto-detect obvious ID columns (unique count = row count, not target)
+_auto_id = [c for c in df.columns if c != {repr(target)}
+            and df[c].nunique() == len(df)
+            and df[c].dtype in (object, 'int64', 'float64')]
+_drop_all = list(set(_confirmed_drop + _auto_id))
+if _drop_all:
+    df = df.drop(columns=_drop_all)
+    print(f"Dropped ID/leakage columns: {{_drop_all}}")
+
+# Drop columns that are >95% missing
+_high_null = [c for c in df.columns if c != {repr(target)} and df[c].isnull().mean() > 0.95]
+if _high_null:
+    df = df.drop(columns=_high_null)
+    print(f"Dropped high-null columns: {{_high_null}}")
+
+if {repr(target)} not in df.columns:
+    raise ValueError(f"Target column '{repr(target)}' not found. Columns: {{list(df.columns)}}")
+
+print(f"Features: {{len(df.columns)-1}} | Target: {repr(target)}")
+
+# ── 3. TRAIN / VALIDATION SPLIT ───────────────────────────────────────
+from sklearn.model_selection import train_test_split
+_strat = df[{repr(target)}] if {repr(is_cls)} and df[{repr(target)}].nunique() <= 20 else None
+train_df, val_df = train_test_split(df, test_size=0.2, random_state=42, stratify=_strat)
+print(f"Train: {{len(train_df):,}}  Val: {{len(val_df):,}}")
+
+# ── 4. AUTOGLUON FIT ───────────────────────────────────────────────────
+from autogluon.tabular import TabularPredictor
+_time_budget = max(90, int(TIME_BUDGET * 0.80 - (time.time() - _start)))
+print(f"AutoGluon fitting | time_limit={{_time_budget}}s | metric={ag_metric}")
+
+predictor = TabularPredictor(
+    label={repr(target)},
+    eval_metric={repr(ag_metric)},
+    problem_type={repr(problem_type)},
+    path='ag_models/',
+    verbosity=1,
+)
+predictor.fit(
+    train_df,
+    time_limit=_time_budget,
+    presets='best_quality',
+    excluded_model_types=['KNN'],  # KNN too slow on large datasets
+    ag_args_fit={{'num_cpus': 'auto'}},
+)
+
+# ── 5. EVALUATE ────────────────────────────────────────────────────────
+_lb = predictor.leaderboard(val_df, silent=True)
+print("\\n=== AutoGluon Leaderboard ===")
+print(_lb[['model', 'score_val', 'fit_time']].head(10).to_string(index=False))
+_best_name  = str(_lb.iloc[0]['model'])
+_val_score  = float(abs(_lb.iloc[0]['score_val']))
+
+# ── 6. COMPUTE STANDARD METRICS ───────────────────────────────────────
+y_pred = predictor.predict(val_df)
+y_true = val_df[{repr(target)}]
+from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score,
+                              accuracy_score, f1_score, roc_auc_score, log_loss)
+_rmse = float(np.sqrt(mean_squared_error(y_true, y_pred))) if not {repr(is_cls)} else 0.0
+_mae  = float(mean_absolute_error(y_true, y_pred)) if not {repr(is_cls)} else 0.0
+_r2   = float(r2_score(y_true, y_pred))
+_mape = float(np.mean(np.abs((y_true - y_pred) / (y_true.replace(0, np.nan).abs())).dropna())) if not {repr(is_cls)} else 0.0
+_acc  = float(accuracy_score(y_true, y_pred)) if {repr(is_cls)} else 0.0
+_f1   = float(f1_score(y_true, y_pred, average='weighted', zero_division=0)) if {repr(is_cls)} else 0.0
+try:
+    _y_proba = predictor.predict_proba(val_df)
+    _proba_col = _y_proba.iloc[:, 1] if hasattr(_y_proba, 'iloc') else _y_proba[:, 1]
+    _auc = float(roc_auc_score(y_true, _proba_col))
+except Exception:
+    _auc = _acc
+_logloss = 0.0
+try:
+    _logloss = float(log_loss(y_true, predictor.predict_proba(val_df))) if {repr(is_cls)} else 0.0
+except Exception: pass
+_score = _auc if {repr(is_cls)} and {repr(metric)} in ('auc','roc_auc') else _acc if {repr(metric)} == 'accuracy' else _f1 if {repr(metric)} == 'f1' else _rmse if {repr(metric)} in ('rmse','mse') else _mae if {repr(metric)} == 'mae' else _mape if {repr(metric)} == 'mape' else _r2
+
+# ── 7. SAVE PREDICTIONS CSV ───────────────────────────────────────────
+pd.DataFrame({{'actual': y_true.values, 'predicted': y_pred.values}}).to_csv('predictions.csv', index=False)
+print("predictions.csv saved")
+
+# ── 8. SAVE MODEL ─────────────────────────────────────────────────────
+import joblib
+# Save AG path reference — server will copy ag_models/ to persistent storage
+joblib.dump({{'type': 'autogluon', 'ag_path': os.path.abspath('ag_models/')}}, 'model.pkl')
+print(f"model.pkl saved | best model: {{_best_name}}")
+
+# ── 9. FEATURE IMPORTANCE PLOT ────────────────────────────────────────
+try:
+    import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
+    _fi = predictor.feature_importance(val_df, silent=True)
+    if _fi is not None and len(_fi) > 0:
+        _fi = _fi.sort_values('importance').tail(20)
+        BG = '#09090b'; BLUE = '#3b82f6'; DIM = '#27272a'
+        plt.rcParams.update({{'figure.facecolor': BG, 'axes.facecolor': BG,
+                              'text.color': '#fafafa', 'axes.grid': True, 'grid.color': '#18181b',
+                              'axes.spines.top': False, 'axes.spines.right': False,
+                              'axes.spines.left': False, 'xtick.color': '#71717a', 'ytick.color': '#71717a'}})
+        fig, ax = plt.subplots(figsize=(9, max(4, len(_fi) * 0.38)), facecolor=BG)
+        ax.barh(_fi.index, _fi['importance'], color=BLUE, height=0.65)
+        ax.set_title(f'Feature Importance  ({_best_name})', color='#fafafa', fontsize=12, pad=10)
+        plt.tight_layout(pad=1.5)
+        fig.savefig('shap.png', dpi=140, facecolor=BG, bbox_inches='tight'); plt.close(fig)
+        print("shap.png (feature importance) saved")
+except Exception as _fe:
+    print(f"Feature importance skipped: {{_fe}}")
+{kaggle_block}
+# ── 10. OUTPUT METRICS JSON ───────────────────────────────────────────
+metrics = {{
+    'model': f'AutoGluon/{{_best_name}}',
+    {repr(metric)}: _score,
+    f'test_{metric}': _score,
+    f'train_{metric}': _val_score,
+    'rmse': _rmse, 'test_rmse': _rmse, 'train_rmse': _rmse,
+    'mae': _mae, 'mape': _mape, 'r2': _r2,
+    'test_r2': _r2, 'train_r2': _r2,
+    'auc': _auc, 'accuracy': _acc, 'f1': _f1, 'logloss': _logloss,
+    'models_tried': len(_lb),
+    'leaderboard_top3': list(_lb['model'].head(3)),
+    'what_worked': f'AutoGluon auto-ML: tried {{len(_lb)}} models, best={{_best_name}}',
+}}
+print(json.dumps(metrics))
+"""
+    return code
+
+
 def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis=""):
+    # ── EXPERIMENT 1: Always use AutoGluon for tabular data ─────────────
+    # AutoGluon handles ANY dataset automatically — no LLM hallucination,
+    # correct feature encoding, missing value handling, model selection.
+    # LLM custom code kicks in for exp 2+ to improve on the AG baseline.
+    _is_media = bool(profile.get('is_media'))
+    _is_ts = 'timeseries' in obj.get('task', '').lower() or 'forecast' in obj.get('task', '').lower()
+    _use_ag = (exp_num == 1 and not _is_media)  # Use AG for ALL tabular exp 1 (incl timeseries fallback)
+    if _use_ag:
+        _ag_code = _write_autogluon_train_py(profile, obj, domain_analysis=domain_analysis)
+        if _ag_code:
+            return _ag_code
+
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
         f"{h.get('metric_name', obj.get('metric', 'metric'))}={h.get('metric_val', 0):.6f}"

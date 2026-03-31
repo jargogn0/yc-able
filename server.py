@@ -1092,6 +1092,39 @@ def _get_run_or_404(run_id: str):
     raise HTTPException(404, "Run not found")
 
 
+def _load_autogluon_predictor(ag_path: str):
+    """Load an AutoGluon TabularPredictor from its saved directory."""
+    from autogluon.tabular import TabularPredictor as _AGP
+    return _AGP.load(ag_path, require_version_match=False)
+
+
+def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
+    """Return the persistent AutoGluon model directory path if available."""
+    result_d = run.get("result") or {}
+    # Check result for stored ag_path
+    if result_d.get("model_ag_path"):
+        _p = Path(result_d["model_ag_path"])
+        if _p.exists() and any(_p.rglob("*")):
+            return str(_p)
+    # Check persistent model dir
+    _stable = _MODELS_DIR / f"{run_id}_ag"
+    if _stable.exists() and any(_stable.rglob("*")):
+        return str(_stable)
+    # Check if model.pkl is an AG reference dict
+    _pkl = _MODELS_DIR / f"{run_id}.pkl"
+    if _pkl.exists():
+        try:
+            import joblib as _jl
+            _d = _jl.load(_pkl)
+            if isinstance(_d, dict) and _d.get("type") == "autogluon":
+                _ap = _d.get("ag_path", "")
+                if _ap and Path(_ap).exists():
+                    return _ap
+        except Exception:
+            pass
+    return None
+
+
 def _find_model_path(run_id: str, run: dict) -> "Path | None":
     """Find model file — checks result_json base64, filesystem, then DB BLOB."""
     # 0. Best: model_b64 embedded in result_json — only use if it's a binary model format
@@ -1600,8 +1633,27 @@ async def start_run(req: RunRequest, request: Request):
             except Exception:
                 result["_ws_files"] = []
             RUNS[run_id]["result"] = result
-            # ── Persist model — embed as base64 in result_json (survives any restart) ──
-            # Only save pkl/joblib/ubj — JSON files are partial components, not full pipelines
+            # ── Persist model ──────────────────────────────────────────────────
+            # Priority 1: AutoGluon ag_models/ directory → copy to persistent storage
+            _ag_ws_dir = ws / "ag_models"
+            if _ag_ws_dir.exists() and any(_ag_ws_dir.rglob("*")):
+                try:
+                    _ag_persistent = _MODELS_DIR / f"{run_id}_ag"
+                    if _ag_persistent.exists():
+                        shutil.rmtree(_ag_persistent)
+                    shutil.copytree(_ag_ws_dir, _ag_persistent)
+                    result["model_ag_path"] = str(_ag_persistent)
+                    # Update model.pkl to point to persistent path
+                    _pkl_path = ws / "model.pkl"
+                    import joblib as _jl
+                    _jl.dump({"type": "autogluon", "ag_path": str(_ag_persistent)}, _pkl_path)
+                    shutil.copy2(_pkl_path, _MODELS_DIR / f"{run_id}.pkl")
+                    RUNS[run_id]["result"] = result
+                    print(f"[models] AutoGluon model copied to persistent storage: {_ag_persistent}", flush=True)
+                except Exception as _age:
+                    print(f"[models] AutoGluon persist failed: {_age}", flush=True)
+
+            # Priority 2: standard pkl/joblib — embed as base64 in result_json
             _model_src = None
             for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
                 _mp = ws / _mname
@@ -1610,38 +1662,28 @@ async def start_run(req: RunRequest, request: Request):
                     break
             if not _model_src:
                 for _mp in list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib")) + list(ws.rglob("*.ubj")):
-                    if _mp.is_file() and "sample" not in _mp.name:
+                    if _mp.is_file() and "sample" not in _mp.name and "ag_models" not in str(_mp):
                         _model_src = _mp
                         break
             if _model_src:
                 try:
                     import base64 as _b64
                     _blob = _model_src.read_bytes()
-                    result["model_b64"] = _b64.b64encode(_blob).decode()
-                    result["model_ext"] = _model_src.suffix or ".pkl"
-                    RUNS[run_id]["result"] = result  # update with model embedded
-                    print(f"[models] Embedded {len(_blob)//1024}KB model ({_model_src.name}) as base64 in result for {run_id}", flush=True)
+                    # Don't embed huge AutoGluon reference files — they're tiny but the real model is in ag_path
+                    _is_ag_ref = len(_blob) < 500  # AG reference pkl is tiny
+                    if not _is_ag_ref:
+                        result["model_b64"] = _b64.b64encode(_blob).decode()
+                        result["model_ext"] = _model_src.suffix or ".pkl"
+                    RUNS[run_id]["result"] = result
+                    print(f"[models] {'AG ref' if _is_ag_ref else f'Embedded {len(_blob)//1024}KB'} model ({_model_src.name}) for {run_id}", flush=True)
                 except Exception as _mbe:
-                    print(f"[models] model_b64 embed failed: {_mbe}", flush=True)
-                # Also try run_models BLOB table and filesystem (best-effort backups)
-                try:
-                    _dbc = DBConn()
-                    _dbc.execute(
-                        "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?)"
-                        " ON CONFLICT (run_id) DO UPDATE SET model_data=EXCLUDED.model_data,"
-                        " model_ext=EXCLUDED.model_ext, created=EXCLUDED.created",
-                        (run_id, _blob, _model_src.suffix or ".pkl", time.time()))
-                    _dbc.commit()
-                    _dbc.close()
-                    print(f"[models] Also saved to run_models BLOB table for {run_id}", flush=True)
-                except Exception as _dbe:
-                    print(f"[models] run_models BLOB save failed (non-fatal): {_dbe}", flush=True)
+                    print(f"[models] model save failed: {_mbe}", flush=True)
                 try:
                     shutil.copy2(_model_src, _MODELS_DIR / f"{run_id}{_model_src.suffix or '.pkl'}")
                 except Exception:
                     pass
             else:
-                print(f"[models] WARNING: no model file found in workspace for {run_id} — files: {list(ws.rglob('*'))[:20] if ws.exists() else 'ws gone'}", flush=True)
+                print(f"[models] WARNING: no model found for {run_id} — files: {list(ws.rglob('*'))[:20] if ws.exists() else 'ws gone'}", flush=True)
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
                 _save_run_to_db(run_id, RUNS[run_id])
@@ -2891,43 +2933,8 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     if not result:
         raise HTTPException(400, "Run not finished yet")
 
-    model_path = _find_model_path(run_id, run)
-    if not model_path:
-        _has_b64 = bool((result or {}).get("model_b64"))
-        _ws_files = (result or {}).get("_ws_files", [])
-        raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64 else 'NO'}, ws_files={_ws_files}")
-
-    model = None
-    load_err = None
-    try:
-        model = joblib.load(model_path)
-    except Exception as _e1:
-        load_err = _e1
-    if model is None:
-        try:
-            import xgboost as xgb
-            _bst = xgb.Booster()
-            _bst.load_model(str(model_path))
-            model = _bst
-        except Exception as _e2:
-            load_err = _e2
-    if model is None:
-        try:
-            import catboost as cb
-            _cbt = cb.CatBoostClassifier()
-            _cbt.load_model(str(model_path))
-            model = _cbt
-        except Exception:
-            try:
-                import catboost as cb
-                _cbt = cb.CatBoostRegressor()
-                _cbt.load_model(str(model_path))
-                model = _cbt
-            except Exception as _e3:
-                load_err = _e3
-    if model is None:
-        raise HTTPException(500, f"Failed to load model ({model_path.suffix}): {load_err}")
-
+    # Try AutoGluon first (most reliable — handles feature types automatically)
+    _ag_path = _find_autogluon_path(run_id, run)
     contents = await file.read()
     try:
         df = pd.read_csv(_io.BytesIO(contents))
@@ -2937,7 +2944,65 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     obj = result.get("objective") or result.get("best") or {}
     target = obj.get("target", "")
 
-    # Keep ID column aside so we can include it in submission
+    if _ag_path:
+        try:
+            _ag_pred = _load_autogluon_predictor(_ag_path)
+            # AutoGluon handles everything — just drop target if present
+            _df_pred = df.drop(columns=[c for c in [target] if c and c in df.columns])
+            preds = _ag_pred.predict(_df_pred).values
+            id_col = next((c for c in df.columns if c.lower() in ("id","customerid","customer_id","passengerid")), None)
+            id_vals = df[id_col] if id_col else pd.RangeIndex(len(df))
+            sub_target = target or "prediction"
+            sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
+            _buf = _io.BytesIO(); sub.to_csv(_buf, index=False); _buf.seek(0)
+            return StreamingResponse(_buf, media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="submission_{run_id[:8]}.csv"'})
+        except Exception as _age:
+            print(f"[predict-file] AutoGluon predict failed: {_age} — falling back to pkl", flush=True)
+
+    model_path = _find_model_path(run_id, run)
+    if not model_path:
+        _has_b64 = bool((result or {}).get("model_b64"))
+        _ws_files = (result or {}).get("_ws_files", [])
+        raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64 else 'NO'}, ws_files={_ws_files}")
+
+    model = None
+    load_err = None
+    try:
+        _loaded = joblib.load(model_path)
+        # Handle AG reference dict saved in pkl
+        if isinstance(_loaded, dict) and _loaded.get("type") == "autogluon":
+            _ap2 = _loaded.get("ag_path", "")
+            if _ap2 and Path(_ap2).exists():
+                _ag_pred2 = _load_autogluon_predictor(_ap2)
+                _df_pred2 = df.drop(columns=[c for c in [target] if c and c in df.columns])
+                preds2 = _ag_pred2.predict(_df_pred2).values
+                id_col2 = next((c for c in df.columns if c.lower() in ("id","customerid","customer_id","passengerid")), None)
+                id_vals2 = df[id_col2] if id_col2 else pd.RangeIndex(len(df))
+                sub2 = pd.DataFrame({id_col2 or "id": id_vals2, target or "prediction": preds2})
+                _buf2 = _io.BytesIO(); sub2.to_csv(_buf2, index=False); _buf2.seek(0)
+                return StreamingResponse(_buf2, media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="submission_{run_id[:8]}.csv"'})
+        model = _loaded
+    except Exception as _e1:
+        load_err = _e1
+    if model is None:
+        try:
+            import xgboost as xgb
+            _bst = xgb.Booster(); _bst.load_model(str(model_path)); model = _bst
+        except Exception as _e2:
+            load_err = _e2
+    if model is None:
+        try:
+            import catboost as cb
+            try: _cbt = cb.CatBoostClassifier(); _cbt.load_model(str(model_path)); model = _cbt
+            except Exception: _cbt = cb.CatBoostRegressor(); _cbt.load_model(str(model_path)); model = _cbt
+        except Exception as _e3:
+            load_err = _e3
+    if model is None:
+        raise HTTPException(500, f"Failed to load model ({model_path.suffix}): {load_err}")
+
+    # Keep ID column aside
     id_col = next((c for c in df.columns if c.lower() in ("id", "customerid", "customer_id", "passengerid")), None)
     id_vals = df[id_col] if id_col else pd.RangeIndex(len(df))
 
