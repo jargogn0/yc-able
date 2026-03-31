@@ -129,6 +129,7 @@ class DBConn:
 
 def _init_db():
     conn = DBConn()
+    _blob_type = "BYTEA" if conn._pg else "BLOB"
     conn.execute("""CREATE TABLE IF NOT EXISTS app_config (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -192,9 +193,9 @@ def _init_db():
         api_key TEXT NOT NULL,
         PRIMARY KEY (user_id, provider)
     )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS run_models (
+    conn.execute(f"""CREATE TABLE IF NOT EXISTS run_models (
         run_id TEXT PRIMARY KEY,
-        model_data BLOB NOT NULL,
+        model_data {_blob_type} NOT NULL,
         model_ext TEXT DEFAULT '.pkl',
         created REAL
     )""")
@@ -1590,7 +1591,7 @@ async def start_run(req: RunRequest, request: Request):
                             _blob = _stable_f.read_bytes()
                             _dbc = DBConn()
                             _dbc.execute(
-                                "INSERT OR REPLACE INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?)",
+                                "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?) ON CONFLICT (run_id) DO UPDATE SET model_data=EXCLUDED.model_data, model_ext=EXCLUDED.model_ext, created=EXCLUDED.created",
                                 (run_id, _blob, _stable_f.suffix, time.time()))
                             _dbc.commit()
                             _dbc.close()
@@ -1606,7 +1607,7 @@ async def start_run(req: RunRequest, request: Request):
                                 _blob = _mp.read_bytes()
                                 _dbc = DBConn()
                                 _dbc.execute(
-                                    "INSERT OR REPLACE INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?)",
+                                    "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?) ON CONFLICT (run_id) DO UPDATE SET model_data=EXCLUDED.model_data, model_ext=EXCLUDED.model_ext, created=EXCLUDED.created",
                                     (run_id, _blob, _mp.suffix, time.time()))
                                 _dbc.commit()
                                 _dbc.close()
