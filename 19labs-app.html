@@ -1334,6 +1334,15 @@ input[type=file]{display:none}
         <div class="dz-sub" id="dz-sub">CSV · Excel · JSON · TSV · Images · Audio</div>
         <input type="file" id="fi" accept=".csv,.xlsx,.xls,.json,.tsv,.txt,.zip,.jpg,.jpeg,.png,.gif,.bmp,.webp,.mp3,.wav,.ogg,.flac,.m4a" multiple onchange="onFile(event)">
       </div>
+      <!-- Test set drop zone — shown after model is trained -->
+      <div class="dz" id="dz-test" style="display:none;border-color:rgba(139,92,246,.35);background:rgba(139,92,246,.04)" onclick="document.getElementById('fi-test').click()">
+        <div class="dz-icon" style="opacity:.7;color:#a78bfa">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div class="dz-title" id="dz-test-title" style="color:#a78bfa">Drop test.csv to predict</div>
+        <div class="dz-sub" id="dz-test-sub" style="color:#7c3aed">model ready · drop test set here</div>
+        <input type="file" id="fi-test" accept=".csv,.tsv" onchange="handleTestFile(event)">
+      </div>
       <div class="url-row">
         <input class="url-in" id="url-in" placeholder="Paste URL or Google Sheets link..." onkeydown="if(event.key==='Enter')fetchFromURL()">
         <button class="url-btn" onclick="fetchFromURL()">Fetch</button>
@@ -2671,6 +2680,56 @@ dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handleFile(f)});
 function onFile(e){const files=e.target.files;if(!files||!files.length)return;for(let i=0;i<files.length;i++)handleFile(files[i])}
 
+// Test set drop zone
+const dzTest=document.getElementById('dz-test');
+dzTest.addEventListener('dragover',e=>{e.preventDefault();dzTest.classList.add('drag')});
+dzTest.addEventListener('dragleave',()=>dzTest.classList.remove('drag'));
+dzTest.addEventListener('drop',e=>{e.preventDefault();dzTest.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)runTestPrediction(f)});
+function handleTestFile(e){const f=e.target.files[0];if(f)runTestPrediction(f);e.target.value='';}
+
+function showTestDropZone(){
+  const el=document.getElementById('dz-test');
+  if(!el)return;
+  el.style.display='';
+  const sub=document.getElementById('dz-test-sub');
+  if(sub&&S.best)sub.textContent=(S.best.model||'model')+' ready · drop test set here';
+}
+
+async function runTestPrediction(f){
+  if(!S.runId||!S.best){toast('No trained model — run training first','err');return;}
+  const dzT=document.getElementById('dz-test');
+  const titleEl=document.getElementById('dz-test-title');
+  const subEl=document.getElementById('dz-test-sub');
+  if(titleEl)titleEl.textContent=`Predicting on ${f.name}…`;
+  if(subEl)subEl.textContent='running…';
+  if(dzT)dzT.classList.add('drag');
+  stab('exp');
+  chat('ai',`Running predictions on <strong>${esc(f.name)}</strong> with <strong>${esc(S.best.model)}</strong>…`);
+  const fd=new FormData();fd.append('file',f);
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${S.runId}/predict-file`,{method:'POST',body:fd});
+    if(!r.ok){const t=await r.text();throw new Error(t.includes('detail')?JSON.parse(t).detail:t);}
+    const blob=await r.blob();
+    const cd=r.headers.get('content-disposition')||'';
+    const fname=cd.match(/filename="?([^"]+)"?/)?.[1]||'submission.csv';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+    URL.revokeObjectURL(url);
+    if(titleEl)titleEl.textContent='Drop test.csv to predict';
+    if(subEl)subEl.textContent=(S.best?.model||'model')+' ready · drop test set here';
+    if(dzT)dzT.classList.remove('drag');
+    chat('ai',`✓ <strong>${fname}</strong> is downloading now.`);
+    toast(`${fname} ready`,'ok',4000);
+  }catch(e){
+    const msg=e.message.slice(0,120);
+    if(titleEl)titleEl.textContent='Drop test.csv to predict';
+    if(subEl)subEl.textContent='failed: '+msg.slice(0,60);
+    if(dzT)dzT.classList.remove('drag');
+    chat('ai',`Prediction failed: ${msg}`);
+    toast(`Failed: ${msg.slice(0,60)}`,'err');
+  }
+}
+
 // handleFile is defined below in the "FILE FORMAT SUPPORT" section
 
 // ═══════════════════════════════════════════
@@ -3506,6 +3565,7 @@ function classifyFail(exp){
 // ═══════════════════════════════════════════
 function showBest(best,obj,runId){
   const ex=document.getElementById('bb-el');if(ex)ex.remove();
+  showTestDropZone();
   const c=document.getElementById('p-exp');
   const e=document.createElement('div');e.className='best-hero';e.id='bb-el';
   const am=best.all_metrics||{};
@@ -5586,40 +5646,6 @@ async function joinDatasets(){
 // FILE FORMAT SUPPORT (Excel, JSON)
 // ═══════════════════════════════════════════
 async function handleFile(f,preloadedText){
-  // ── If a model is already trained, intercept possible test-set uploads ──
-  if(S.runId && S.best && S.status==='done'){
-    const lname=f.name.toLowerCase();
-    const looksLikeTest=lname.includes('test')||lname.includes('predict')||lname.includes('submission')||lname.includes('score');
-    if(looksLikeTest){
-      // Auto-predict: agent takes over
-      stab('exp');
-      chat('ai',`Detected <strong>${esc(f.name)}</strong> — running predictions with <strong>${esc(S.best.model)}</strong> model...`);
-      const st=document.getElementById('exp-predict-status');
-      if(st)st.textContent=`Running predictions on ${f.name}...`;
-      const fd=new FormData(); fd.append('file',f);
-      try{
-        const r=await apiFetch(`${BASE}/api/run/${S.runId}/predict-file`,{method:'POST',body:fd});
-        if(!r.ok){const e=await r.text();throw new Error(e.includes('detail')?JSON.parse(e).detail:e);}
-        const blob=await r.blob();
-        const cd=r.headers.get('content-disposition')||'';
-        const fname=cd.match(/filename="?([^"]+)"?/)?.[1]||'submission.csv';
-        const url=URL.createObjectURL(blob);
-        const a=document.createElement('a');a.href=url;a.download=fname;a.click();
-        URL.revokeObjectURL(url);
-        if(st)st.textContent=`\u2713 ${fname} downloaded`;
-        chat('ai',`\u2713 Predictions done — <strong>${fname}</strong> is downloading now.`);
-        toast(`${fname} ready`,'ok',4000);
-      }catch(e){
-        const msg=e.message.slice(0,120);
-        if(st)st.textContent=`Failed: ${msg}`;
-        chat('ai',`Prediction failed: ${msg}`);
-        toast(`Predict failed: ${msg.slice(0,60)}`,'err');
-      }
-      return; // don't start a new training run
-    }
-    // Not a test file — confirm before wiping the trained model state
-    if(!confirm(`You have a trained model (${S.best.model}). Load "${f.name}" as new training data? This will clear the current run.`))return;
-  }
   // If we already have a primary dataset and this is additional, add to extras
   if(S.csv&&S.file&&S.file.name!==f.name){
     const extraText=preloadedText||await readF(f);
