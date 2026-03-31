@@ -5171,6 +5171,17 @@ async function expUploadAndPredict(runId){
   inp.value='';
 }
 
+// Global registry: avoids embedding large base64 inside onclick attributes
+window._predDL = window._predDL || {};
+function _dlPred(id){
+  const d=window._predDL[id];if(!d)return;
+  try{
+    const bytes=atob(d.b64);
+    const u=URL.createObjectURL(new Blob([bytes],{type:'text/csv'}));
+    const a=document.createElement('a');a.href=u;a.download=d.fname;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);
+    toast('Downloaded','ok',2000);
+  }catch(e){toast('Download failed: '+e.message,'err');}
+}
 function _renderPredictPreview(j){
   // Build a preview table from predict-file JSON response + a download button
   const cols=j.columns||[];const rows=j.preview||[];const total=j.total_rows||0;
@@ -5181,8 +5192,9 @@ function _renderPredictPreview(j){
   h+=`<tbody>${rows.map(r=>`<tr>${r.map(v=>`<td style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text-2)">${esc(v==null?'':String(v))}</td>`).join('')}</tr>`).join('')}</tbody>`;
   h+=`</table></div>`;
   if(j.csv_b64){
-    const _b64=j.csv_b64;const _fn=fname.replace(/'/g,'');
-    h+=`<button class="abtn p" style="font-size:11px" onclick="(function(){const b=atob('${_b64}');const u=URL.createObjectURL(new Blob([b],{type:'text/csv'}));const a=document.createElement('a');a.href=u;a.download='${_fn}';a.click();URL.revokeObjectURL(u);toast('Downloaded','ok',2000)})()">&#8681; Download ${esc(fname)}</button>`;
+    const id='pd'+Date.now();
+    window._predDL[id]={b64:j.csv_b64,fname};
+    h+=`<button class="abtn p" style="font-size:11px" onclick="_dlPred('${id}')">&#8681; Download ${esc(fname)}</button>`;
   }
   return h;
 }
