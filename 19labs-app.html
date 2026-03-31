@@ -5174,11 +5174,18 @@ async function expUploadAndPredict(runId){
 // Global registry: avoids embedding large base64 inside onclick attributes
 window._predDL = window._predDL || {};
 function _dlPred(id){
-  const d=window._predDL[id];if(!d)return;
+  const d=window._predDL[id];if(!d){toast('Download data not found — re-run prediction','err');return;}
   try{
-    const bytes=atob(d.b64);
-    const u=URL.createObjectURL(new Blob([bytes],{type:'text/csv'}));
-    const a=document.createElement('a');a.href=u;a.download=d.fname;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);
+    // Decode base64 → Uint8Array (handles binary correctly)
+    const raw=atob(d.b64);
+    const arr=new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+    const blob=new Blob([arr],{type:'text/csv'});
+    const u=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=u;a.download=d.fname;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    // Delay revoke so browser has time to initiate the download
+    setTimeout(()=>URL.revokeObjectURL(u),30000);
     toast('Downloaded','ok',2000);
   }catch(e){toast('Download failed: '+e.message,'err');}
 }
