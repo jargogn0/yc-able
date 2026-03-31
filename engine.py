@@ -678,13 +678,11 @@ def analyze_domain(profile, hint=""):
     resp = ask(
         "You are a world-class senior data scientist and ML engineer. "
         "You read datasets the way a doctor reads an X-ray — instantly seeing what matters. "
-        "Your job is to produce an expert analysis that will drive all modeling decisions.",
-        f"""Analyze this dataset deeply. Think step by step like a senior ML engineer at a top tech company.
+        "Output ONLY valid JSON. No prose, no markdown fences.",
+        f"""Analyze this dataset and return a structured JSON analysis that will drive all ML code decisions.
 
-═══════════════════════════════════════
 DATASET: {profile['rows']:,} rows × {profile['cols']} cols
 FILE: {pathlib.Path(profile['path']).name}
-═══════════════════════════════════════
 
 COLUMNS (name, type, stats):
 {col_detail}
@@ -695,35 +693,87 @@ CLASS BALANCE (low-cardinality columns):
 TOP CORRELATIONS:
 {corr_txt}
 
-DATASET SIGNALS:
-{signals_txt}
+DATASET SIGNALS: {signals_txt}
+USER HINT: {hint or "(none)"}
 
-USER HINT: {hint or "(none — infer everything from data)"}
-
-═══════════════════════════════════════
-PRODUCE A STRUCTURED EXPERT ANALYSIS:
-═══════════════════════════════════════
-
-INDUSTRY: <specific industry/domain e.g. "Healthcare — ICU readmission prediction", "E-commerce — customer churn", "Finance — credit default", "NLP — product sentiment">
-PROBLEM_TYPE: <precise ML task e.g. "Binary classification with severe class imbalance (8% positive)", "Multivariate time-series forecasting (daily granularity)", "NLP sentiment regression on product reviews">
-TARGET_COLUMN: <exact column name, with reasoning>
-TARGET_METRIC: <best metric AND why e.g. "ROC-AUC: class imbalance makes accuracy useless", "RMSE after log-transform: revenue is log-normal", "Macro-F1: multi-class with imbalance">
-DATA_QUALITY: <specific issues: missing patterns, outliers, leakage risks, skew, cardinality problems — be concrete>
-KEY_INSIGHTS: <3-5 bullet points — what a senior DS would notice immediately e.g. "• Serial corr=0.91 on 'sales' — strong AR signal", "• 'customer_id' leaks target — must exclude", "• 'review_text' avg 180 chars — BERT fine-tuning likely optimal">
-MODELING_STRATEGY: <concrete 3-tier strategy>
-  BASELINE: <specific model + specific reason, e.g. "LightGBM with scale_pos_weight=12 for imbalance">
-  BETTER: <specific upgrade, e.g. "Optuna-tuned XGBoost + SMOTE oversampling + 5-fold stratified CV">
-  ADVANCED: <specific advanced approach, e.g. "Stacking: LGBM + CatBoost + LR meta-learner, calibrated with Platt scaling">
-CRITICAL_WARNINGS: <what will go wrong if ignored, e.g. "Random splits on time-series = data leakage. Must use walk-forward validation.", "Log-transform revenue or RMSE will be dominated by outliers.">
-EXPECTED_PERFORMANCE: <realistic range e.g. "AUC 0.75-0.85 achievable; >0.90 would suggest leakage">""",
-        1800
+Return this EXACT JSON structure (all fields required):
+{{
+  "data_type": "<one of: tabular_classification | tabular_regression | timeseries_forecasting | nlp_text | image_classification | audio_classification | survival | clustering | anomaly_detection>",
+  "industry": "<specific domain, e.g. Telecom churn, Finance credit default, Healthcare ICU>",
+  "problem_summary": "<1 sentence — precise ML task and key challenge>",
+  "target_col": "<exact column name to predict>",
+  "metric": "<best metric: auc|f1|rmse|mape|mae|accuracy|logloss|r2|silhouette>",
+  "metric_reasoning": "<why this metric fits>",
+  "id_cols": ["<cols that are IDs/row numbers — must be DROPPED before training>"],
+  "datetime_cols": ["<cols that are dates/timestamps>"],
+  "text_cols": ["<cols with free text>"],
+  "target_encode_cols": ["<high-cardinality categorical cols that need target encoding>"],
+  "leakage_cols": ["<cols that would leak the target — must be excluded>"],
+  "class_imbalance": "<ratio if classification e.g. 89/11, or null>",
+  "key_insights": ["<insight 1>", "<insight 2>", "<insight 3>"],
+  "critical_warnings": ["<warning 1 — what will break if ignored>"],
+  "baseline_approach": "<exp 1: specific model + key params, e.g. LightGBM classifier, scale_pos_weight=8, 200 trees, no tuning>",
+  "better_approach": "<exp 2: upgrade, e.g. Optuna-tuned XGBoost, stratified 5-fold CV, SMOTE for imbalance>",
+  "advanced_approach": "<exp 3+: best possible, e.g. Stacking: LGBM+CatBoost+XGB, LR meta-learner, Platt calibration>",
+  "feature_engineering": ["<concrete FE idea 1>", "<concrete FE idea 2>"],
+  "expected_performance": "<realistic range e.g. AUC 0.78-0.88; >0.93 suggests leakage>"
+}}""",
+        2000
     )
-    return resp
+    # Parse to structured dict, fall back to text for backwards compat
+    try:
+        _parsed = json.loads(resp.strip())
+        _parsed["_raw"] = resp
+        return _parsed
+    except Exception:
+        # Try extracting JSON block from mixed output
+        _m = re.search(r'\{[\s\S]*\}', resp)
+        if _m:
+            try:
+                _parsed = json.loads(_m.group(0))
+                _parsed["_raw"] = resp
+                return _parsed
+            except Exception:
+                pass
+        # Return as legacy string for callers that use it as text
+        return resp
 
 
 def _parse_domain_field(resp, key):
+    # Handle both dict (new JSON format) and string (legacy)
+    if isinstance(resp, dict):
+        _key_map = {
+            "INDUSTRY": "industry", "PROBLEM_TYPE": "problem_summary",
+            "TARGET_COLUMN": "target_col", "TARGET_METRIC": "metric",
+            "MODELING_STRATEGY": "baseline_approach",
+        }
+        return resp.get(_key_map.get(key, key.lower()), "")
     m = re.search(rf"^{key}:\s*(.+?)(?=\n[A-Z_]+:|$)", resp, re.MULTILINE | re.DOTALL)
     return m.group(1).strip() if m else ""
+
+def _domain_analysis_text(da) -> str:
+    """Render domain_analysis (dict or str) as a compact text block for LLM prompts."""
+    if isinstance(da, dict):
+        parts = []
+        if da.get("industry"):         parts.append(f"INDUSTRY: {da['industry']}")
+        if da.get("problem_summary"):  parts.append(f"PROBLEM: {da['problem_summary']}")
+        if da.get("data_type"):        parts.append(f"DATA_TYPE: {da['data_type']}")
+        if da.get("target_col"):       parts.append(f"TARGET: {da['target_col']}")
+        if da.get("metric"):           parts.append(f"METRIC: {da['metric']} — {da.get('metric_reasoning','')}")
+        if da.get("id_cols"):          parts.append(f"DROP (IDs/leakage): {da['id_cols'] + da.get('leakage_cols',[])}")
+        if da.get("datetime_cols"):    parts.append(f"DATETIME COLS: {da['datetime_cols']}")
+        if da.get("text_cols"):        parts.append(f"TEXT COLS: {da['text_cols']}")
+        if da.get("target_encode_cols"): parts.append(f"TARGET-ENCODE: {da['target_encode_cols']}")
+        if da.get("class_imbalance"):  parts.append(f"CLASS IMBALANCE: {da['class_imbalance']}")
+        if da.get("key_insights"):     parts.append("KEY INSIGHTS:\n" + "\n".join(f"  • {i}" for i in da["key_insights"]))
+        if da.get("critical_warnings"): parts.append("CRITICAL WARNINGS:\n" + "\n".join(f"  ⚠ {w}" for w in da["critical_warnings"]))
+        if da.get("feature_engineering"): parts.append("FEATURE IDEAS:\n" + "\n".join(f"  • {f}" for f in da["feature_engineering"]))
+        if da.get("baseline_approach"): parts.append(f"BASELINE: {da['baseline_approach']}")
+        if da.get("better_approach"):  parts.append(f"BETTER: {da['better_approach']}")
+        if da.get("advanced_approach"): parts.append(f"ADVANCED: {da['advanced_approach']}")
+        if da.get("expected_performance"): parts.append(f"EXPECTED: {da['expected_performance']}")
+        return "\n".join(parts)
+    return str(da) if da else ""
 
 def _safe_float(s, default=0.0):
     try:
@@ -1080,13 +1130,53 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
         _forced_task = None
         _override_block = ""
 
+    # Fast path: if domain_analysis is structured JSON with all fields, extract directly
+    _da_dict = domain_analysis if isinstance(domain_analysis, dict) else None
+    if _da_dict and not hint and not _forced_target:
+        # Full structured extraction — no extra LLM call needed
+        _da_target = _da_dict.get("target_col", "")
+        _da_task_map = {
+            "tabular_classification": "BinaryClassification",
+            "tabular_regression": "Regression",
+            "timeseries_forecasting": "TimeSeriesForecasting",
+            "nlp_text": "SentimentAnalysis",
+            "image_classification": "ImageClassification",
+            "audio_classification": "AudioClassification",
+            "survival": "Regression",
+            "clustering": "Clustering",
+            "anomaly_detection": "AnomalyDetection",
+        }
+        _da_data_type = _da_dict.get("data_type", "tabular_regression")
+        # Refine classification task type
+        if "classification" in _da_data_type:
+            _tc_info = next((c for c in profile.get('columns', []) if c['name'] == _da_target), None)
+            if _tc_info and _tc_info.get('unique', 99) <= 2:
+                _da_task_map["tabular_classification"] = "BinaryClassification"
+            elif _tc_info:
+                _da_task_map["tabular_classification"] = "MultiClassClassification"
+        _da_task = _da_task_map.get(_da_data_type, "Regression")
+        _da_metric = _da_dict.get("metric", _smart_default_metric(_da_task, hint))
+        _da_direction = "lower_is_better" if _da_metric in ("rmse","mape","mae","logloss","mse") else "higher_is_better"
+        tc = profile["target_candidates"]
+        return dict(
+            domain=_da_dict.get("industry", "General"),
+            task=_da_task,
+            target=_da_target or (tc[0] if tc else profile["headers"][-1]),
+            metric=_da_metric,
+            direction=_da_direction,
+            confidence=0.9,
+            reasoning=_da_dict.get("problem_summary", ""),
+            good_enough=_da_dict.get("expected_performance", ""),
+            raw=json.dumps(_da_dict),
+        )
+
     resp = ask(
         "You are 19Labs. Given a deep expert domain analysis, produce precise ML objective parameters. "
         "When the user gives an instruction, interpret it in context of the current plan to find their true intent.",
         f"""{_override_block}Based on the expert domain analysis below, extract the exact ML objective parameters.
 {_hint_block}
 EXPERT DOMAIN ANALYSIS:
-{domain_analysis or "(not available — reason from profile)"}
+{_domain_analysis_text(domain_analysis) or "(not available — reason from profile)"}
 
 DATASET SUMMARY:
 - Rows: {profile['rows']:,} | Cols: {profile['cols']}
@@ -1173,7 +1263,9 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
         profile = profile_media_dataset(csv_path)
     else:
         profile = profile_dataset(csv_path)
-    obj = infer_objective(profile, user_hint, previous_objective=previous_objective)
+    # Run domain analysis first — gives structured intelligence for objective inference and agent message
+    obj_analysis = analyze_domain(profile, user_hint)
+    obj = infer_objective(profile, user_hint, domain_analysis=obj_analysis, previous_objective=previous_objective)
 
     # Build correction block — shows the agent what it WAS proposing so it can
     # correctly interpret ambiguous user corrections like "no revenue forecast"
@@ -1226,51 +1318,39 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
     else:
         _files_block = ""
 
-    advice_raw = ask(
-        "You are a sharp, experienced ML engineer having a casual conversation with a colleague. "
-        "You think fast, notice what matters, and skip the filler. You never say 'I scanned your dataset' "
-        "or start with a generic status update. You lead with insight. "
-        "Every dataset has something specific and interesting — always find the unique angle for THIS data.",
-        f"""Analyze this dataset setup and respond naturally.
-{_prev_block}{_correction_block}
-Return STRICT JSON with keys:
-{{
-  "recommended_objective": "short objective sentence",
-  "recommended_metric": "metric name",
-  "clarifying_questions": ["q1", "q2", "q3"],
-  "decision_tree": [
-    {{
-      "id": "short_snake_case_id",
-      "question": "single focused question",
-      "options": ["option 1", "option 2", "option 3"]
-    }}
-  ],
-  "experiment_directions": ["direction1", "direction2", "direction3"],
-  "risks": ["risk1", "risk2"],
-  "first_iteration_plan": "one concise paragraph",
-  "agent_message": "1-2 SHORT sentences MAX. State: (1) the detected target column and task type in plain words. (2) the first model approach. (3) 'Say **go** to start.' Example: 'Predicting **Churn** — binary classification, AUC metric. Starting with LightGBM + class weights for the 89/11 split. Say **go** to start.' FORBIDDEN: long explanations, domain analysis, feature engineering details, questions, invites. Just the facts and go."
-}}
+    # Build compact structured context for agent message generation
+    _da_struct = _domain_analysis_text(obj_analysis) if isinstance(obj_analysis, dict) else ""
+    _da_baseline = obj_analysis.get("baseline_approach", "") if isinstance(obj_analysis, dict) else ""
+    _da_imbalance = obj_analysis.get("class_imbalance", "") if isinstance(obj_analysis, dict) else ""
+    _da_warnings = obj_analysis.get("critical_warnings", []) if isinstance(obj_analysis, dict) else []
 
-DATA PROFILE (train file):
-- rows: {profile['rows']}
-- cols: {profile['cols']}
+    advice_raw = ask(
+        "You are a sharp, decisive ML engineer. Output ONLY JSON. No questions, no chat.",
+        f"""Generate a JSON response for this ML dataset.
+{_prev_block}{_correction_block}
+STRUCTURED ANALYSIS:
+{_da_struct or "(see profile below)"}
+
+DATA PROFILE:
+- rows: {profile['rows']:,} | cols: {profile['cols']}
 - headers: {profile['headers']}
-- numeric: {profile['numeric']}
-- categorical: {profile['categorical']}
-- datetime: {profile['datetime']}
-- text_columns: {profile.get('text', [])}
 - signals: {profile.get('signals', [])}
 {_files_block}
-COMPETITION CONTEXT: {"KAGGLE COMPETITION — train on train.csv, generate predictions for test.csv, save submission.csv" if ("competition" in (user_hint or "").lower() or "kaggle" in (user_hint or "").lower()) else "standard dataset"}
-
 INFERRED OBJECTIVE:
-- task: {obj['task']}
-- target: {obj['target']}
-- metric: {obj['metric']} ({obj['direction']})
-- domain: {obj['domain']}
-- reasoning: {obj['reasoning']}
-""",
-        1500
+- task: {obj['task']} | target: {obj['target']} | metric: {obj['metric']} | domain: {obj['domain']}
+
+Return STRICT JSON:
+{{
+  "recommended_objective": "short objective sentence",
+  "recommended_metric": "{obj['metric']}",
+  "clarifying_questions": [],
+  "decision_tree": [],
+  "experiment_directions": ["exp1: {_da_baseline or 'baseline model'}", "exp2: tuned with CV", "exp3: ensemble"],
+  "risks": {json.dumps(_da_warnings[:2]) if _da_warnings else '["check for data leakage"]'},
+  "first_iteration_plan": "one concise paragraph describing the baseline approach",
+  "agent_message": "1-2 SHORT sentences ONLY. Format: 'Predicting **[TARGET]** ([task type], [metric]). [Baseline model + key reason]. Say **go** to start.' NEVER ask questions. NEVER explain more than 2 things."
+}}""",
+        800
     )
     advice = _extract_json_blob(advice_raw)
 
@@ -1432,7 +1512,7 @@ KNOWN API BREAKAGES — avoid these exactly:
 - pandas ≥2.0: DataFrame.append() removed — use pd.concat([df, new_row.to_frame().T]).
 
 EXPERT DOMAIN ANALYSIS (written by a senior data scientist — treat as ground truth):
-{domain_analysis or "(not available)"}
+{_domain_analysis_text(domain_analysis) or "(not available)"}
 
 OBJECTIVE:
 - Task: {obj.get('task', 'Regression')}
@@ -1537,11 +1617,59 @@ KAGGLE COMPETITION MODE — MANDATORY RULES:
             " DATA_SEP is already set to the correct delimiter (e.g. ',' or ';' or '\\t')."
         )
 
+    # Extract structured domain analysis fields for explicit injection
+    _da = domain_analysis if isinstance(domain_analysis, dict) else {}
+    _da_type = _da.get("data_type", "tabular_regression") if _da else ""
+    _id_cols = _da.get("id_cols", []) if _da else []
+    _leak_cols = _da.get("leakage_cols", []) if _da else []
+    _drop_cols = list(set(_id_cols + _leak_cols))
+    _dt_cols = _da.get("datetime_cols", []) if _da else []
+    _txt_cols = _da.get("text_cols", []) if _da else []
+    _te_cols = _da.get("target_encode_cols", []) if _da else []
+    _imbalance = _da.get("class_imbalance") if _da else None
+    _fe_ideas = _da.get("feature_engineering", []) if _da else []
+    _warnings = _da.get("critical_warnings", []) if _da else []
+
+    # Select experiment tier based on exp_num
+    if exp_num == 1:
+        _tier = "BASELINE"
+        _tier_approach = _da.get("baseline_approach", "") if _da else ""
+    elif exp_num == 2:
+        _tier = "BETTER"
+        _tier_approach = _da.get("better_approach", "") if _da else ""
+    else:
+        _tier = "ADVANCED"
+        _tier_approach = _da.get("advanced_approach", "") if _da else ""
+
+    # Build structured data context block
+    _struct_block = ""
+    if _drop_cols: _struct_block += f"\nCOLS TO DROP (IDs/leakage — MANDATORY): {_drop_cols}"
+    if _dt_cols:   _struct_block += f"\nDATETIME COLS (parse with pd.to_datetime): {_dt_cols}"
+    if _txt_cols:  _struct_block += f"\nTEXT COLS (TF-IDF or embeddings): {_txt_cols}"
+    if _te_cols:   _struct_block += f"\nHIGH-CARDINALITY COLS (use TargetEncoder): {_te_cols}"
+    if _imbalance: _struct_block += f"\nCLASS IMBALANCE: {_imbalance} — use class_weight or scale_pos_weight"
+    if _fe_ideas:  _struct_block += "\nFEATURE IDEAS:\n" + "\n".join(f"  - {f}" for f in _fe_ideas)
+    if _warnings:  _struct_block += "\nCRITICAL WARNINGS:\n" + "\n".join(f"  ⚠ {w}" for w in _warnings)
+    if _tier_approach: _struct_block += f"\nTHIS EXPERIMENT APPROACH ({_tier}): {_tier_approach}"
+
+    # Data-type specific routing hint
+    _dtype_routing = {
+        "tabular_classification": "Tabular classification: gradient boosting (LightGBM/XGBoost/CatBoost), handle categoricals, encode properly.",
+        "tabular_regression":     "Tabular regression: gradient boosting or ensemble, log-transform skewed targets, handle outliers.",
+        "timeseries_forecasting": "Time series: NEVER random split — use walk-forward/time-based split. Use lag features, rolling stats, time components. Consider LightGBM+lags or Prophet.",
+        "nlp_text":               "NLP: TF-IDF + LogReg baseline, then sentence-transformers or HuggingFace BERT for advanced. Preprocess text (lowercase, strip HTML).",
+        "image_classification":   "Images: torchvision pretrained ResNet/EfficientNet transfer learning. Data augmentation (flip, crop, color jitter).",
+        "audio_classification":   "Audio: librosa MFCC features + gradient boosting, or wav2vec2 embeddings.",
+        "survival":               "Survival analysis: lifelines CoxPH or scikit-survival. Time-to-event with censoring.",
+        "clustering":             "Clustering: KMeans + silhouette for k selection, UMAP for viz, DBSCAN for density.",
+        "anomaly_detection":      "Anomaly detection: IsolationForest + DBSCAN + AutoEncoder. Use only normal class for training.",
+    }.get(_da_type, "")
+
     code = ask(
         "You write complete production-grade Python training scripts. "
         "You are a senior ML engineer — you know exactly what approach fits each dataset type and domain. "
         "You never write generic code when expert-level code is possible.",
-        f"""Write `train.py` — experiment {exp_num} — for this specific domain and task.
+        f"""Write `train.py` — experiment {exp_num} ({_tier} tier) — for this specific domain and task.
 
 ENVIRONMENT:
 - Auto-install available for any pip-installable package.
@@ -1555,19 +1683,22 @@ KNOWN API BREAKAGES — these will crash, avoid exactly:
 - mean_squared_error(y, p, squared=True)  → WRONG. Use: mean_squared_error(y, p)
 - DataFrame.append() → REMOVED in pandas 2.0. Use pd.concat([df, row.to_frame().T], ignore_index=True)
 
-EXPERT DOMAIN ANALYSIS (source of truth — follow this strategy):
-{domain_analysis[:2000] if domain_analysis else "(not available — use program spec)"}
+EXPERT DOMAIN ANALYSIS (source of truth):
+{_domain_analysis_text(domain_analysis) or "(not available — use program spec)"}
 
-EXPERIMENT: {exp_num}
+DATA-TYPE ROUTING: {_dtype_routing}
+{_struct_block}
+
+EXPERIMENT: {exp_num} ({_tier} tier)
 TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
 METRIC: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
 
 RECENT HISTORY:
 {hist_txt}
 
-PROGRAM SPEC (source of truth):
+PROGRAM SPEC:
 ```markdown
-{program_md[:12000]}
+{program_md[:8000]}
 ```
 
 DATA PROFILE:
