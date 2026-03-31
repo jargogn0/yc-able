@@ -1694,7 +1694,14 @@ predictor.fit(
 )
 
 # ── 5. EVALUATE ────────────────────────────────────────────────────────
-_lb = predictor.leaderboard(val_df, silent=True)
+try:
+    _lb = predictor.leaderboard(val_df, silent=True)
+except Exception as _lbe:
+    print(f"Leaderboard with val_df failed ({_lbe}), using training leaderboard")
+    _lb = predictor.leaderboard(silent=True)
+if _lb is None or len(_lb) == 0:
+    # Fallback: at least one model must exist
+    _lb = pd.DataFrame({{'model': [predictor.get_model_best()], 'score_val': [0.0], 'fit_time': [0.0]}})
 print("\\n=== AutoGluon Leaderboard ===")
 print(_lb[['model', 'score_val', 'fit_time']].head(10).to_string(index=False))
 _best_name  = str(_lb.iloc[0]['model'])

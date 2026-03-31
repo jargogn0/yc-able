@@ -402,8 +402,13 @@ input[type=file]{display:none}
 .cm-chart svg{width:100%;display:block}
 
 /* Narration messages */
-.cm.narrate{background:linear-gradient(135deg,rgba(59,130,246,.04),rgba(167,139,250,.04));border:1px solid rgba(59,130,246,.12);align-self:flex-start;font-size:12px;color:var(--text-2);padding:8px 12px}
-.cm.narrate .cl{color:var(--purple);font-size:8px}
+.cm.narrate{background:linear-gradient(135deg,rgba(59,130,246,.04),rgba(167,139,250,.04));border:1px solid rgba(59,130,246,.12);align-self:flex-start;font-size:12px;color:var(--text-2);padding:10px 14px;min-width:220px}
+.cm.narrate .cl{color:var(--purple);font-size:8px;margin-bottom:6px}
+.narr-lines{display:flex;flex-direction:column;gap:5px}
+.narr-line{display:flex;align-items:flex-start;gap:7px;font-size:12px;line-height:1.45;color:var(--text-3);transition:color .2s}
+.narr-line-active{color:var(--text-2)}
+.narr-check{color:#34d399;font-size:10px;flex-shrink:0;margin-top:1px}
+.narr-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px;animation:pulse 1.4s infinite}
 .cm.insight-bubble{background:linear-gradient(135deg,rgba(52,211,153,.05),rgba(59,130,246,.04));border:1px solid rgba(52,211,153,.2);align-self:flex-start;padding:12px 16px}
 .cm.insight-bubble .cl{color:#34d399;font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}.insight-cursor{animation:blink 1s infinite;color:#34d399}
@@ -3233,6 +3238,7 @@ async function launchRun(){
   if(!C.key)C.key=gk(C.provider);
 
   S.running=true;S.exps=[];S.best=null;S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._seenNarrations=new Set();
+  _sealNarrBubble(); // seal any previous narration block so new run gets a fresh one
   setBadge('RUNNING','run');setProg(5);
   document.getElementById('cdot').className='chat-dot on';
   document.getElementById('p-exp').innerHTML='';
@@ -3405,6 +3411,7 @@ async function launchRun(){
       if(msgs.lastElementChild)msgs.lastElementChild.appendChild(card);
     }
 
+    _sealNarrBubble(); // freeze the live narration block
     setProg(100);setBadge('DONE','ok');document.getElementById('cdot').className='chat-dot ok';
     addRunHistory(S.runId,'done',`${S.best?.model||''}`.trim()||S.file?.name||'Done');
     toast(`Research complete — ${kept}/${totalExp} experiments kept`,'ok',6000);
@@ -3441,18 +3448,41 @@ async function launchRun(){
   activeAbort=null;updStatus();
 }
 
+function _getNarrBubble(){
+  // Returns (or creates) the single live narration block — updates in place like Claude Code tool output
+  let el=document.getElementById('_narr');
+  if(!el){
+    el=document.createElement('div');
+    el.className='cm narrate';el.id='_narr';
+    const c=document.getElementById('msgs');
+    c.appendChild(el);
+  }
+  return el;
+}
+function _sealNarrBubble(){
+  // Freeze the live block when run ends — remove id so next run gets a fresh one
+  const el=document.getElementById('_narr');
+  if(el)el.removeAttribute('id');
+}
+
 function procMsg(d){
   const msg=d.msg,tag=d.tag;
 
-  // Narration messages → show as special chat bubbles (dedup by content)
+  // Narration messages → update the SAME bubble in place (one evolving status, not a flood)
   if(tag==='narrate'){
     if(S._seenNarrations.has(msg))return;
     S._seenNarrations.add(msg);
-    const el=document.createElement('div');el.className='cm narrate';
-    el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div>${safeHtml(msg)}<div class="cm-time">${chatTime()}</div>`;
+    const el=_getNarrBubble();
+    el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div><div class="narr-lines" id="_narr_lines"></div><div class="cm-time">${chatTime()}</div>`;
+    const lines=document.getElementById('_narr_lines');
+    // Show all narrations so far as a compact log
+    [...S._seenNarrations].forEach((m,i)=>{
+      const isLast=i===S._seenNarrations.size-1;
+      lines.innerHTML+=`<div class="narr-line${isLast?' narr-line-active':' narr-line-done'}">${isLast?'<span class="narr-dot"></span>':'<span class="narr-check">✓</span>'} ${safeHtml(m)}</div>`;
+    });
     const c=document.getElementById('msgs');
     const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
-    c.appendChild(el);if(atBottom)c.scrollTop=c.scrollHeight;
+    if(atBottom)c.scrollTop=c.scrollHeight;
     return;
   }
 
