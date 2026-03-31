@@ -1083,19 +1083,30 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
     result = run.get("result") or {}
     deploy_path = result.get("deploy_path")
     dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
+    # Also try recovering workspace from /tmp glob (handles multi-instance / post-restart)
+    if not ws:
+        import glob as _g2
+        _cands = _g2.glob(str(Path(tempfile.gettempdir()) / f"19labs_{run_id}_*"))
+        ws = Path(_cands[0]) if _cands else None
     search_dirs = [d for d in [dp, ws] if d and str(d) and d.exists()]
+    print(f"[predict] model search for {run_id}: MODELS_DIR={_MODELS_DIR}, dp={dp}, ws={ws}, dirs={search_dirs}", flush=True)
     # Explicit common names first
     for name in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
         for d in search_dirs:
             f = d / name
             if f.is_file():
+                print(f"[predict] found model: {f}", flush=True)
                 return f
     # Full recursive fallback — any pkl/joblib/xgb native in workspace
     for d in search_dirs:
-        for f in (list(d.rglob("*.pkl")) + list(d.rglob("*.joblib"))
-                  + list(d.rglob("*.ubj")) + list(d.rglob("model.json"))):
-            if f.is_file() and "api_server" not in str(f):
+        all_files = (list(d.rglob("*.pkl")) + list(d.rglob("*.joblib"))
+                     + list(d.rglob("*.ubj")) + list(d.rglob("*.json")))
+        print(f"[predict] rglob in {d}: {[str(f) for f in all_files[:10]]}", flush=True)
+        for f in all_files:
+            if f.is_file() and "api_server" not in str(f) and "sample_sub" not in str(f.name):
+                print(f"[predict] found model via rglob: {f}", flush=True)
                 return f
+    print(f"[predict] WARNING: no model found for {run_id}", flush=True)
     return None
 
 
@@ -2783,7 +2794,9 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
 
     model_path = _find_model_path(run_id, run)
     if not model_path:
-        raise HTTPException(404, "No trained model found. Run a training job first.")
+        _ws = run.get("ws",""); _dp = (run.get("result") or {}).get("deploy_path","")
+        _stable = str(_MODELS_DIR / f"{run_id}.pkl")
+        raise HTTPException(404, f"No model found. Checked: {_stable}, ws={_ws or '(empty)'}, deploy={_dp or '(empty)'}. Please run training again.")
 
     try:
         model = joblib.load(model_path)
