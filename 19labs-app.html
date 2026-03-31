@@ -5586,6 +5586,40 @@ async function joinDatasets(){
 // FILE FORMAT SUPPORT (Excel, JSON)
 // ═══════════════════════════════════════════
 async function handleFile(f,preloadedText){
+  // ── If a model is already trained, intercept possible test-set uploads ──
+  if(S.runId && S.best && S.status==='done'){
+    const lname=f.name.toLowerCase();
+    const looksLikeTest=lname.includes('test')||lname.includes('predict')||lname.includes('submission')||lname.includes('score');
+    if(looksLikeTest){
+      // Auto-predict: agent takes over
+      stab('exp');
+      chat('ai',`Detected <strong>${esc(f.name)}</strong> — running predictions with <strong>${esc(S.best.model)}</strong> model...`);
+      const st=document.getElementById('exp-predict-status');
+      if(st)st.textContent=`Running predictions on ${f.name}...`;
+      const fd=new FormData(); fd.append('file',f);
+      try{
+        const r=await apiFetch(`${BASE}/api/run/${S.runId}/predict-file`,{method:'POST',body:fd});
+        if(!r.ok){const e=await r.text();throw new Error(e.includes('detail')?JSON.parse(e).detail:e);}
+        const blob=await r.blob();
+        const cd=r.headers.get('content-disposition')||'';
+        const fname=cd.match(/filename="?([^"]+)"?/)?.[1]||'submission.csv';
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+        URL.revokeObjectURL(url);
+        if(st)st.textContent=`\u2713 ${fname} downloaded`;
+        chat('ai',`\u2713 Predictions done — <strong>${fname}</strong> is downloading now.`);
+        toast(`${fname} ready`,'ok',4000);
+      }catch(e){
+        const msg=e.message.slice(0,120);
+        if(st)st.textContent=`Failed: ${msg}`;
+        chat('ai',`Prediction failed: ${msg}`);
+        toast(`Predict failed: ${msg.slice(0,60)}`,'err');
+      }
+      return; // don't start a new training run
+    }
+    // Not a test file — confirm before wiping the trained model state
+    if(!confirm(`You have a trained model (${S.best.model}). Load "${f.name}" as new training data? This will clear the current run.`))return;
+  }
   // If we already have a primary dataset and this is additional, add to extras
   if(S.csv&&S.file&&S.file.name!==f.name){
     const extraText=preloadedText||await readF(f);
