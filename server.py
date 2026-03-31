@@ -3107,35 +3107,55 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
             fe[col] = le.fit_transform(fe[col].astype(str))
         return fe.fillna(0)
 
-    # Attempt 1: raw DataFrame
+    # Determine expected feature count / names from model
+    _expected_features = None
     try:
-        preds = model.predict(features)
+        import xgboost as _xgb_mod
+        if isinstance(model, _xgb_mod.Booster) and getattr(model, 'feature_names', None):
+            _expected_features = model.feature_names
+        elif hasattr(model, 'feature_names_in_'):
+            _expected_features = list(model.feature_names_in_)
+        elif hasattr(model, 'n_features_in_'):
+            pass  # count known but names unknown
     except Exception:
         pass
 
-    # Attempt 2: label-encoded DataFrame (handles categoricals)
+    def _align_to_model(fe):
+        """Reindex to model's expected features if known, filling missing with 0."""
+        if _expected_features:
+            return fe.reindex(columns=_expected_features, fill_value=0)
+        return fe
+
+    # Attempt 1: raw DataFrame (aligned)
+    try:
+        preds = model.predict(_align_to_model(features))
+    except Exception:
+        pass
+
+    # Attempt 2: encoded + aligned DataFrame
     if preds is None:
         try:
-            preds = model.predict(_encode_features(features))
+            preds = model.predict(_align_to_model(_encode_features(features)))
         except Exception:
             pass
 
-    # Attempt 3: numpy array — bypasses feature_names mismatch for XGBoost/sklearn
+    # Attempt 3: numpy array — skips sklearn feature_names check entirely
     if preds is None:
         try:
-            preds = model.predict(_encode_features(features).values)
+            preds = model.predict(_align_to_model(_encode_features(features)).values)
         except Exception:
             pass
 
-    # Attempt 4: XGBoost DMatrix with feature alignment
+    # Attempt 4: XGBoost — detect Booster vs sklearn and use right format
     if preds is None:
         try:
             import xgboost as _xgb
-            fe = _encode_features(features)
-            # Align columns to what XGBoost model expects
-            if hasattr(model, 'feature_names') and model.feature_names:
-                fe = fe.reindex(columns=model.feature_names, fill_value=0)
-            preds = model.predict(_xgb.DMatrix(fe))
+            fe = _align_to_model(_encode_features(features))
+            if isinstance(model, _xgb.Booster):
+                preds = model.predict(_xgb.DMatrix(fe))
+            else:
+                # XGBRegressor/Classifier: pass numpy to bypass feature_names check
+                preds = model.predict(fe.values)
         except Exception as e4:
             raise HTTPException(400, f"Prediction failed: {e4}")
 
