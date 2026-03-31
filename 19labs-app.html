@@ -3260,7 +3260,7 @@ async function launchRun(){
       const dInterp=dpk?interpretMetric(dpk,dpv??0,dDir):{grade:'B',color:'#60a5fa',business:'Model ready for deployment.'};
       const dTask=S.discovery?.objective?.task||S.discovery?.discovery?.task||'ML model';
       const dExps=S.exps.filter(e=>e.success).length;
-      card.innerHTML=`<div class="deploy-rich-header"><div class="deploy-rich-grade"><div class="grade-badge ${dInterp.grade}" style="width:42px;height:42px;font-size:16px">${dInterp.grade}</div></div><div class="deploy-rich-info"><div class="deploy-rich-title">Model ready to deploy</div><div class="deploy-rich-sub">${esc(dInterp.business)}</div></div></div><div class="deploy-rich-stats"><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Model</div><div class="deploy-rich-stat-v" style="font-size:11px">${esc(S.best.model)}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">${esc(dpk.toUpperCase())}</div><div class="deploy-rich-stat-v" style="color:${dInterp.color}">${dpv!=null?Number(dpv).toFixed(4):'—'}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Experiments</div><div class="deploy-rich-stat-v">${dExps}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Task</div><div class="deploy-rich-stat-v" style="font-size:10px">${esc(dTask)}</div></div></div><div class="deploy-rich-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div>`;
+      card.innerHTML=`<div class="deploy-rich-header"><div class="deploy-rich-grade"><div class="grade-badge ${dInterp.grade}" style="width:42px;height:42px;font-size:16px">${dInterp.grade}</div></div><div class="deploy-rich-info"><div class="deploy-rich-title">Model ready to deploy</div><div class="deploy-rich-sub">${esc(dInterp.business)}</div></div></div><div class="deploy-rich-stats"><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Model</div><div class="deploy-rich-stat-v" style="font-size:11px">${esc(S.best.model)}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">${esc(dpk.toUpperCase())}</div><div class="deploy-rich-stat-v" style="color:${dInterp.color}">${dpv!=null?Number(dpv).toFixed(4):'—'}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Experiments</div><div class="deploy-rich-stat-v">${dExps}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Task</div><div class="deploy-rich-stat-v" style="font-size:10px">${esc(dTask)}</div></div></div><div class="deploy-rich-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" style="background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:#a78bfa" onclick="document.getElementById('exp-predict-file-input').click()">&#8679; Predict CSV</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div><div id="exp-predict-status" style="font-size:11px;color:#a78bfa;margin-top:6px"></div>`;
       const msgs=document.getElementById('msgs');
       if(msgs.lastElementChild)msgs.lastElementChild.appendChild(card);
     }
@@ -3555,8 +3555,11 @@ function showBest(best,obj,runId){
     <button class="abtn" onclick="dlDeploy('${runId}')">Download Model</button>
     <button class="abtn" onclick="dlPack('${runId}')">Project Pack</button>
     <button class="abtn" onclick="genHandoff('${runId}')">Handoff</button>
+    <button class="abtn" style="background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:#a78bfa" onclick="document.getElementById('exp-predict-file-input').click()">&#8679; Predict on CSV</button>
+    <input type="file" id="exp-predict-file-input" accept=".csv" style="display:none" onchange="expUploadAndPredict('${runId}')">
     <button class="share-btn" onclick="shareResults('${runId}')">Share</button>
   </div>
+  <div id="exp-predict-status" style="font-size:11px;color:var(--text-3);margin-top:4px;padding:0 4px"></div>
   <div id="share-url-container"></div>`;
   c.insertBefore(e,c.firstChild);
 }
@@ -4939,6 +4942,34 @@ async function uploadAndPredict(){
     st.textContent=`Failed: ${e.message}`;
     toast(`Prediction failed: ${e.message.slice(0,60)}`,'err');
   }
+}
+
+async function expUploadAndPredict(runId){
+  const inp=document.getElementById('exp-predict-file-input');
+  const st=document.getElementById('exp-predict-status');
+  if(!inp.files||!inp.files[0])return;
+  const rid=runId||S.runId;
+  if(!rid){toast('No active run','err');return;}
+  const file=inp.files[0];
+  st.textContent=`Running predictions on ${file.name}...`;
+  const fd=new FormData();
+  fd.append('file',file);
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${rid}/predict-file`,{method:'POST',body:fd});
+    if(!r.ok){const e=await r.text();throw new Error(e.includes('detail')?JSON.parse(e).detail:e);}
+    const blob=await r.blob();
+    const cd=r.headers.get('content-disposition')||'';
+    const fname=cd.match(/filename="?([^"]+)"?/)?.[1]||'submission.csv';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+    URL.revokeObjectURL(url);
+    st.textContent=`\u2713 ${fname} downloaded`;
+    toast(`${fname} ready \u2014 check Downloads`,'ok',4000);
+  }catch(e){
+    st.textContent=`Failed: ${e.message.slice(0,120)}`;
+    toast(`Predict failed: ${e.message.slice(0,60)}`,'err');
+  }
+  inp.value='';
 }
 
 function loadSampleForPredict(){
