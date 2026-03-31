@@ -1094,18 +1094,19 @@ def _get_run_or_404(run_id: str):
 
 def _find_model_path(run_id: str, run: dict) -> "Path | None":
     """Find model file — checks result_json base64, filesystem, then DB BLOB."""
-    # 0. Best: model_b64 embedded in result_json — survives any restart, no BYTEA issues
+    # 0. Best: model_b64 embedded in result_json — only use if it's a binary model format
     result_d = run.get("result") or {}
     if result_d.get("model_b64"):
-        try:
-            import base64 as _b64
-            _ext = result_d.get("model_ext", ".pkl")
-            _tmp = Path(tempfile.gettempdir()) / f"19labs_model_{run_id}{_ext}"
-            _tmp.write_bytes(_b64.b64decode(result_d["model_b64"]))
-            print(f"[predict] loaded model from result_json base64 → {_tmp}", flush=True)
-            return _tmp
-        except Exception as _b64e:
-            print(f"[predict] model_b64 decode failed: {_b64e}", flush=True)
+        _ext = result_d.get("model_ext", ".pkl")
+        if _ext in (".pkl", ".joblib", ".ubj"):  # never trust .json from old buggy code
+            try:
+                import base64 as _b64
+                _tmp = Path(tempfile.gettempdir()) / f"19labs_model_{run_id}{_ext}"
+                _tmp.write_bytes(_b64.b64decode(result_d["model_b64"]))
+                print(f"[predict] loaded model from result_json base64 → {_tmp}", flush=True)
+                return _tmp
+            except Exception as _b64e:
+                print(f"[predict] model_b64 decode failed: {_b64e}", flush=True)
     # 1. Persistent stable path (survives restarts)
     for ext in [".pkl", ".joblib"]:
         stable = _MODELS_DIR / f"{run_id}{ext}"
@@ -1131,11 +1132,9 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
             if f.is_file():
                 print(f"[predict] found model: {f}", flush=True)
                 return f
-    # Full recursive fallback — pkl/joblib/ubj only; avoid random JSON files
-    _MODEL_JSON_NAMES = {"model.json", "best_model.json"}
+    # Full recursive fallback — pkl/joblib/ubj only; JSON files are partial components
     for d in search_dirs:
-        all_files = (list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")) + list(d.rglob("*.ubj"))
-                     + [f for f in d.rglob("*.json") if f.name in _MODEL_JSON_NAMES])
+        all_files = list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")) + list(d.rglob("*.ubj"))
         print(f"[predict] rglob in {d}: {[str(f) for f in all_files[:10]]}", flush=True)
         for f in all_files:
             if f.is_file() and "api_server" not in str(f) and "sample_sub" not in str(f.name):
@@ -1599,6 +1598,7 @@ async def start_run(req: RunRequest, request: Request):
                 result["_ws_files"] = []
             RUNS[run_id]["result"] = result
             # ── Persist model — embed as base64 in result_json (survives any restart) ──
+            # Only save pkl/joblib/ubj — JSON files are partial components, not full pipelines
             _model_src = None
             for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
                 _mp = ws / _mname
@@ -1606,10 +1606,8 @@ async def start_run(req: RunRequest, request: Request):
                     _model_src = _mp
                     break
             if not _model_src:
-                _json_ok = {"model.json", "best_model.json"}
-                for _mp in (list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib")) + list(ws.rglob("*.ubj"))
-                            + [f for f in ws.rglob("*.json") if f.name in _json_ok]):
-                    if _mp.is_file():
+                for _mp in list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib")) + list(ws.rglob("*.ubj")):
+                    if _mp.is_file() and "sample" not in _mp.name:
                         _model_src = _mp
                         break
             if _model_src:
