@@ -3105,14 +3105,40 @@ async function runDiscover(hint){
       throw new Error(dj.error||'Discovery failed');
     }
     S.discovery=dj;S.analyzed=true;S.confirmed=false;
-    // Render data profile card immediately
+    // Render data profile card in Artifacts tab
     if(dj.profile)renderProfileCard(dj.profile);
     const d=dj.discovery||{};
+    const obj=dj.objective||{};
+    const prof=dj.profile||{};
 
-    // Use the agent's own words — no client-side templating
-    let msg=esc(d.agent_message||'Data scanned. Type "go" to start or tell me what to change.');
-    if(S.mode==='plan')msg+=`<br><br>Review the plan below, tweak anything, then hit <strong>Execute Plan</strong>.`;
-    chat('ai',msg);setBadge('PLAN READY','');
+    // Build structured chat message showing what was detected + agent plan
+    const _target=obj.target||'?';
+    const _task=(obj.task||'').replace(/([a-z])([A-Z])/g,'$1 $2'); // camelCase → words
+    const _metric=(obj.metric||'').toUpperCase();
+    const _rows=(prof.rows||0).toLocaleString();
+    const _cols=prof.cols||'?';
+
+    // Key signals — show imbalance, datetime, text, high-cardinality warnings
+    const _sigs=(prof.signals||[]).filter(s=>s.includes('IMBALANCED')||s.includes('DATETIME')||s.includes('WARNING'));
+    const _sigHtml=_sigs.length?`<div style="margin:6px 0 2px;font-size:11px;color:#f59e0b">${_sigs.slice(0,3).map(s=>`⚠ ${esc(s.replace(/^(WARNING|IMBALANCED_TARGET)[:\s]*/,'').slice(0,90))}`).join('<br>')}</div>`:'';
+
+    // Agent's plan sentence
+    const _plan=esc(d.agent_message||'');
+
+    const _summary=`<div style="font-size:12px;line-height:1.6">
+      <div style="color:#71717a;margin-bottom:6px">${_rows} rows · ${_cols} columns</div>
+      <div><span style="color:#71717a">Target</span> <strong>${esc(_target)}</strong> &nbsp;·&nbsp; <span style="color:#71717a">Task</span> ${esc(_task)} &nbsp;·&nbsp; <span style="color:#71717a">Metric</span> ${_metric}</div>
+      ${_sigHtml}
+      <div style="margin-top:8px;color:#e4e4e7">${_plan}</div>
+      <div style="margin-top:8px;color:#52525b;font-size:11px">Say <strong style="color:#a5b4fc">go</strong> to confirm · or tell me what to change</div>
+    </div>`;
+
+    if(S.mode==='plan'){
+      chat('ai',_summary+`<br><em style="font-size:11px;color:#52525b">Review the plan below, tweak anything, then hit Execute Plan.</em>`);
+    } else {
+      chat('ai',_summary);
+    }
+    setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
     toast('Plan ready','ok');
   }catch(e){

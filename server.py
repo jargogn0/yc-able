@@ -1211,18 +1211,21 @@ def _fallback_discovery(profile: dict, hint: str = ""):
     else:
         _hook = f"Predicting '{target}' from {cols} features across {rows:,} rows."
 
+    _task_label = "binary classification" if "binary" in task.lower() else ("multi-class classification" if "multi" in task.lower() else "regression")
+    _model_hint = "LightGBM + class weights" if _has_imbalance and "classif" in task.lower() else \
+                  "LightGBM with time-based split" if _has_datetime else \
+                  "LightGBM baseline"
     if _is_comp:
         _agent_msg = (
-            f"Kaggle competition — {rows:,} training rows, predict '{target}' for test.csv, save submission.csv. "
+            f"Competition mode — predicting **{target}** ({_task_label}, {metric.upper()}). "
             f"{_hook} "
-            f"Type go to kick it off."
+            f"Starting with {_model_hint}."
         )
     else:
-        _task_label = "binary classification" if "binary" in task.lower() else ("classification" if is_classification else "regression")
         _agent_msg = (
+            f"Predicting **{target}** — {_task_label}, {metric.upper()} metric. "
             f"{_hook} "
-            f"{'Treating this as ' + _task_label + '.' if not _has_imbalance and not _has_datetime else ''} "
-            f"Type go to start or tell me what to change."
+            f"Starting with {_model_hint}."
         ).replace("  ", " ").strip()
 
     objective = {
