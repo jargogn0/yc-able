@@ -1641,6 +1641,15 @@ import json, time, os, warnings
 warnings.filterwarnings('ignore')
 _start = time.time()
 
+# ── SAFE DEFAULTS — always defined even if sections fail ──────────────
+_best_name = 'AutoGluon'
+_val_score = 0.0
+_score = 0.0
+_rmse = _mae = _mape = _r2 = 0.0
+_auc = _acc = _f1 = _logloss = 0.0
+_lb = None
+_leaderboard = []
+
 # ── 1. LOAD DATA ───────────────────────────────────────────────────────
 df = pd.read_csv(DATA_PATH, sep=DATA_SEP)
 print(f"Loaded {{len(df):,}} rows x {{len(df.columns)}} columns")
@@ -1786,10 +1795,16 @@ except Exception as _fe:
     print(f"Feature importance skipped: {{_fe}}")
 {kaggle_block}
 # ── 10. OUTPUT METRICS JSON ───────────────────────────────────────────
-_leaderboard = [
-    {'model': str(row['model']), 'score': round(float(abs(row['score_val'])), 4), 'fit_time': round(float(row['fit_time']), 1)}
-    for _, row in _lb.head(10).iterrows()
-]
+try:
+    if _lb is not None and len(_lb) > 0:
+        _leaderboard = [
+            {{'model': str(r['model']), 'score': round(float(abs(r['score_val'])), 4), 'fit_time': round(float(r['fit_time']), 1)}}
+            for _, r in _lb.head(10).iterrows()
+        ]
+    else:
+        _leaderboard = [{{'model': _best_name, 'score': round(_val_score, 4), 'fit_time': 0.0}}]
+except Exception:
+    _leaderboard = [{{'model': _best_name, 'score': round(_val_score, 4), 'fit_time': 0.0}}]
 metrics = {{
     'model': f'AutoGluon/{{_best_name}}',
     {repr(metric)}: _score,
@@ -1799,10 +1814,10 @@ metrics = {{
     'mae': _mae, 'mape': _mape, 'r2': _r2,
     'test_r2': _r2, 'train_r2': _r2,
     'auc': _auc, 'accuracy': _acc, 'f1': _f1, 'logloss': _logloss,
-    'models_tried': len(_lb),
+    'models_tried': len(_lb) if _lb is not None else 0,
     'leaderboard': _leaderboard,
     'leaderboard_top3': [e['model'] for e in _leaderboard[:3]],
-    'what_worked': f'AutoGluon auto-ML: tried {{len(_lb)}} models, best={{_best_name}}',
+    'what_worked': f'AutoGluon auto-ML: tried {{len(_leaderboard)}} models, best={{_best_name}}',
 }}
 print(json.dumps(metrics))
 """
