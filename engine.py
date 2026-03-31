@@ -1592,7 +1592,14 @@ KARPATHY DISCIPLINE (MANDATORY):
   This is NON-NEGOTIABLE. Timeout = automatic DISCARD.
 - Robust preprocessing (nulls, categoricals, datetime).
 - Deterministic behavior (set random seeds).
-- Save model via `joblib.dump(model, 'model.pkl')`.
+- MANDATORY MODEL SAVE — this is NON-NEGOTIABLE, always the LAST thing before print(json.dumps(metrics)):
+  ```python
+  import joblib; joblib.dump(model, 'model.pkl')
+  ```
+  Where `model` is the COMPLETE fitted pipeline/estimator (the object you call `.predict()` on).
+  CRITICAL: If you use stacking/blending/ensembles, `model` must be the FULL stacking object — NOT individual components.
+  NEVER use only native saves (cat_model.save_model(), xgb_model.save_model()) — these save COMPONENTS, not the full pipeline.
+  Native saves are allowed ADDITIONALLY for logging, but joblib.dump of the full pipeline is ALWAYS required.
 - PRIMARY METRIC: {obj.get('metric','rmse').upper()} — optimize for THIS, not RMSE.
   Use as eval_metric in LightGBM/XGBoost/CatBoost. Use as scoring in cross_val_score.
 - MANDATORY predictions.csv — ALWAYS save this file after fitting, no exceptions:
@@ -1695,7 +1702,7 @@ DATA: DATA_PATH='{obj.get('data_path','data.csv')}' | {profile.get('rows')} rows
 Rules:
 - Load data from DATA_PATH (top of script: DATA_PATH = r'{obj.get('data_path','data.csv')}')
 - Train/test split. Compute metrics on test set.
-- joblib.dump(model, 'model.pkl')
+- MANDATORY: import joblib; joblib.dump(model, 'model.pkl') — model = full pipeline object, NOT a component
 - LAST LINE: print(json.dumps({{"model":"ModelName","{obj.get('metric','rmse')}":float_val,"r2":float_val,"train_{obj.get('metric','rmse')}":float_val,"test_{obj.get('metric','rmse')}":float_val}}))
 - Keep plots minimal — only predictions.png and residuals.png
 - Keep total script under 120 lines
@@ -1754,6 +1761,11 @@ TRAIN.PY HARD RULES (Karpathy discipline):
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly: `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)`
 - Training MUST complete within TIME_BUDGET. Add wall-clock checks.
 - ALWAYS split data into train/test. Compute metrics on BOTH sets.
+- MANDATORY MODEL SAVE — always the LAST action before print(json.dumps(metrics)):
+  import joblib; joblib.dump(model, 'model.pkl')
+  `model` = the COMPLETE fitted pipeline/estimator you call .predict() on.
+  For stacking/ensembles: dump the FULL stacking object, NOT individual components.
+  Native saves (save_model, .json) are forbidden as the ONLY save — joblib.dump is ALWAYS required.
 - PRIMARY METRIC IS: {(obj or {}).get('metric', 'rmse').upper()} (direction: {(obj or {}).get('direction', 'lower_is_better')})
   YOU MUST OPTIMIZE FOR THIS METRIC — NOT RMSE unless that IS the primary metric.
   - Use it as eval_metric in LightGBM/XGBoost/CatBoost where supported
@@ -1861,7 +1873,7 @@ PROGRAM PLAN (follow this):
 Rules:
 - Load data from the path defined in DATA_PATH at top of script
 - Train/test split. Compute metrics on TEST set only.
-- joblib.dump(model, 'model.pkl')
+- MANDATORY: import joblib; joblib.dump(model, 'model.pkl') — model = FULL pipeline/estimator, NOT a component
 - Save predictions.png and residuals.png (wrap in try/except)
 - FINAL LINE MUST BE: print(json.dumps({{"model":"Name","rmse":0.0,"r2":0.0,"train_rmse":0.0,"test_rmse":0.0,"train_r2":0.0,"test_r2":0.0}}))
 - Keep under 150 lines — no Optuna if it makes the script too long
