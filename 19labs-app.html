@@ -5181,7 +5181,8 @@ function _renderPredictPreview(j){
   h+=`<tbody>${rows.map(r=>`<tr>${r.map(v=>`<td style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text-2)">${esc(v==null?'':String(v))}</td>`).join('')}</tr>`).join('')}</tbody>`;
   h+=`</table></div>`;
   if(j.csv_b64){
-    h+=`<button class="abtn p" style="font-size:11px" onclick="(function(){const b=atob(${JSON.stringify(j.csv_b64)});const u=URL.createObjectURL(new Blob([b],{type:'text/csv'}));const a=document.createElement('a');a.href=u;a.download=${JSON.stringify(fname)};a.click();URL.revokeObjectURL(u);toast('Downloaded','ok',2000)})()">&#8681; Download ${esc(fname)}</button>`;
+    const _b64=j.csv_b64;const _fn=fname.replace(/'/g,'');
+    h+=`<button class="abtn p" style="font-size:11px" onclick="(function(){const b=atob('${_b64}');const u=URL.createObjectURL(new Blob([b],{type:'text/csv'}));const a=document.createElement('a');a.href=u;a.download='${_fn}';a.click();URL.revokeObjectURL(u);toast('Downloaded','ok',2000)})()">&#8681; Download ${esc(fname)}</button>`;
   }
   return h;
 }
