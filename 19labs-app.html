@@ -2273,6 +2273,8 @@ function safeHtml(s){
     r=r.replace(new RegExp(`&lt;/${tag}&gt;`,'gi'),`</${tag}>`);
   });
   r=r.replace(/&lt;br\s*\/?\s*&gt;/gi,'<br>');
+  // Restore safe HTML entities (&amp;#NNN; → &#NNN; and &amp;amp; → &amp; etc.)
+  r=r.replace(/&amp;(#\d+|#x[\da-fA-F]+|[a-zA-Z]+);/g,'&$1;');
   return r.replace(/\n/g,'<br>');
 }
 function setBadge(t,c){const e=document.getElementById('badge');e.textContent=t;e.className=`badge ${c||''}`.trim()}
@@ -3111,33 +3113,56 @@ async function runDiscover(hint){
     const obj=dj.objective||{};
     const prof=dj.profile||{};
 
-    // Build structured chat message showing what was detected + agent plan
-    const _target=obj.target||'?';
-    const _task=(obj.task||'').replace(/([a-z])([A-Z])/g,'$1 $2'); // camelCase → words
-    const _metric=(obj.metric||'').toUpperCase();
+    // Format numbers
     const _rows=(prof.rows||0).toLocaleString();
     const _cols=prof.cols||'?';
+    const _target=obj.target||'unknown';
+    const _metric=(obj.metric||'').toUpperCase();
 
-    // Key signals — show imbalance, datetime, text, high-cardinality warnings
-    const _sigs=(prof.signals||[]).filter(s=>s.includes('IMBALANCED')||s.includes('DATETIME')||s.includes('WARNING'));
-    const _sigHtml=_sigs.length?`<div style="margin:6px 0 2px;font-size:11px;color:#f59e0b">${_sigs.slice(0,3).map(s=>`⚠ ${esc(s.replace(/^(WARNING|IMBALANCED_TARGET)[:\s]*/,'').slice(0,90))}`).join('<br>')}</div>`:'';
+    // Task → plain English
+    const _taskMap={'BinaryClassification':'binary classification','MultiClassClassification':'multi-class classification',
+      'Regression':'regression','TimeSeriesForecasting':'time-series forecasting','SentimentAnalysis':'sentiment analysis',
+      'ImageClassification':'image classification','AudioClassification':'audio classification',
+      'Clustering':'clustering','AnomalyDetection':'anomaly detection'};
+    const _task=_taskMap[obj.task]||((obj.task||'').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase());
 
-    // Agent's plan sentence
-    const _plan=esc(d.agent_message||'');
+    // Parse signals into plain English sentences (no raw JSON/dicts)
+    const _rawSigs=prof.signals||[];
+    const _notes=[];
+    _rawSigs.forEach(s=>{
+      if(s.includes('IMBALANCED_TARGET')){
+        // Extract column name and majority pct
+        const cm=s.match(/candidate '([^']+)'.*majority\s+(\d+)%/);
+        if(cm)_notes.push(`<strong>${esc(cm[1])}</strong> has a ${cm[2]}% class imbalance — model will be trained with class weighting to avoid bias toward the majority class.`);
+      } else if(s.includes('DATETIME')){
+        _notes.push('Date/time column detected — this dataset has a time dimension, so the model will respect chronological order during training.');
+      } else if(s.includes('HIGH_CARDINALITY')){
+        const cm=s.match(/col '([^']+)'/);
+        if(cm)_notes.push(`<strong>${esc(cm[1])}</strong> has many unique values — will use target encoding instead of one-hot encoding.`);
+      } else if(s.includes('WARNING')){
+        const clean=s.replace(/^WARNING[:\s]*/,'').replace(/_/g,' ').toLowerCase();
+        if(clean.length<120)_notes.push(clean.charAt(0).toUpperCase()+clean.slice(1)+'.');
+      }
+    });
 
-    const _summary=`<div style="font-size:12px;line-height:1.6">
-      <div style="color:#71717a;margin-bottom:6px">${_rows} rows · ${_cols} columns</div>
-      <div><span style="color:#71717a">Target</span> <strong>${esc(_target)}</strong> &nbsp;·&nbsp; <span style="color:#71717a">Task</span> ${esc(_task)} &nbsp;·&nbsp; <span style="color:#71717a">Metric</span> ${_metric}</div>
-      ${_sigHtml}
-      <div style="margin-top:8px;color:#e4e4e7">${_plan}</div>
-      <div style="margin-top:8px;color:#52525b;font-size:11px">Say <strong style="color:#a5b4fc">go</strong> to confirm · or tell me what to change</div>
-    </div>`;
+    // Agent plan sentence (from API or fallback)
+    const _plan=d.agent_message||`I'll train a <strong>${_task}</strong> model to predict <strong>${esc(_target)}</strong>, optimizing for <strong>${_metric}</strong>.`;
+
+    // Build clean natural-language summary
+    let _html=`<div style="line-height:1.65;font-size:13px">`;
+    _html+=`<div style="color:#71717a;margin-bottom:10px;font-size:12px">${_rows} rows · ${_cols} columns</div>`;
+    _html+=`<div style="margin-bottom:10px">Scanned your dataset. I'll predict <strong>${esc(_target)}</strong> using <strong>${_task}</strong> — measuring accuracy with <strong>${_metric}</strong>.</div>`;
+    if(_notes.length){
+      _html+=`<div style="margin-bottom:10px">${_notes.map(n=>`<div style="color:#f59e0b;margin-bottom:4px;font-size:12px">\u26A0 ${n}</div>`).join('')}</div>`;
+    }
+    _html+=`<div style="color:#a1a1aa;font-size:12px;margin-top:6px">${_plan}</div>`;
+    _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
+    _html+=`</div>`;
 
     if(S.mode==='plan'){
-      chat('ai',_summary+`<br><em style="font-size:11px;color:#52525b">Review the plan below, tweak anything, then hit Execute Plan.</em>`);
-    } else {
-      chat('ai',_summary);
+      _html+=`<div style="font-size:11px;color:#52525b;margin-top:6px">Review the plan below, tweak anything, then hit <strong>Execute Plan</strong>.</div>`;
     }
+    chat('ai',_html);
     setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
     toast('Plan ready','ok');
