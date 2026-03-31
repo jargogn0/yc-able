@@ -15,10 +15,17 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from urllib import error, request
 
 import pandas as pd
+try:
+    from pydantic import BaseModel, Field, field_validator
+except ImportError:
+    BaseModel = object  # type: ignore
+    Field = lambda *a, **kw: None  # type: ignore
+    field_validator = lambda *a, **kw: lambda f: f  # type: ignore
+
 try:
     from fastmcp import FastMCP
 except Exception as e:
@@ -31,6 +38,31 @@ DEFAULT_PROVIDER = os.environ.get("NINETEENLABS_PROVIDER", "claude")
 DEFAULT_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 mcp = FastMCP("19labs-datascientist")
+
+_VALID_RELIABILITY_MODES = {"conservative", "balanced", "aggressive"}
+_VALID_PROVIDERS = {"claude", "openai", "bedrock"}
+_VALID_ARTIFACTS = {
+    "program_md", "prepare_py", "analysis_ipynb",
+    "progress_png", "results_tsv", "train_py", "final_report_md",
+}
+
+def _validate_csv_path(csv_path: str) -> Path:
+    p = Path(csv_path).expanduser().resolve()
+    if not p.exists() or not p.is_file():
+        raise ValueError(f"CSV file not found: {p}")
+    if p.suffix.lower() not in {".csv", ".tsv", ".txt"}:
+        raise ValueError(f"Expected a CSV file, got: {p.suffix}")
+    return p
+
+def _validate_reliability_mode(mode: str) -> str:
+    if mode not in _VALID_RELIABILITY_MODES:
+        raise ValueError(f"reliability_mode must be one of {_VALID_RELIABILITY_MODES}, got: {mode!r}")
+    return mode
+
+def _validate_budget(budget: int) -> int:
+    if not (1 <= budget <= 20):
+        raise ValueError(f"budget must be between 1 and 20, got: {budget}")
+    return budget
 
 
 def _http_json(method: str, path: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -140,9 +172,7 @@ def health() -> Dict[str, Any]:
 @mcp.tool()
 def profile_csv(csv_path: str) -> Dict[str, Any]:
     """Lightweight local dataset profile for fast triage."""
-    p = Path(csv_path).expanduser().resolve()
-    if not p.exists():
-        raise RuntimeError(f"CSV not found: {p}")
+    p = _validate_csv_path(csv_path)
     df = pd.read_csv(p)
     null_ratio = {c: float(df[c].isna().mean()) for c in df.columns}
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
@@ -161,7 +191,7 @@ def profile_csv(csv_path: str) -> Dict[str, Any]:
 @mcp.tool()
 def discover_direction(csv_path: str, hint: str = "", provider: str = DEFAULT_PROVIDER) -> Dict[str, Any]:
     """Run 19Labs discovery (interactive objective suggestions)."""
-    p = Path(csv_path).expanduser().resolve()
+    p = _validate_csv_path(csv_path)
     csv_text = _read_csv(str(p))
     payload = {
         "filename": p.name,
@@ -182,7 +212,9 @@ def start_research_run(
     provider: str = DEFAULT_PROVIDER,
 ) -> Dict[str, Any]:
     """Start a full research run and return run_id."""
-    p = Path(csv_path).expanduser().resolve()
+    p = _validate_csv_path(csv_path)
+    _validate_budget(budget)
+    _validate_reliability_mode(reliability_mode)
     csv_text = _read_csv(str(p))
     payload = {
         "filename": p.name,
@@ -199,23 +231,16 @@ def start_research_run(
 @mcp.tool()
 def get_run_status(run_id: str) -> Dict[str, Any]:
     """Fetch run status, history, diagnostics, and artifact map."""
-    return _http_json("GET", f"/api/run/{run_id}/status")
+    if not run_id or not run_id.strip():
+        raise ValueError("run_id must not be empty")
+    return _http_json("GET", f"/api/run/{run_id.strip()}/status")
 
 
 @mcp.tool()
 def get_artifact_url(run_id: str, artifact_name: str) -> Dict[str, Any]:
     """Build direct URL for a run artifact file."""
-    allowed = {
-        "program_md",
-        "prepare_py",
-        "analysis_ipynb",
-        "progress_png",
-        "results_tsv",
-        "train_py",
-        "final_report_md",
-    }
-    if artifact_name not in allowed:
-        raise RuntimeError(f"Unknown artifact: {artifact_name}")
+    if artifact_name not in _VALID_ARTIFACTS:
+        raise ValueError(f"artifact_name must be one of {sorted(_VALID_ARTIFACTS)}, got: {artifact_name!r}")
     return {
         "artifact_name": artifact_name,
         "url": f"{API_BASE}/api/run/{run_id}/artifact/{artifact_name}",
@@ -243,6 +268,9 @@ def bootstrap_project(
     - optional run launch + optional status polling
     Returns investor-ready summary payload with artifact URLs when available.
     """
+    _validate_csv_path(csv_path)
+    _validate_budget(budget)
+    _validate_reliability_mode(reliability_mode)
     h = health()
     prof = profile_csv(csv_path)
     disc = discover_direction(csv_path, hint=user_goal, provider=provider)
@@ -321,6 +349,9 @@ def bootstrap_and_export_handoff(
     High-level startup workflow:
     run bootstrap + generate investor-ready handoff payload.
     """
+    _validate_csv_path(csv_path)
+    _validate_budget(budget)
+    _validate_reliability_mode(reliability_mode)
     base = bootstrap_project(
         csv_path=csv_path,
         project_name=project_name,
