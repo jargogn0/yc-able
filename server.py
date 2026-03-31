@@ -34,6 +34,23 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists before SQ
 _pg_mode = bool(os.environ.get("DATABASE_URL", "").strip())
 print(f"[db] Backend: {'PostgreSQL (DATABASE_URL)' if _pg_mode else f'SQLite at {DB_PATH}'}", flush=True)
 
+# Models dir: use same /data persistent volume when available (mirrors DB path logic)
+def _resolve_models_dir() -> Path:
+    railway_data = Path("/data")
+    if railway_data.exists() and railway_data.is_dir():
+        d = railway_data / "run_models"
+    else:
+        d = Path(__file__).parent / "run_models"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        d = Path(tempfile.gettempdir()) / "19labs_run_models"
+        d.mkdir(parents=True, exist_ok=True)
+    return d
+
+_MODELS_DIR = _resolve_models_dir()
+print(f"[models] Storage: {_MODELS_DIR}", flush=True)
+
 # ── DB ABSTRACTION (sqlite3 locally, psycopg2/Supabase in prod) ──────────────
 def _pg_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
@@ -1036,11 +1053,14 @@ def _get_run_or_404(run_id: str):
         conn.close()
         if row and row["result_json"]:
             result = json.loads(row["result_json"])
-            # Reconstruct minimal run dict — ws won't exist but stable model path will
+            # Try to recover workspace path from /tmp glob (still valid within 4-hour window)
+            import glob as _glob
+            _ws_candidates = _glob.glob(str(Path(tempfile.gettempdir()) / f"19labs_{run_id}_*"))
+            _ws_str = _ws_candidates[0] if _ws_candidates else ""
             run = {
                 "id": run_id,
                 "status": row["status"],
-                "ws": "",  # temp dir is gone after restart
+                "ws": _ws_str,
                 "result": result,
                 "hint": row.get("hint", ""),
             }
@@ -1051,24 +1071,29 @@ def _get_run_or_404(run_id: str):
 
 
 def _find_model_path(run_id: str, run: dict) -> "Path | None":
-    """Find model file — checks stable run_models/ dir first, then workspace."""
-    _models_dir = Path(__file__).parent / "run_models"
-    stable = _models_dir / f"{run_id}.pkl"
-    if stable.exists():
-        return stable
+    """Find model file — checks persistent /data/run_models/ first, then workspace."""
+    # 1. Persistent stable path (survives restarts)
+    for ext in [".pkl", ".joblib"]:
+        stable = _MODELS_DIR / f"{run_id}{ext}"
+        if stable.exists():
+            return stable
+    # 2. Workspace search (valid within same server session / 4-hour window)
     ws_str = run.get("ws", "")
-    ws = Path(ws_str) if ws_str else None  # empty string → None (avoids Path("") == cwd)
+    ws = Path(ws_str) if ws_str else None
     result = run.get("result") or {}
     deploy_path = result.get("deploy_path")
     dp = Path(deploy_path) if deploy_path and Path(deploy_path).exists() else None
     search_dirs = [d for d in [dp, ws] if d and str(d) and d.exists()]
-    for name in ["best_model.pkl", "model.pkl"]:
+    # Explicit common names first
+    for name in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
         for d in search_dirs:
             f = d / name
             if f.is_file():
                 return f
+    # Full recursive fallback — any pkl/joblib/xgb native in workspace
     for d in search_dirs:
-        for f in list(d.rglob("*.pkl")) + list(d.rglob("*.joblib")):
+        for f in (list(d.rglob("*.pkl")) + list(d.rglob("*.joblib"))
+                  + list(d.rglob("*.ubj")) + list(d.rglob("model.json"))):
             if f.is_file() and "api_server" not in str(f):
                 return f
     return None
@@ -1507,25 +1532,28 @@ async def start_run(req: RunRequest, request: Request):
             result["run_logs"] = [{"tag": l["tag"], "msg": l["msg"], "ts": l.get("ts", "")}
                                   for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
             RUNS[run_id]["result"] = result
-            # ── Persist model to stable path so it survives server restarts ──
+            # ── Persist model to /data/run_models/ (Railway persistent volume) ──
             try:
-                _models_dir = Path(__file__).parent / "run_models"
-                _models_dir.mkdir(exist_ok=True)
                 _saved = False
-                for _mname in ["best_model.pkl", "model.pkl"]:
+                for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
                     _mp = ws / _mname
                     if _mp.exists():
-                        shutil.copy2(_mp, _models_dir / f"{run_id}.pkl")
+                        _ext = _mp.suffix
+                        shutil.copy2(_mp, _MODELS_DIR / f"{run_id}{_ext}")
                         _saved = True
                         break
                 if not _saved:
-                    # Recursive fallback — grab first pkl in workspace tree
-                    for _mp in ws.rglob("*.pkl"):
+                    # Full recursive fallback — any model file in workspace
+                    for _mp in (list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib"))
+                                + list(ws.rglob("*.ubj")) + list(ws.rglob("model.json"))):
                         if _mp.is_file():
-                            shutil.copy2(_mp, _models_dir / f"{run_id}.pkl")
+                            _ext = _mp.suffix or ".pkl"
+                            shutil.copy2(_mp, _MODELS_DIR / f"{run_id}{_ext}")
+                            _saved = True
                             break
-            except Exception:
-                pass
+                print(f"[models] {'Saved' if _saved else 'WARNING: no model found to save'} → {_MODELS_DIR}/{run_id}.*", flush=True)
+            except Exception as _me:
+                print(f"[models] WARNING: could not persist model for {run_id}: {_me}", flush=True)
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
                 _save_run_to_db(run_id, RUNS[run_id])
@@ -2617,9 +2645,9 @@ async def create_api_server(run_id: str, request: Request):
         f"  -H 'Content-Type: application/json' \\\n  -d '{{\"feature1\": 1.0, \"feature2\": \"value\"}}'\n```\n"
     )
     # Copy model — check stable run_models/ first, then workspace
-    stable_model = _models_dir / f"{run_id}.pkl"
+    stable_model = next((_MODELS_DIR / f"{run_id}{ext}" for ext in [".pkl", ".joblib"] if (_MODELS_DIR / f"{run_id}{ext}").exists()), None)
     model_copied = False
-    if stable_model.exists():
+    if stable_model:
         shutil.copy2(stable_model, api_dir / "model.pkl")
         model_copied = True
     if not model_copied:
@@ -2657,8 +2685,13 @@ async def predict(run_id: str, req: PredictRequest):
 
     try:
         model = joblib.load(model_path)
-    except Exception as e:
-        raise HTTPException(500, f"Failed to load model: {e}")
+    except Exception:
+        try:
+            import xgboost as xgb
+            model = xgb.Booster()
+            model.load_model(str(model_path))
+        except Exception as e2:
+            raise HTTPException(500, f"Failed to load model: {e2}")
 
     # Build dataframe from input
     if req.csv_text:
@@ -2754,8 +2787,14 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
 
     try:
         model = joblib.load(model_path)
-    except Exception as e:
-        raise HTTPException(500, f"Failed to load model: {e}")
+    except Exception:
+        # Try XGBoost native format
+        try:
+            import xgboost as xgb
+            model = xgb.Booster()
+            model.load_model(str(model_path))
+        except Exception as e2:
+            raise HTTPException(500, f"Failed to load model ({model_path.suffix}): {e2}")
 
     contents = await file.read()
     try:
