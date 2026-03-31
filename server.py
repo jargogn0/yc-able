@@ -1844,6 +1844,83 @@ async def push_code(run_id: str, req: PushCodeRequest):
     train_py.write_text(req.code)
     return {"ok": True, "msg": "train.py updated in workspace"}
 
+# ── AI BUSINESS INSIGHT ────────────────────────────────────────
+@app.get("/api/run/{run_id}/interpret")
+async def interpret_run(run_id: str):
+    """Stream a short AI-generated business interpretation of training results."""
+    run = _get_run_or_404(run_id)
+    result = run.get("result") or {}
+    best = result.get("best") or {}
+    obj = result.get("objective") or {}
+
+    task = obj.get("task", "prediction")
+    target = obj.get("target", "the target variable")
+    metric = (best.get("metric_name") or obj.get("metric") or "metric").upper()
+    score = best.get("metric_val")
+    model_name = (best.get("model") or "the model").replace("AutoGluon/", "")
+    leaderboard = best.get("leaderboard") or []
+    num_models = best.get("models_tried") or len(leaderboard) or 1
+    what_worked = best.get("what_worked") or ""
+
+    # Feature importance from SHAP or engine output
+    feat_imp = best.get("feature_importance") or []
+    top_features = [f["feature"] if isinstance(f, dict) else str(f) for f in feat_imp[:5]]
+
+    # Score in plain English
+    score_str = f"{score:.4f}" if score is not None else "N/A"
+    metric_plain = {
+        "AUC": f"{score:.1%} area under the ROC curve" if score else "",
+        "ACCURACY": f"{score:.1%} accuracy" if score else "",
+        "F1": f"{score:.4f} F1 score" if score else "",
+        "RMSE": f"RMSE of {score:.4f}" if score else "",
+        "R2": f"R² of {score:.4f} ({score:.1%} variance explained)" if score else "",
+        "MAE": f"mean absolute error of {score:.4f}" if score else "",
+    }.get(metric, f"{metric} = {score_str}")
+
+    feat_line = f"Top predictors: {', '.join(top_features)}." if top_features else ""
+    lb_line = f"AutoGluon evaluated {num_models} model architectures." if num_models > 1 else ""
+    winner_line = f"Best architecture: {model_name}."
+
+    prompt = f"""You are a business analyst presenting ML results to a non-technical executive.
+Write exactly 3 sentences. No headers, no bullet points, no technical jargon.
+
+Context:
+- Task: predict "{target}" ({task})
+- Performance: {metric_plain}
+- {lb_line} {winner_line}
+- {feat_line}
+- What the model learned: {what_worked}
+
+Rules:
+1. First sentence: what the model does and how well it performs in plain business language (convert AUC/RMSE to plain language like "correctly identifies X% of cases" or "predictions are off by X on average").
+2. Second sentence: what factors matter most and what that means for the business.
+3. Third sentence: one specific actionable recommendation based on the insights.
+
+Be concrete, confident, and brief. No hedging."""
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return JSONResponse({"insight": "Model trained successfully. Check the metrics above for performance details."})
+
+    async def _stream():
+        try:
+            from anthropic import Anthropic as _Ant
+            client = _Ant(api_key=api_key)
+            with client.messages.stream(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=200,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    yield f"data: {json.dumps({'t': text})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'t': f'[insight unavailable: {str(e)[:60]}]'})}\n\n"
+        yield "data: {\"done\": true}\n\n"
+
+    return StreamingResponse(_stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 # ── CANCEL RUN ─────────────────────────────────────────────────
 @app.post("/api/run/{run_id}/cancel")
 async def cancel_run(run_id: str):
