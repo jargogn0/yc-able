@@ -314,10 +314,10 @@ def git_get_commit_hash(ws):
 def narrate(cb, event_type, **kwargs):
     """Generate intelligent real-time narration for the chat during experiments."""
     messages = {
-        "profiling_start": "Scanning your dataset... looking at distributions, correlations, missing values, and data types.",
-        "profiling_done": lambda: f"Found {kwargs.get('rows', '?'):,} rows × {kwargs.get('cols', '?')} columns. {kwargs.get('signals', '')}",
-        "domain_analysis": "Analyzing what domain this data belongs to and what modeling strategy fits best...",
-        "domain_done": lambda: f"Domain identified: {kwargs.get('domain', 'General')}. Strategy: {kwargs.get('strategy', 'standard ML pipeline')}",
+        "profiling_start": "Scanning your dataset — analyzing column types, distributions, missing values, and statistical patterns.",
+        "profiling_done": lambda: f"Dataset ready: {kwargs.get('rows', '?'):,} rows, {kwargs.get('cols', '?')} columns. {kwargs.get('signals', '')}",
+        "domain_analysis": "Running domain analysis — identifying the best modeling strategy for this data type...",
+        "domain_done": lambda: f"Strategy set: {kwargs.get('domain', 'General')} — {kwargs.get('strategy', 'gradient boosting baseline')}",
         "writing_plan": "Writing the research plan (program.md) — this is the blueprint for all experiments.",
         "writing_code": lambda: f"Writing experiment #{kwargs.get('num', 1)} — {kwargs.get('approach', 'generating training code')}...",
         "installing": lambda: f"Installing {kwargs.get('pkg', 'packages')}... (auto-detected from imports)",
@@ -1859,7 +1859,7 @@ def revise_after_iteration(program_md, train_py, score, error, history, domain_a
         f"""Given the current program.md, train.py, run result, and expert domain analysis — decide KEEP/DISCARD and write the next experiment.
 
 EXPERT DOMAIN ANALYSIS (use this to guide your next approach):
-{domain_analysis[:3000] if domain_analysis else "(not available)"}
+{_domain_analysis_text(domain_analysis)[:3000] if domain_analysis else "(not available)"}
 
 KEEP CRITERIA:
 - KEEP if the primary metric improved vs previous best in history.
@@ -3527,25 +3527,39 @@ def run_research(
         profile = profile_dataset(csv_path)
     log.engine(f"{profile['rows']:,} rows × {profile['cols']} cols | numeric={profile['numeric']} | cat={profile['categorical']}")
     log.engine(f"Signals: {' | '.join(profile.get('signals', []))}")
-    narrate(log_callback, "profiling_done", rows=profile['rows'], cols=profile['cols'], signals='; '.join(profile.get('signals', [])[:2]))
+    # Build a clean, human-readable signals summary for narration
+    _sig_parts = []
+    for _s in profile.get('signals', [])[:3]:
+        if 'IMBALANCED_TARGET' in _s:
+            _cm = re.search(r"candidate '([^']+)'.*majority\s+(\d+)%", _s)
+            if _cm: _sig_parts.append(f"{_cm.group(1)} is {_cm.group(2)}% imbalanced")
+        elif 'DATETIME' in _s:
+            _sig_parts.append("time-series structure detected")
+        elif 'HIGH_CARDINALITY' in _s:
+            _cm = re.search(r"col '([^']+)'", _s)
+            if _cm: _sig_parts.append(f"{_cm.group(1)} has high cardinality")
+    _sig_clean = " · ".join(_sig_parts) if _sig_parts else ""
+    narrate(log_callback, "profiling_done", rows=profile['rows'], cols=profile['cols'], signals=_sig_clean)
     (ws / "profile.json").write_text(json.dumps(profile, indent=2, default=str))
 
     # DOMAIN INTELLIGENCE — reason like a senior data scientist
     log.engine("Analyzing domain and data quality...")
     narrate(log_callback, "domain_analysis")
     domain_analysis = analyze_domain(profile, user_hint)
-    (ws / "domain_analysis.md").write_text(domain_analysis)
-    # Log key lines from domain analysis
+    # domain_analysis is now a dict (structured JSON) or legacy string — handle both
+    _da_text = _domain_analysis_text(domain_analysis)
+    (ws / "domain_analysis.md").write_text(_da_text)
+    # Extract domain/strategy for narration
     domain_name = ""
     strategy_name = ""
-    for line in domain_analysis.split("\n"):
-        line = line.strip()
-        if line and any(line.startswith(k) for k in ("INDUSTRY:", "PROBLEM_TYPE:", "MODELING_STRATEGY:", "CRITICAL_WARNINGS:")):
-            log.claude(line[:200])
-            if line.startswith("INDUSTRY:"):
-                domain_name = line[len("INDUSTRY:"):].strip()[:80]
-            if line.startswith("MODELING_STRATEGY:"):
-                strategy_name = line[len("MODELING_STRATEGY:"):].strip()[:80]
+    if isinstance(domain_analysis, dict):
+        domain_name = domain_analysis.get("industry", "")[:80]
+        strategy_name = domain_analysis.get("baseline_approach", "")[:80]
+    else:
+        for line in _da_text.split("\n"):
+            line = line.strip()
+            if line.startswith("INDUSTRY:"): domain_name = line[len("INDUSTRY:"):].strip()[:80]
+            if line.startswith("MODELING_STRATEGY:"): strategy_name = line[len("MODELING_STRATEGY:"):].strip()[:80]
     narrate(log_callback, "domain_done", domain=domain_name or "General", strategy=strategy_name or "standard ML pipeline")
 
     # INFER
