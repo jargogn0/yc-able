@@ -2794,9 +2794,16 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
 
     model_path = _find_model_path(run_id, run)
     if not model_path:
-        _ws = run.get("ws",""); _dp = (run.get("result") or {}).get("deploy_path","")
-        _stable = str(_MODELS_DIR / f"{run_id}.pkl")
-        raise HTTPException(404, f"No model found. Checked: {_stable}, ws={_ws or '(empty)'}, deploy={_dp or '(empty)'}. Please run training again.")
+        # List actual files to show user exactly what's on disk
+        _file_list = []
+        _ws_p = Path(run.get("ws","")) if run.get("ws") else None
+        _dp_p = Path((run.get("result") or {}).get("deploy_path","") or "")
+        for _d in [_MODELS_DIR, _ws_p, _dp_p if str(_dp_p) else None]:
+            if _d and Path(_d).exists():
+                for _f in Path(_d).rglob("*"):
+                    if _f.is_file():
+                        _file_list.append(_f.name)
+        raise HTTPException(404, f"No model file found. workspace files: {_file_list[:30] or 'workspace empty/gone — please run training again'}")
 
     try:
         model = joblib.load(model_path)
