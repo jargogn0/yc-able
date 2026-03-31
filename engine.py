@@ -1248,7 +1248,7 @@ Return STRICT JSON with keys:
   "experiment_directions": ["direction1", "direction2", "direction3"],
   "risks": ["risk1", "risk2"],
   "first_iteration_plan": "one concise paragraph",
-  "agent_message": "2-3 sentences MAX. Be DECISIVE — no questions, no invites. Rules: (1) Pick ONE specific, concrete observation about THIS data — a column name, class imbalance ratio, notable signal, whatever is most interesting — and lead with it naturally. (2) State exactly what model/approach you'll run and why. (3) End with: 'Say **go** to start.' FORBIDDEN: ending with a question, asking anything, saying 'Want to...', 'Should I...', 'Worth...', 'What's your...'. FORBIDDEN openers: 'I scanned', 'I analyzed', 'I found', 'Looking at', 'This dataset', 'The dataset'. FORBIDDEN phrases: 'regression baseline' for classification tasks. For Kaggle: name the prediction target and output format. Make every response decisive and specific to THIS data."
+  "agent_message": "1-2 SHORT sentences MAX. State: (1) the detected target column and task type in plain words. (2) the first model approach. (3) 'Say **go** to start.' Example: 'Predicting **Churn** — binary classification, AUC metric. Starting with LightGBM + class weights for the 89/11 split. Say **go** to start.' FORBIDDEN: long explanations, domain analysis, feature engineering details, questions, invites. Just the facts and go."
 }}
 
 DATA PROFILE (train file):
