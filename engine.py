@@ -195,9 +195,11 @@ def write_workspace_requirements(ws, train_py_code):
 # ── CONFIG ─────────────────────────────────────────────────────
 CLAUDE_MODEL  = "claude-sonnet-4-6"
 OPENAI_MODEL  = "gpt-4o"
+GEMINI_MODEL  = "gemini-2.5-pro"
 # Active model overrides (set by _init_client when caller passes a model)
 _active_claude_model  = CLAUDE_MODEL
 _active_openai_model  = OPENAI_MODEL
+_active_gemini_model  = GEMINI_MODEL
 # Bedrock model ID — can be overridden via BEDROCK_MODEL env var.
 # Default is claude-3-5-sonnet which is widely available across regions.
 # Cross-region inference prefix format: us.anthropic.claude-... (for us-east-1/us-west-2)
@@ -801,11 +803,13 @@ def _init_client(api_key, provider="claude", model=None):
       {"access_key": "AKIA...", "secret_key": "...", "region": "us-east-1"}
     model: optional override for the model to use for this session.
     """
-    global _client, _provider, _active_claude_model, _active_openai_model, BEDROCK_MODEL
+    global _client, _provider, _active_claude_model, _active_openai_model, _active_gemini_model, BEDROCK_MODEL
     _provider = (provider or "claude").lower()
     if model:
         if _provider == "openai":
             _active_openai_model = model
+        elif _provider == "gemini":
+            _active_gemini_model = model
         elif _provider == "bedrock":
             BEDROCK_MODEL = model
         else:
@@ -814,10 +818,19 @@ def _init_client(api_key, provider="claude", model=None):
         # Reset to defaults when no model override given
         _active_claude_model = CLAUDE_MODEL
         _active_openai_model = OPENAI_MODEL
+        _active_gemini_model = GEMINI_MODEL
     if _provider == "openai":
         if OpenAI is None:
             raise RuntimeError("openai package not installed. Run: pip install openai")
         _client = OpenAI(api_key=api_key)
+    elif _provider == "gemini":
+        if OpenAI is None:
+            raise RuntimeError("openai package not installed. Run: pip install openai")
+        # Google's OpenAI-compatible endpoint
+        _client = OpenAI(
+            api_key=api_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
     elif _provider == "bedrock":
         if AnthropicBedrock is None:
             raise RuntimeError("anthropic package too old for Bedrock. Run: pip install 'anthropic>=0.31'")
@@ -867,9 +880,10 @@ def ask(system, user, max_tokens=3000):
     last_err = None
     for attempt in range(1, 4):
         try:
-            if _provider == "openai":
+            if _provider in ("openai", "gemini"):
+                _model = _active_gemini_model if _provider == "gemini" else _active_openai_model
                 r = _client.chat.completions.create(
-                    model=_active_openai_model,
+                    model=_model,
                     max_tokens=max_tokens,
                     messages=[
                         {"role": "system", "content": system},
@@ -3783,7 +3797,7 @@ def run_research(
     log = Logger(ws, log_callback)
     run_tag = f"run_{int(time.time())}"
 
-    model_label = OPENAI_MODEL if _provider == "openai" else CLAUDE_MODEL
+    model_label = _active_gemini_model if _provider == "gemini" else (_active_openai_model if _provider == "openai" else _active_claude_model)
     log.sys(f"Workspace: {ws}")
     log.sys(f"Provider: {_provider} ({model_label})")
     log.sys(f"Budget: {budget} {'(continuous — NEVER STOP)' if continuous else f'(requested={requested_budget})'} | CSV: {csv_path}")

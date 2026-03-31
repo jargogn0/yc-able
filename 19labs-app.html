@@ -1048,6 +1048,7 @@ input[type=file]{display:none}
     <div class="prov-row">
       <button class="prov-btn on" id="prov-claude" onclick="setProv('claude')">Claude</button>
       <button class="prov-btn" id="prov-openai" onclick="setProv('openai')">OpenAI</button>
+      <button class="prov-btn" id="prov-gemini" onclick="setProv('gemini')">Gemini</button>
       <button class="prov-btn" id="prov-bedrock" onclick="setProv('bedrock')">Bedrock</button>
     </div>
     <label id="key-label">Anthropic API Key</label>
@@ -1566,12 +1567,21 @@ const P = {
     {id:'claude-3-5-haiku-20241022', label:'Claude 3.5 Haiku'},
   ]},
   openai:  {label:'OpenAI',  kl:'OpenAI API Key',    ph:'sk-proj-...', models:[
-    {id:'gpt-4o',          label:'GPT-4o (default)'},
+    {id:'gpt-4o',          label:'GPT-4o'},
     {id:'gpt-4o-mini',     label:'GPT-4o mini'},
     {id:'gpt-4.1',         label:'GPT-4.1'},
     {id:'gpt-4.1-mini',    label:'GPT-4.1 mini'},
+    {id:'gpt-5',           label:'GPT-5 🧠'},
     {id:'o3-mini',         label:'o3-mini'},
     {id:'o4-mini',         label:'o4-mini'},
+  ]},
+  gemini:  {label:'Gemini',  kl:'Google AI API Key', ph:'AIza...', models:[
+    {id:'gemini-2.5-pro',            label:'Gemini 2.5 Pro (default)'},
+    {id:'gemini-3.1-pro',            label:'Gemini 3.1 Pro 🧠 — best reasoning & agents'},
+    {id:'gemini-3.0-deep-think',     label:'Gemini 3 Deep Think 🔬 — research & science'},
+    {id:'gemini-3.0-flash',          label:'Gemini 3 Flash ⚡ — fast & real-time'},
+    {id:'gemini-3.1-flash',          label:'Gemini 3.1 Flash ⚡ — optimized scale'},
+    {id:'gemini-3.1-flash-lite',     label:'Gemini 3.1 Flash-Lite ⚡ — low cost'},
   ]},
   bedrock: {label:'Bedrock', kl:'AWS Access Key ID',  ph:'AKIA...', models:[
     {id:'anthropic.claude-sonnet-4-6',   label:'Claude Sonnet 4.6 (default)'},
@@ -2105,7 +2115,7 @@ async function loadSavedKeys(){
       // (server auto-fills api_key when it's empty in request)
       setBadge('READY','');
     }
-    const hasAny=Object.keys(_savedKeys).length>0||gk('claude')||gk('openai')||gk('bedrock');
+    const hasAny=Object.keys(_savedKeys).length>0||gk('claude')||gk('openai')||gk('gemini')||gk('bedrock');
     setBadge(hasAny?'READY':'NO KEY',hasAny?'':'err');
   }catch(e){}
 }
@@ -2203,7 +2213,7 @@ function setProv(p){
   document.getElementById('key-input').value=C.key;
 }
 function spUI(p){
-  ['claude','openai','bedrock'].forEach(x=>{const e=document.getElementById('prov-'+x);if(e)e.classList.toggle('on',x===p)});
+  ['claude','openai','gemini','bedrock'].forEach(x=>{const e=document.getElementById('prov-'+x);if(e)e.classList.toggle('on',x===p)});
   document.getElementById('tb-prov').textContent=P[p].label;
   const isBedrock=p==='bedrock';
   const keyWrap=document.getElementById('key-input');
@@ -5259,6 +5269,7 @@ async function runPrediction(){
 const COST_PER_1K = {
   'claude': {input: 0.003, output: 0.015},    // Sonnet pricing
   'openai': {input: 0.005, output: 0.015},     // GPT-4o pricing
+  'gemini': {input: 0.00125, output: 0.005},   // Gemini 2.5 Pro pricing
 };
 function estimateCost(provider, tokenInput, tokenOutput){
   const rates = COST_PER_1K[provider] || COST_PER_1K['claude'];
