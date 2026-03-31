@@ -882,9 +882,12 @@ def ask(system, user, max_tokens=3000):
         try:
             if _provider in ("openai", "gemini"):
                 _model = _active_gemini_model if _provider == "gemini" else _active_openai_model
+                # o-series and gpt-5 use max_completion_tokens; legacy models use max_tokens
+                _uses_completion_tokens = any(_model.startswith(p) for p in ("o1", "o3", "o4", "gpt-5"))
+                _tok_kwarg = {"max_completion_tokens": max_tokens} if _uses_completion_tokens else {"max_tokens": max_tokens}
                 r = _client.chat.completions.create(
                     model=_model,
-                    max_tokens=max_tokens,
+                    **_tok_kwarg,
                     messages=[
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
