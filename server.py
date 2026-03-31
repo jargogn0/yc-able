@@ -3115,9 +3115,13 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
 
     def _model_feature_names(m):
         """Extract expected feature names from any model type."""
-        # sklearn / XGBRegressor / LGBMRegressor / CatBoost sklearn API
+        # sklearn / XGBRegressor / LGBMRegressor standard attribute
         if hasattr(m, 'feature_names_in_'):
             return list(m.feature_names_in_)
+        # CatBoost sklearn API uses feature_names_ (trailing underscore)
+        if hasattr(m, 'feature_names_') and m.feature_names_ is not None:
+            try: return list(m.feature_names_)
+            except Exception: pass
         # LightGBM Booster
         if hasattr(m, 'feature_name') and callable(m.feature_name):
             try: return m.feature_name()
@@ -3174,12 +3178,15 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         except Exception as e:
             _last_err = e
 
-    # 5. CatBoost native (Pool)
+    # 5. CatBoost — use Pool with explicit feature names to enforce correct order
     if preds is None:
         try:
             import catboost as _cb
             if isinstance(model, (_cb.CatBoostRegressor, _cb.CatBoostClassifier)):
-                preds = _np.asarray(model.predict(encoded)).flatten()
+                _cb_feats = _model_feature_names(model)
+                _cb_data = encoded.reindex(columns=_cb_feats, fill_value=0) if _cb_feats else encoded
+                _pool = _cb.Pool(data=_cb_data, feature_names=_cb_feats or list(_cb_data.columns))
+                preds = _np.asarray(model.predict(_pool)).flatten()
         except Exception as e:
             _last_err = e
 
