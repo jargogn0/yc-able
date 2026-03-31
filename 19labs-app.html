@@ -2384,14 +2384,14 @@ function updArtSide(){
 // ═══════════════════════════════════════════
 // CHAT
 // ═══════════════════════════════════════════
-function chat(role,text){
+function chat(role,text,raw){
   const w=document.getElementById('cw');if(w)w.remove();
   const e=document.createElement('div');
   const cls=role==='ai'?'ai':role==='user'?'user':role==='err'?'err':'sys';
   e.className=`cm ${cls}`;
   const labels={ai:`<img src="/ghost.svg" alt="">19 Agent`,sys:'System',err:'Error'};
   const lab=labels[role]||'';
-  const body=role==='user'?esc(text):safeHtml(text);
+  const body=raw?text:role==='user'?esc(text):safeHtml(text);
   const ts=`<div class="cm-time">${chatTime()}</div>`;
   e.innerHTML=(lab?`<div class="cl">${lab}</div>`:'')+body+ts;
   const c=document.getElementById('msgs');
@@ -2723,7 +2723,7 @@ async function runTestPrediction(f){
     if(titleEl)titleEl.textContent='Drop test.csv to predict';
     if(subEl)subEl.textContent=(S.best?.model||'model')+' ready · drop test set here';
     if(dzT)dzT.classList.remove('drag');
-    chat('ai',_renderPredictPreview(j));
+    chat('ai',_renderPredictPreview(j),true);
     toast(`${j.total_rows} predictions ready`,'ok',4000);
   }catch(e){
     const msg=e.message.slice(0,120);
@@ -5139,7 +5139,7 @@ async function uploadAndPredict(){
     if(!r.ok){const e=await r.json();throw new Error(e.detail||e.error||'Failed');}
     const j=await r.json();
     st.textContent=`\u2713 ${j.total_rows} predictions ready`;
-    chat('ai',_renderPredictPreview(j));
+    chat('ai',_renderPredictPreview(j),true);
     toast(`${j.total_rows} predictions ready`,'ok',4000);
   }catch(e){
     st.textContent=`Failed: ${e.message}`;
@@ -5162,7 +5162,7 @@ async function expUploadAndPredict(runId){
     if(!r.ok){const e=await r.text();throw new Error(e.includes('detail')?JSON.parse(e).detail:e);}
     const j=await r.json();
     st.textContent=`\u2713 ${j.total_rows} predictions ready`;
-    chat('ai',_renderPredictPreview(j));
+    chat('ai',_renderPredictPreview(j),true);
     toast(`${j.total_rows} predictions ready`,'ok',4000);
   }catch(e){
     st.textContent=`Failed: ${e.message.slice(0,120)}`;
