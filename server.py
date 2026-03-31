@@ -3186,6 +3186,29 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     if preds is None:
         raise HTTPException(400, f"Prediction failed: {_last_err}")
 
+    # ── Inverse-transform if model was trained on log-transformed target ──
+    # Detect log-space output: values in [0,30] while training RMSE >> 30.
+    # Also check result metadata (what_worked, model name) for "log" keywords.
+    preds = _np.asarray(preds, dtype=float).flatten()
+    _should_expm1 = False
+    try:
+        _best = result.get("best") or result
+        _what = str(_best.get("what_worked", "") or "").lower()
+        _model_str = str(_best.get("model", "") or "").lower()
+        _rmse = float(_best.get("rmse") or _best.get("test_rmse") or 0)
+        _pred_max = float(preds.max()) if len(preds) > 0 else 0
+        _pred_min = float(preds.min()) if len(preds) > 0 else 0
+        # Heuristic 1: metadata says log was used
+        _meta_log = any(kw in _what or kw in _model_str for kw in ("log1p", "log_", "log transform", "logtransform"))
+        # Heuristic 2: all preds positive and tiny (< 30) while training RMSE is large (> 50)
+        _range_log = (_pred_min >= 0 and _pred_max < 30 and _rmse > 50)
+        _should_expm1 = _meta_log or _range_log
+    except Exception:
+        pass
+    if _should_expm1:
+        preds = _np.expm1(preds)
+        print(f"[predict-file] Applied expm1 inverse transform (log-space model detected)", flush=True)
+
     # Build submission dataframe
     sub_target = target or "prediction"
     sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
