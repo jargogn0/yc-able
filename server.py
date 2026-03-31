@@ -1562,61 +1562,44 @@ async def start_run(req: RunRequest, request: Request):
             result["run_logs"] = [{"tag": l["tag"], "msg": l["msg"], "ts": l.get("ts", "")}
                                   for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
             RUNS[run_id]["result"] = result
-            # ── Persist model to /data/run_models/ (Railway persistent volume) ──
-            try:
-                _saved = False
-                for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
-                    _mp = ws / _mname
-                    if _mp.exists():
-                        _ext = _mp.suffix
-                        shutil.copy2(_mp, _MODELS_DIR / f"{run_id}{_ext}")
-                        _saved = True
+            # ── Persist model to DB BLOB (primary) + filesystem (secondary) ──
+            # Step 1: find model file in workspace
+            _model_src = None
+            for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
+                _mp = ws / _mname
+                if _mp.exists():
+                    _model_src = _mp
+                    break
+            if not _model_src:
+                for _mp in (list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib"))
+                            + list(ws.rglob("*.ubj")) + list(ws.rglob("model.json"))):
+                    if _mp.is_file():
+                        _model_src = _mp
                         break
-                if not _saved:
-                    # Full recursive fallback — any model file in workspace
-                    for _mp in (list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib"))
-                                + list(ws.rglob("*.ubj")) + list(ws.rglob("model.json"))):
-                        if _mp.is_file():
-                            _ext = _mp.suffix or ".pkl"
-                            shutil.copy2(_mp, _MODELS_DIR / f"{run_id}{_ext}")
-                            _saved = True
-                            break
-                print(f"[models] {'Saved' if _saved else 'WARNING: no model found to save'} → {_MODELS_DIR}/{run_id}.*", flush=True)
-                # Also save to SQLite BLOB — survives container restarts without persistent volume
-                if _saved:
-                    _stable_f = next((_MODELS_DIR / f"{run_id}{e}" for e in [".pkl", ".joblib", ".ubj", ".json"]
-                                      if (_MODELS_DIR / f"{run_id}{e}").exists()), None)
-                    if _stable_f:
-                        try:
-                            _blob = _stable_f.read_bytes()
-                            _dbc = DBConn()
-                            _dbc.execute(
-                                "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?) ON CONFLICT (run_id) DO UPDATE SET model_data=EXCLUDED.model_data, model_ext=EXCLUDED.model_ext, created=EXCLUDED.created",
-                                (run_id, _blob, _stable_f.suffix, time.time()))
-                            _dbc.commit()
-                            _dbc.close()
-                            print(f"[models] Saved {len(_blob)//1024}KB to DB BLOB for {run_id}", flush=True)
-                        except Exception as _dbe:
-                            print(f"[models] DB BLOB save failed: {_dbe}", flush=True)
-                elif not _saved:
-                    # Filesystem save failed — try to save directly from workspace to DB
-                    for _mname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
-                        _mp = ws / _mname
-                        if _mp.exists():
-                            try:
-                                _blob = _mp.read_bytes()
-                                _dbc = DBConn()
-                                _dbc.execute(
-                                    "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?) ON CONFLICT (run_id) DO UPDATE SET model_data=EXCLUDED.model_data, model_ext=EXCLUDED.model_ext, created=EXCLUDED.created",
-                                    (run_id, _blob, _mp.suffix, time.time()))
-                                _dbc.commit()
-                                _dbc.close()
-                                print(f"[models] Saved {len(_blob)//1024}KB from ws to DB BLOB for {run_id}", flush=True)
-                                break
-                            except Exception as _dbe:
-                                print(f"[models] DB BLOB save from ws failed: {_dbe}", flush=True)
-            except Exception as _me:
-                print(f"[models] WARNING: could not persist model for {run_id}: {_me}", flush=True)
+            if _model_src:
+                # Step 2: save to SQLite BLOB — this MUST happen first, filesystem is unreliable
+                try:
+                    _blob = _model_src.read_bytes()
+                    _dbc = DBConn()
+                    _dbc.execute(
+                        "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?,?,?,?)"
+                        " ON CONFLICT (run_id) DO UPDATE SET model_data=EXCLUDED.model_data,"
+                        " model_ext=EXCLUDED.model_ext, created=EXCLUDED.created",
+                        (run_id, _blob, _model_src.suffix or ".pkl", time.time()))
+                    _dbc.commit()
+                    _dbc.close()
+                    print(f"[models] Saved {len(_blob)//1024}KB to DB BLOB for {run_id}", flush=True)
+                except Exception as _dbe:
+                    print(f"[models] DB BLOB save failed: {_dbe}", flush=True)
+                # Step 3: also try filesystem copy (best-effort, don't abort if fails)
+                try:
+                    _ext = _model_src.suffix or ".pkl"
+                    shutil.copy2(_model_src, _MODELS_DIR / f"{run_id}{_ext}")
+                    print(f"[models] Copied to filesystem: {_MODELS_DIR}/{run_id}{_ext}", flush=True)
+                except Exception as _fse:
+                    print(f"[models] Filesystem copy skipped (read-only?): {_fse}", flush=True)
+            else:
+                print(f"[models] WARNING: no model file found in workspace for {run_id}", flush=True)
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
                 _save_run_to_db(run_id, RUNS[run_id])
