@@ -3669,6 +3669,22 @@ function showBest(best,obj,runId){
     ${secTile}
   </div>
   ${ctx?`<div class="best-hero-context">${esc(ctx)}</div>`:''}
+  ${(()=>{
+    const lb=best.leaderboard||[];
+    if(!lb.length)return '';
+    const rows=lb.map((m,i)=>{
+      const isBest=i===0;
+      const bar=lb[0].score>0?Math.round((m.score/lb[0].score)*100):100;
+      return `<tr style="${isBest?'color:var(--text)':'color:var(--text-2)'}">
+        <td style="padding:4px 8px 4px 0;font-size:10px;color:var(--text-3)">#${i+1}</td>
+        <td style="padding:4px 8px 4px 0;font-size:11px;font-family:var(--mono);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.model)}">${esc(m.model)}${isBest?' <span style="color:var(--accent);font-size:9px">★ best</span>':''}</td>
+        <td style="padding:4px 0;font-size:11px;font-variant-numeric:tabular-nums;font-weight:${isBest?700:400}">${m.score.toFixed(4)}</td>
+        <td style="padding:4px 0 4px 12px;font-size:10px;color:var(--text-3)">${m.fit_time}s</td>
+        <td style="padding:4px 0 4px 8px;min-width:60px"><div style="height:4px;border-radius:2px;background:var(--border);overflow:hidden"><div style="height:100%;width:${bar}%;background:${isBest?'var(--accent)':'var(--border-2)'}"></div></div></td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin:12px 0 4px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-bottom:6px">Model Race — ${lb.length} trained</div><table style="width:100%;border-collapse:collapse">${rows}</table></div>`;
+  })()}
   <div class="best-hero-actions">
     <button class="abtn p" onclick="deployAsAPI('${runId}')">Deploy as API</button>
     <button class="abtn" onclick="dlDeploy('${runId}')">Download Model</button>
@@ -5043,24 +5059,20 @@ async function uploadAndPredict(){
   const st=document.getElementById('predict-file-status');
   if(!inp.files||!inp.files[0])return;
   const file=inp.files[0];
-  st.textContent=`Uploading ${file.name}...`;
-  const fd=new FormData();
-  fd.append('file',file);
+  st.textContent=`Running predictions on ${file.name}...`;
+  const fd=new FormData();fd.append('file',file);
   try{
     const r=await apiFetch(`${BASE}/api/run/${S.runId}/predict-file`,{method:'POST',body:fd});
     if(!r.ok){const e=await r.json();throw new Error(e.detail||e.error||'Failed');}
-    const blob=await r.blob();
-    const cd=r.headers.get('content-disposition')||'';
-    const fname=cd.match(/filename="?([^"]+)"?/)?.[1]||'submission.csv';
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=fname;a.click();
-    URL.revokeObjectURL(url);
-    st.textContent=`Done — ${fname} downloaded`;
-    toast(`${fname} ready`,'ok',3000);
+    const j=await r.json();
+    st.textContent=`\u2713 ${j.total_rows} predictions ready`;
+    chat('ai',_renderPredictPreview(j));
+    toast(`${j.total_rows} predictions ready`,'ok',4000);
   }catch(e){
     st.textContent=`Failed: ${e.message}`;
     toast(`Prediction failed: ${e.message.slice(0,60)}`,'err');
   }
+  inp.value='';
 }
 
 async function expUploadAndPredict(runId){
@@ -5071,24 +5083,34 @@ async function expUploadAndPredict(runId){
   if(!rid){toast('No active run','err');return;}
   const file=inp.files[0];
   st.textContent=`Running predictions on ${file.name}...`;
-  const fd=new FormData();
-  fd.append('file',file);
+  const fd=new FormData();fd.append('file',file);
   try{
     const r=await apiFetch(`${BASE}/api/run/${rid}/predict-file`,{method:'POST',body:fd});
     if(!r.ok){const e=await r.text();throw new Error(e.includes('detail')?JSON.parse(e).detail:e);}
-    const blob=await r.blob();
-    const cd=r.headers.get('content-disposition')||'';
-    const fname=cd.match(/filename="?([^"]+)"?/)?.[1]||'submission.csv';
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=fname;a.click();
-    URL.revokeObjectURL(url);
-    st.textContent=`\u2713 ${fname} downloaded`;
-    toast(`${fname} ready \u2014 check Downloads`,'ok',4000);
+    const j=await r.json();
+    st.textContent=`\u2713 ${j.total_rows} predictions ready`;
+    chat('ai',_renderPredictPreview(j));
+    toast(`${j.total_rows} predictions ready`,'ok',4000);
   }catch(e){
     st.textContent=`Failed: ${e.message.slice(0,120)}`;
     toast(`Predict failed: ${e.message.slice(0,60)}`,'err');
   }
   inp.value='';
+}
+
+function _renderPredictPreview(j){
+  // Build a preview table from predict-file JSON response + a download button
+  const cols=j.columns||[];const rows=j.preview||[];const total=j.total_rows||0;
+  const fname=j.filename||'submission.csv';
+  let h=`<div style="margin-bottom:8px"><strong>${total.toLocaleString()} predictions</strong> <span style="color:var(--text-3);font-size:11px">— showing first ${rows.length}</span></div>`;
+  h+=`<div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)">`;
+  h+=`<thead><tr>${cols.map(c=>`<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-3);font-size:10px;text-transform:uppercase;letter-spacing:.5px">${esc(c)}</th>`).join('')}</tr></thead>`;
+  h+=`<tbody>${rows.map(r=>`<tr>${r.map(v=>`<td style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text-2)">${esc(v==null?'':String(v))}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  h+=`</table></div>`;
+  if(j.csv_b64){
+    h+=`<button class="abtn p" style="font-size:11px" onclick="(function(){const b=atob(${JSON.stringify(j.csv_b64)});const u=URL.createObjectURL(new Blob([b],{type:'text/csv'}));const a=document.createElement('a');a.href=u;a.download=${JSON.stringify(fname)};a.click();URL.revokeObjectURL(u);toast('Downloaded','ok',2000)})()">&#8681; Download ${esc(fname)}</button>`;
+  }
+  return h;
 }
 
 function loadSampleForPredict(){

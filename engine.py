@@ -1754,6 +1754,10 @@ except Exception as _fe:
     print(f"Feature importance skipped: {{_fe}}")
 {kaggle_block}
 # ── 10. OUTPUT METRICS JSON ───────────────────────────────────────────
+_leaderboard = [
+    {'model': str(row['model']), 'score': round(float(abs(row['score_val'])), 4), 'fit_time': round(float(row['fit_time']), 1)}
+    for _, row in _lb.head(10).iterrows()
+]
 metrics = {{
     'model': f'AutoGluon/{{_best_name}}',
     {repr(metric)}: _score,
@@ -1764,7 +1768,8 @@ metrics = {{
     'test_r2': _r2, 'train_r2': _r2,
     'auc': _auc, 'accuracy': _acc, 'f1': _f1, 'logloss': _logloss,
     'models_tried': len(_lb),
-    'leaderboard_top3': list(_lb['model'].head(3)),
+    'leaderboard': _leaderboard,
+    'leaderboard_top3': [e['model'] for e in _leaderboard[:3]],
     'what_worked': f'AutoGluon auto-ML: tried {{len(_lb)}} models, best={{_best_name}}',
 }}
 print(json.dumps(metrics))

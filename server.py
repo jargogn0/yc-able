@@ -2924,6 +2924,21 @@ async def predict_csv(run_id: str, request: Request):
     return await predict(run_id, req)
 
 
+def _prediction_json_response(sub: "pd.DataFrame", run_id: str) -> JSONResponse:
+    """Return predictions as JSON with an inline preview + base64-encoded full CSV."""
+    import base64 as _b64, pandas as _pd
+    cols = list(sub.columns)
+    preview = sub.head(10).astype(object).where(sub.head(10).notna(), None).values.tolist()
+    csv_bytes = sub.to_csv(index=False).encode()
+    return JSONResponse({
+        "columns": cols,
+        "preview": preview,
+        "total_rows": len(sub),
+        "filename": f"submission_{run_id[:8]}.csv",
+        "csv_b64": _b64.b64encode(csv_bytes).decode(),
+    })
+
+
 @app.post("/api/run/{run_id}/predict-file")
 async def predict_file(run_id: str, file: UploadFile = File(...)):
     """Accept a CSV file upload, run predictions with the stored model, return submission.csv."""
@@ -2954,9 +2969,7 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
             id_vals = df[id_col] if id_col else pd.RangeIndex(len(df))
             sub_target = target or "prediction"
             sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
-            _buf = _io.BytesIO(); sub.to_csv(_buf, index=False); _buf.seek(0)
-            return StreamingResponse(_buf, media_type="text/csv",
-                headers={"Content-Disposition": f'attachment; filename="submission_{run_id[:8]}.csv"'})
+            return _prediction_json_response(sub, run_id)
         except Exception as _age:
             print(f"[predict-file] AutoGluon predict failed: {_age} — falling back to pkl", flush=True)
 
@@ -2980,9 +2993,7 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
                 id_col2 = next((c for c in df.columns if c.lower() in ("id","customerid","customer_id","passengerid")), None)
                 id_vals2 = df[id_col2] if id_col2 else pd.RangeIndex(len(df))
                 sub2 = pd.DataFrame({id_col2 or "id": id_vals2, target or "prediction": preds2})
-                _buf2 = _io.BytesIO(); sub2.to_csv(_buf2, index=False); _buf2.seek(0)
-                return StreamingResponse(_buf2, media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="submission_{run_id[:8]}.csv"'})
+                return _prediction_json_response(sub2, run_id)
         model = _loaded
     except Exception as _e1:
         load_err = _e1
@@ -3028,14 +3039,7 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     # Build submission dataframe
     sub_target = target or "prediction"
     sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
-
-    csv_out = sub.to_csv(index=False)
-    filename = "submission.csv"
-    return StreamingResponse(
-        _io.BytesIO(csv_out.encode()),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return _prediction_json_response(sub, run_id)
 
 
 # ── TIER 2: URL Data Connector ────────────────────────────────
