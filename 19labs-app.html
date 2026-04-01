@@ -3259,7 +3259,7 @@ async function launchRun(){
   S.runId=null;
   stab('exp');updStatus();
 
-  const obj=S.discovery?.discovery?.recommended_objective||S.hint||'';
+  const obj=S.hint||S.discovery?.discovery?.recommended_objective||'';
   // For guests: cap budget at server-enforced max
   const isGuest=!_authUser&&!C.key;
   const effectiveBudget=isGuest?Math.min(S.budget,_serverConfig.guest_max_budget||4):S.budget;

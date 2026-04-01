@@ -1267,6 +1267,7 @@ HYPOTHESES:
         confidence=_safe_float(g("CONFIDENCE"), 0.7),
         reasoning =g("REASONING") or "",
         good_enough=g("GOOD_ENOUGH") or "",
+        user_hint=hint,
         raw=resp)
 
 def _extract_json_blob(txt):
@@ -1400,6 +1401,9 @@ Return STRICT JSON:
             _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
             _msg = re.sub(r'\bstart with a regression\b', 'start with a classification', _msg, flags=re.IGNORECASE)
         advice["agent_message"] = _msg
+    # Ensure user_hint is preserved in the objective for the run phase
+    if user_hint and not obj.get("user_hint"):
+        obj["user_hint"] = user_hint
     return {
         "profile": profile,
         "objective": obj,
@@ -1857,17 +1861,32 @@ print(json.dumps(metrics))
 
 
 def _hint_specifies_model(user_hint):
-    """Return True if the user explicitly named a model or approach to use."""
+    """Return True if the user has any opinion about the model or approach.
+    AutoGluon is the zero-opinion default — any user instruction overrides it."""
     if not user_hint:
         return False
     h = user_hint.lower()
-    return any(kw in h for kw in [
-        'lightgbm', 'lgbm', ' lgb', 'xgboost', ' xgb', 'catboost', 'cat boost',
-        'random forest', 'neural network', 'deep learning', 'pytorch', 'tensorflow',
-        'sklearn', 'scikit', 'optuna', 'gradient boost', 'logistic regression',
-        'linear regression', 'svm', 'support vector', 'lstm', 'transformer',
-        'tabnet', 'histgradient', 'extra tree', 'ridge', 'lasso',
-    ])
+    # Explicit model names including common typos/variations
+    model_keywords = [
+        'lightgbm', 'lgbm', ' lgb', 'light gbm', 'lightgboost', 'light gradient',
+        'xgboost', ' xgb', 'xgb ', 'extreme gradient',
+        'catboost', 'cat boost',
+        'random forest', 'randomforest',
+        'neural network', 'deep learning', 'pytorch', 'tensorflow',
+        'sklearn', 'scikit', 'logistic regression', 'linear regression',
+        'svm', 'support vector', 'lstm', 'transformer', 'tabnet',
+        'histgradient', 'extra tree', 'ridge', 'lasso', 'elastic',
+        'gradient boost', 'gradient tree', 'gbm', 'gbdt',
+    ]
+    # General approach keywords — user has an opinion on how to model
+    approach_keywords = [
+        'optuna', 'hyperparameter', 'tune', 'tuning',
+        'start with', 'use a ', 'use an ', 'try a ', 'try an ',
+        'baseline', 'simpler', 'simple model', 'linear model',
+        'no trees', 'without trees', 'ensemble', 'stacking',
+        'different model', 'different approach', 'different algorithm',
+    ]
+    return any(kw in h for kw in model_keywords + approach_keywords)
 
 
 def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis=""):
