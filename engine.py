@@ -2082,6 +2082,9 @@ KARPATHY DISCIPLINE (MANDATORY):
   CRITICAL: If you use stacking/blending/ensembles, `model` must be the FULL stacking object — NOT individual components.
   NEVER use only native saves (cat_model.save_model(), xgb_model.save_model()) — these save COMPONENTS, not the full pipeline.
   Native saves are allowed ADDITIONALLY for logging, but joblib.dump of the full pipeline is ALWAYS required.
+  SMOTE/oversampling MUST NOT be inside the sklearn Pipeline — apply it only to X_train/y_train before fitting:
+    X_res, y_res = SMOTE().fit_resample(X_train, y_train); model.fit(X_res, y_res)
+  The Pipeline must only contain steps that run at inference time (preprocessing + model). SMOTE is training-only.
 - PRIMARY METRIC: {obj.get('metric','rmse').upper()} — optimize for THIS, not RMSE.
   Use as eval_metric in LightGBM/XGBoost/CatBoost. Use as scoring in cross_val_score.
 - MANDATORY predictions.csv — ALWAYS save this file after fitting, no exceptions:

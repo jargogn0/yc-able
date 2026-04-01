@@ -3127,6 +3127,7 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         model = _loaded
     except Exception as _e1:
         load_err = _e1
+        print(f"[predict-file] joblib.load failed: {_e1}", flush=True)
     if model is None:
         try:
             import xgboost as xgb
@@ -3141,7 +3142,8 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         except Exception as _e3:
             load_err = _e3
     if model is None:
-        raise HTTPException(500, f"Failed to load model ({model_path.suffix}): {load_err}")
+        _first_err = load_err  # last fallback err; joblib err already printed above
+        raise HTTPException(500, f"Failed to load model: {_first_err}. If this is a version mismatch, re-run the experiment to retrain.")
 
     # Keep ID column aside
     id_col = next((c for c in df.columns if c.lower() in ("id", "customerid", "customer_id", "passengerid")), None)
@@ -3207,7 +3209,12 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         except Exception as e:
             _last_err = e
 
-    # 1. Encoded + aligned DataFrame  (works for: sklearn, LightGBM, CatBoost, XGBRegressor)
+    # 0. Raw features first — for self-contained Pipelines with their own ColumnTransformer/OrdinalEncoder
+    #    These pipelines expect raw strings, NOT pre-label-encoded data
+    _try(lambda: model.predict(features))
+    _try(lambda: model.predict(features.values))
+
+    # 1. Encoded + aligned DataFrame  (works for: bare sklearn estimators, LightGBM, CatBoost, XGBRegressor)
     _try(lambda: model.predict(encoded))
 
     # 2. Numpy array  (bypasses sklearn feature_names_in_ check; works for all sklearn-API models)
