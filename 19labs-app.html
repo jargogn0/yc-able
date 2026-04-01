@@ -3182,16 +3182,18 @@ async function runDiscover(hint){
       }
     });
 
-    // Natural agent message — LLM-generated, covers context + model + metric + limitations
-    const _agentMsg = d.agent_message || `Your dataset has **${_rows} rows** and **${_cols} columns**. I'll predict **${esc(_target)}** using **${_task}**, optimizing for **${_metric}**. Say **go** and I'll start — or let me know if you want to change the plan.`;
+    // Agent plan sentence (from API or fallback)
+    const _plan=d.agent_message||`I'll train a <strong>${_task}</strong> model to predict <strong>${esc(_target)}</strong>, optimizing for <strong>${_metric}</strong>.`;
 
-    // Build natural summary — agent message is primary content
-    let _html=`<div style="line-height:1.7;font-size:13px">`;
-    _html+=`<div style="color:#71717a;margin-bottom:8px;font-size:11px">${_rows} rows · ${_cols} columns</div>`;
-    _html+=`<div style="margin-bottom:10px">${md(_agentMsg)}</div>`;
+    // Build clean natural-language summary
+    let _html=`<div style="line-height:1.65;font-size:13px">`;
+    _html+=`<div style="color:#71717a;margin-bottom:10px;font-size:12px">${_rows} rows · ${_cols} columns</div>`;
+    _html+=`<div style="margin-bottom:10px">Scanned your dataset. I'll predict <strong>${esc(_target)}</strong> using <strong>${_task}</strong> — measuring accuracy with <strong>${_metric}</strong>.</div>`;
     if(_notes.length){
-      _html+=`<div style="margin-bottom:8px">${_notes.map(n=>`<div style="color:#f59e0b;margin-bottom:4px;font-size:12px">\u26A0 ${n}</div>`).join('')}</div>`;
+      _html+=`<div style="margin-bottom:10px">${_notes.map(n=>`<div style="color:#f59e0b;margin-bottom:4px;font-size:12px">\u26A0 ${n}</div>`).join('')}</div>`;
     }
+    _html+=`<div style="color:#a1a1aa;font-size:12px;margin-top:6px">${_plan}</div>`;
+    _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
     _html+=`</div>`;
 
     if(S.mode==='plan'){
