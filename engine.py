@@ -1357,16 +1357,16 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
     _da_warnings = obj_analysis.get("critical_warnings", []) if isinstance(obj_analysis, dict) else []
 
     advice_raw = ask(
-        "You are a sharp, decisive ML engineer. Output ONLY JSON. No questions, no chat.",
-        f"""Generate a JSON response for this ML dataset.
+        "You are a sharp, senior ML engineer talking directly to a user who just uploaded their data. "
+        "Be natural, smart, and concise — like a colleague who just looked at their data. Output ONLY JSON.",
+        f"""The user uploaded a dataset. Write a natural, intelligent message summarising what you see and what you'd do.
 {_prev_block}{_correction_block}
-STRUCTURED ANALYSIS:
+EXPERT DOMAIN ANALYSIS:
 {_da_struct or "(see profile below)"}
 
 DATA PROFILE:
 - rows: {profile['rows']:,} | cols: {profile['cols']}
 - headers: {profile['headers']}
-- signals: {profile.get('signals', [])}
 {_files_block}
 INFERRED OBJECTIVE:
 - task: {obj['task']} | target: {obj['target']} | metric: {obj['metric']} | domain: {obj['domain']}
@@ -1380,25 +1380,20 @@ Return STRICT JSON:
   "experiment_directions": ["exp1: {_da_baseline or 'baseline model'}", "exp2: tuned with CV", "exp3: ensemble"],
   "risks": {json.dumps(_da_warnings[:2]) if _da_warnings else '["check for data leakage"]'},
   "first_iteration_plan": "one concise paragraph describing the baseline approach",
-  "agent_message": "1-2 SHORT sentences ONLY. Format: 'Predicting **[TARGET]** ([task type], [metric]). [Baseline model + key reason]. Say **go** to start.' NEVER ask questions. NEVER explain more than 2 things."
+  "agent_message": "3-5 natural sentences as a smart data scientist colleague. Cover: (1) what the data is about and the business context, (2) what we can predict and why it matters, (3) the best model for this specific dataset and why, (4) which metric and why, (5) any key data limitations or risks. End with: 'Say **go** and I\\'ll start — or let me know if you want to change the plan.' Use **bold** for key terms. Be specific to this dataset, not generic. Do NOT start with \\'I\\'ve scanned\\', \\'Based on\\', or \\'After analyzing\\'."
 }}""",
-        800
+        900
     )
     advice = _extract_json_blob(advice_raw)
 
-    # ── Minimal post-process: only fix factually wrong task language + strip generic openers ──
+    # Strip stale generic openers the LLM sometimes adds despite instructions
     if isinstance(advice, dict):
         _msg = advice.get("agent_message", "") or ""
-        _task = obj.get("task", "")
-        # Strip generic dataset-scan openers if the LLM generates them anyway
         _msg = re.sub(
             r"^(I['']ve scanned your dataset[^.]*\.\s*|I analyzed your data[^.]*\.\s*|"
-            r"I found [0-9,]+ rows[^.]*\.\s*|After (scanning|analyzing)[^.]*\.\s*)",
+            r"I found [0-9,]+ rows[^.]*\.\s*|After (scanning|analyzing)[^.]*\.\s*|"
+            r"Based on (the|my|your)[^,\.]*[,\.]\s*)",
             "", _msg, flags=re.IGNORECASE).lstrip()
-        if "classif" in _task.lower():
-            _msg = re.sub(r'\bregression baseline\b', 'classification baseline', _msg, flags=re.IGNORECASE)
-            _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
-            _msg = re.sub(r'\bstart with a regression\b', 'start with a classification', _msg, flags=re.IGNORECASE)
         advice["agent_message"] = _msg
     return {
         "profile": profile,
