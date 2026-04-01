@@ -1870,20 +1870,17 @@ def _hint_specifies_model(user_hint):
     ])
 
 
-def _hint_specifies_model_autogluon(user_hint):
-    """Return True if the user explicitly asked for AutoGluon."""
-    if not user_hint:
-        return False
-    h = user_hint.lower()
-    return any(kw in h for kw in ['autogluon', 'auto gluon', 'auto-gluon'])
-
-
 def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis=""):
-    # ── FULLY AUTONOMOUS: agent picks model from domain analysis ──
-    # Exp 1 → baseline_approach, Exp 2 → better_approach, Exp 3+ → advanced_approach
-    # AutoGluon only used when user explicitly requests it via user_hint.
-    _user_wants_ag = _hint_specifies_model_autogluon(obj.get('user_hint', ''))
-    if _user_wants_ag:
+    # ── EXPERIMENT 1: AutoGluon for tabular data UNLESS user specified a model ──
+    # If user explicitly named a model/approach, respect it and skip AutoGluon.
+    # AutoGluon handles ANY dataset automatically — no LLM hallucination,
+    # correct feature encoding, missing value handling, model selection.
+    # LLM custom code kicks in for exp 2+ to improve on the AG baseline.
+    _is_media = bool(profile.get('is_media'))
+    _is_ts = 'timeseries' in obj.get('task', '').lower() or 'forecast' in obj.get('task', '').lower()
+    _user_wants_specific_model = _hint_specifies_model(obj.get('user_hint', ''))
+    _use_ag = (exp_num == 1 and not _is_media and not _user_wants_specific_model)
+    if _use_ag:
         _ag_code = _write_autogluon_train_py(profile, obj, domain_analysis=domain_analysis)
         if _ag_code:
             return _ag_code
