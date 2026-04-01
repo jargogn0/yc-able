@@ -53,7 +53,6 @@ MODULE_TO_PIP = {
     "hdbscan": "hdbscan",
     "umap": "umap-learn",
     "catboost": "catboost",
-    "autogluon": "autogluon.tabular",
     "optuna": "optuna",
     "shap": "shap",
     "statsmodels": "statsmodels",
@@ -1903,19 +1902,12 @@ def _hint_specifies_model(user_hint):
 
 
 def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis=""):
-    # ── EXPERIMENT 1: AutoGluon for tabular data UNLESS user specified a model ──
-    # If user explicitly named a model/approach, respect it and skip AutoGluon.
-    # AutoGluon handles ANY dataset automatically — no LLM hallucination,
-    # correct feature encoding, missing value handling, model selection.
-    # LLM custom code kicks in for exp 2+ to improve on the AG baseline.
+    # All experiments — including Exp 1 — are AI-written.
+    # The AI uses baseline_approach / better_approach / advanced_approach from domain analysis.
+    # Exp 1 (BASELINE tier) naturally produces LightGBM/XGBoost/CatBoost — fast, memory-safe,
+    # and gives the agent real code to iterate on in Exp 2+.
     _is_media = bool(profile.get('is_media'))
     _is_ts = 'timeseries' in obj.get('task', '').lower() or 'forecast' in obj.get('task', '').lower()
-    _user_wants_specific_model = _hint_specifies_model(obj.get('user_hint', ''))
-    _use_ag = (exp_num == 1 and not _is_media and not _user_wants_specific_model)
-    if _use_ag:
-        _ag_code = _write_autogluon_train_py(profile, obj, domain_analysis=domain_analysis)
-        if _ag_code:
-            return _ag_code
 
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
@@ -2048,7 +2040,7 @@ EXPERT DOMAIN ANALYSIS (source of truth):
 DATA-TYPE ROUTING: {_dtype_routing}
 {_struct_block}
 
-EXPERIMENT: {exp_num} ({_tier} tier)
+EXPERIMENT: {exp_num} ({_tier} tier){" — write a clean, fast LightGBM/XGBoost/CatBoost baseline. No Optuna, no stacking, no ensembles. Single model, solid preprocessing, correct metric. Fast to run, easy to iterate on." if exp_num == 1 else ""}
 TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
 METRIC: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
 
