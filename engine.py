@@ -882,9 +882,9 @@ def ask(system, user, max_tokens=3000):
         try:
             if _provider in ("openai", "gemini"):
                 _model = _active_gemini_model if _provider == "gemini" else _active_openai_model
-                # o-series and gpt-5 use max_completion_tokens; legacy models use max_tokens
-                _uses_completion_tokens = any(_model.startswith(p) for p in ("o1", "o3", "o4", "gpt-5"))
-                _tok_kwarg = {"max_completion_tokens": max_tokens} if _uses_completion_tokens else {"max_tokens": max_tokens}
+                # All modern OpenAI-compatible models (gpt-4o, gpt-4.1, o-series, gpt-5, gemini)
+                # support max_completion_tokens; some newer ones dropped max_tokens entirely.
+                _tok_kwarg = {"max_completion_tokens": max_tokens}
                 r = _client.chat.completions.create(
                     model=_model,
                     **_tok_kwarg,
@@ -1245,9 +1245,23 @@ HYPOTHESES:
         metric = _smart_default_metric(task_inferred, hint)
 
     tc = profile["target_candidates"]
+    _final_target = _forced_target or g("TARGET") or (tc[0] if tc else profile["headers"][-1])
+
+    # Hard-validate task against target column profile — LLMs sometimes say Regression
+    # for binary targets like Churn (Yes/No) or Survived (0/1).
+    if not _forced_task:
+        _tc_info = next((c for c in profile.get('columns', []) if c['name'] == _final_target), None)
+        if _tc_info and _tc_info['type'] in ('categorical', 'boolean'):
+            task_inferred = "BinaryClassification" if _tc_info.get('unique', 99) <= 2 else "MultiClassClassification"
+            metric = _smart_default_metric(task_inferred, hint)
+        elif _tc_info and _tc_info['type'] == 'integer' and _tc_info.get('unique', 99) <= 5:
+            # Integer with few unique values (0/1, 1/2/3 etc.) — treat as classification
+            task_inferred = "BinaryClassification" if _tc_info.get('unique', 99) <= 2 else "MultiClassClassification"
+            metric = _smart_default_metric(task_inferred, hint)
+
     return dict(domain=g("DOMAIN") or "General",
         task   =_forced_task or task_inferred,
-        target =_forced_target or g("TARGET") or (tc[0] if tc else profile["headers"][-1]),
+        target =_final_target,
         metric =metric,
         direction=g("DIRECTION") or "lower_is_better",
         confidence=_safe_float(g("CONFIDENCE"), 0.7),
