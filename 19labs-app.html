@@ -3130,14 +3130,14 @@ async function runDiscover(hint){
   // Timed interim messages so the user knows what's happening during the wait
   const _fname=S.file?.name||'your file';
   const _interimMsgs=[
-    `Reading **${esc(_fname)}**...`,
+    `Reading <strong>${esc(_fname)}</strong>...`,
     `Scanning column types, distributions, and correlations...`,
     `Working out what to predict and which approach fits best...`,
     `Almost there — putting the plan together...`,
   ];
   const _delays=[400,4000,10000,18000];
   S._discoverActive=true;
-  const _timers=_delays.map((d,i)=>setTimeout(()=>{if(S._discoverActive)chat('ai',md(_interimMsgs[i]));},d));
+  const _timers=_delays.map((d,i)=>setTimeout(()=>{if(S._discoverActive)chat('ai',_interimMsgs[i],true);},d));
 
   try{
     // Include the current objective so the LLM can interpret corrections in context
