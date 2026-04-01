@@ -1700,21 +1700,32 @@ async def start_run(req: RunRequest, request: Request):
                         break
             if _model_src:
                 try:
-                    import base64 as _b64
                     _blob = _model_src.read_bytes()
-                    # Don't embed huge AutoGluon reference files — they're tiny but the real model is in ag_path
+                    _model_ext = _model_src.suffix or ".pkl"
                     _is_ag_ref = len(_blob) < 500  # AG reference pkl is tiny
-                    if not _is_ag_ref:
-                        result["model_b64"] = _b64.b64encode(_blob).decode()
-                        result["model_ext"] = _model_src.suffix or ".pkl"
                     RUNS[run_id]["result"] = result
-                    print(f"[models] {'AG ref' if _is_ag_ref else f'Embedded {len(_blob)//1024}KB'} model ({_model_src.name}) for {run_id}", flush=True)
+                    print(f"[models] {'AG ref' if _is_ag_ref else f'Saved {len(_blob)//1024}KB'} model ({_model_src.name}) for {run_id}", flush=True)
+                    # ── Persist to filesystem (fast path on same instance) ──
+                    try:
+                        shutil.copy2(_model_src, _MODELS_DIR / f"{run_id}{_model_ext}")
+                    except Exception:
+                        pass
+                    # ── Persist to DB (survives redeploys — works with both SQLite and PostgreSQL) ──
+                    if not _is_ag_ref:
+                        try:
+                            _dbc = DBConn()
+                            _dbc.execute(
+                                "INSERT INTO run_models (run_id, model_data, model_ext, created) VALUES (?, ?, ?, ?)"
+                                " ON CONFLICT (run_id) DO UPDATE SET model_data=EXCLUDED.model_data, model_ext=EXCLUDED.model_ext, created=EXCLUDED.created",
+                                (run_id, _blob, _model_ext, time.time())
+                            )
+                            _dbc.commit()
+                            _dbc.close()
+                            print(f"[models] Model saved to DB ({len(_blob)//1024}KB) for {run_id}", flush=True)
+                        except Exception as _dbe:
+                            print(f"[models] DB model save failed: {_dbe}", flush=True)
                 except Exception as _mbe:
                     print(f"[models] model save failed: {_mbe}", flush=True)
-                try:
-                    shutil.copy2(_model_src, _MODELS_DIR / f"{run_id}{_model_src.suffix or '.pkl'}")
-                except Exception:
-                    pass
             else:
                 print(f"[models] WARNING: no model found for {run_id} — files: {list(ws.rglob('*'))[:20] if ws.exists() else 'ws gone'}", flush=True)
             if RUNS[run_id]["status"] == "stopping":
