@@ -2082,6 +2082,9 @@ KARPATHY DISCIPLINE (MANDATORY):
   CRITICAL: If you use stacking/blending/ensembles, `model` must be the FULL stacking object — NOT individual components.
   NEVER use only native saves (cat_model.save_model(), xgb_model.save_model()) — these save COMPONENTS, not the full pipeline.
   Native saves are allowed ADDITIONALLY for logging, but joblib.dump of the full pipeline is ALWAYS required.
+  NEVER define custom Python classes (Wrapper, ThresholdClassifier, etc.) and save them in model.pkl —
+    they cannot be deserialized in a different process. Use only standard sklearn/lgbm/xgb/catboost objects.
+    For threshold tuning: use predict_proba + np.where at inference time, NOT a wrapper class.
   SMOTE/oversampling MUST NOT be inside the sklearn Pipeline — apply it only to X_train/y_train before fitting:
     X_res, y_res = SMOTE().fit_resample(X_train, y_train); model.fit(X_res, y_res)
   The Pipeline must only contain steps that run at inference time (preprocessing + model). SMOTE is training-only.

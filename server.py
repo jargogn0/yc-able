@@ -1158,16 +1158,39 @@ def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
     return None
 
 
-def _joblib_load_auto(path):
-    """joblib.load with automatic pip-install on ImportError, then retry (up to 3x)."""
-    import importlib as _il, sys as _sys, subprocess as _sp, joblib as _jl
+def _joblib_load_auto(path, train_code: str = ""):
+    """joblib.load with two recovery strategies:
+    1. ImportError → auto-install the missing package, retry.
+    2. AttributeError (custom class not found) → exec train_code to define the
+       class, then use a custom Unpickler that resolves it from that namespace.
+    """
+    import importlib as _il, sys as _sys, subprocess as _sp, joblib as _jl, pickle as _pk, io as _io
     _pip_map = {"imblearn": "imbalanced-learn", "sklearn": "scikit-learn",
                 "xgboost": "xgboost", "lightgbm": "lightgbm", "catboost": "catboost==1.2.7",
                 "shap": "shap", "optuna": "optuna", "category_encoders": "category-encoders",
                 "umap": "umap-learn", "hdbscan": "hdbscan"}
+
+    def _load_once():
+        return _jl.load(path)
+
+    def _load_with_namespace(ns):
+        """Custom unpickler that resolves classes from a local namespace."""
+        class _Unpickler(_pk.Unpickler):
+            def find_class(self, module, name):
+                if name in ns:
+                    return ns[name]
+                return super().find_class(module, name)
+        # joblib files are zip-compressed; fall back to raw pickle on failure
+        try:
+            return _jl.load(path)  # may still fail — try raw pickle below
+        except Exception:
+            pass
+        with open(path, "rb") as _f:
+            return _Unpickler(_f).load()
+
     for _ in range(3):
         try:
-            return _jl.load(path)
+            return _load_once()
         except ImportError as _ie:
             _top = str(_ie).replace("No module named ", "").strip("'\" ").split(".")[0]
             _pkg = _pip_map.get(_top, _top.replace("_", "-"))
@@ -1179,6 +1202,20 @@ def _joblib_load_auto(path):
             _il.invalidate_caches()
             for _k in [k for k in _sys.modules if k.startswith(_top)]:
                 _sys.modules.pop(_k, None)
+        except AttributeError as _ae:
+            if "Can't get attribute" not in str(_ae) or not train_code:
+                raise
+            # Custom class defined in train.py — exec the code to bring it into scope
+            print(f"[predict] Custom class missing ({_ae}) — injecting from train_code...", flush=True)
+            _ns: dict = {}
+            try:
+                exec(compile(train_code, "<train_code>", "exec"), _ns)  # noqa
+            except Exception:
+                pass  # data-loading lines will fail — class defs still execute
+            try:
+                return _load_with_namespace(_ns)
+            except Exception as _ne:
+                raise AttributeError(f"Custom class injection failed: {_ne}") from _ae
         except Exception:
             raise
     raise RuntimeError("Model load failed after auto-install")
@@ -3166,7 +3203,7 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     load_err = None
 
     try:
-        _loaded = _joblib_load_auto(model_path)
+        _loaded = _joblib_load_auto(model_path, train_code=(result or {}).get("train_code", ""))
         # Handle AG reference dict saved in pkl
         if isinstance(_loaded, dict) and _loaded.get("type") == "autogluon":
             _ap2 = _loaded.get("ag_path", "")
