@@ -51,6 +51,28 @@ def _resolve_models_dir() -> Path:
 _MODELS_DIR = _resolve_models_dir()
 print(f"[models] Storage: {_MODELS_DIR}", flush=True)
 
+# Workspaces dir: persistent on Railway /data, local fallback to sibling dir then /tmp
+def _resolve_workspaces_dir() -> Path:
+    railway_data = Path("/data")
+    if railway_data.exists() and railway_data.is_dir():
+        d = railway_data / "workspaces"
+    else:
+        d = Path(__file__).parent / "workspaces"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    except Exception:
+        return Path(tempfile.gettempdir())
+
+_WS_DIR = _resolve_workspaces_dir()
+print(f"[workspaces] Storage: {_WS_DIR}", flush=True)
+
+def _make_workspace(prefix: str) -> Path:
+    """Create a workspace directory under the persistent workspaces root."""
+    ws = _WS_DIR / prefix
+    ws.mkdir(parents=True, exist_ok=True)
+    return ws
+
 # ── DB ABSTRACTION (sqlite3 locally, psycopg2/Supabase in prod) ──────────────
 def _pg_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
@@ -500,8 +522,8 @@ APP_HTML = Path(__file__).parent / "19labs-app.html"
 LANDING_HTML = Path(__file__).parent / "landing.html"
 
 def _cleanup_old_workspaces():
-    cutoff = time.time() - (4 * 3600)  # 4 hours
-    for ws_path in glob.glob(str(Path(tempfile.gettempdir()) / "19labs_*")):
+    cutoff = time.time() - (7 * 24 * 3600)  # 7 days on persistent storage
+    for ws_path in glob.glob(str(_WS_DIR / "19labs_*")):
         try:
             p = Path(ws_path)
             if p.is_dir() and p.stat().st_mtime < cutoff:
@@ -1077,7 +1099,7 @@ def _get_run_or_404(run_id: str):
             result = json.loads(row["result_json"])
             # Try to recover workspace path from /tmp glob (still valid within 4-hour window)
             import glob as _glob
-            _ws_candidates = _glob.glob(str(Path(tempfile.gettempdir()) / f"19labs_{run_id}_*"))
+            _ws_candidates = [str(_WS_DIR / f"19labs_{run_id}")] if (_WS_DIR / f"19labs_{run_id}").exists() else _glob.glob(str(_WS_DIR / f"19labs_{run_id}_*"))
             _ws_str = _ws_candidates[0] if _ws_candidates else ""
             run = {
                 "id": run_id,
@@ -1154,7 +1176,7 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
     # Also try recovering workspace from /tmp glob (handles multi-instance / post-restart)
     if not ws:
         import glob as _g2
-        _cands = _g2.glob(str(Path(tempfile.gettempdir()) / f"19labs_{run_id}_*"))
+        _cands = [str(_WS_DIR / f"19labs_{run_id}")] if (_WS_DIR / f"19labs_{run_id}").exists() else list(_g2.glob(str(_WS_DIR / f"19labs_{run_id}_*")))
         ws = Path(_cands[0]) if _cands else None
     search_dirs = [d for d in [dp, ws] if d and str(d) and d.exists()]
     print(f"[predict] model search for {run_id}: MODELS_DIR={_MODELS_DIR}, dp={dp}, ws={ws}, dirs={search_dirs}", flush=True)
@@ -1374,7 +1396,7 @@ async def get_config():
 async def upload_media_dataset(file: UploadFile = File(...)):
     """Accept ZIP/image/audio/CSV dataset. Returns dataset_id for use in /api/run."""
     dataset_id = str(uuid.uuid4())[:10]
-    tmp_dir = Path(tempfile.mkdtemp(prefix=f"19labs_media_{dataset_id}_"))
+    tmp_dir = _make_workspace(f"19labs_media_{dataset_id}")
     filename = file.filename or "dataset.zip"
     ext = Path(filename).suffix.lower()
     content = await file.read()
@@ -1528,7 +1550,7 @@ async def start_run(req: RunRequest, request: Request):
     else:
         prefix = "guest"
     run_id = f"{prefix}-{str(uuid.uuid4())[:8]}"
-    ws = Path(tempfile.mkdtemp(prefix=f"19labs_{run_id}_"))
+    ws = _make_workspace(f"19labs_{run_id}")
 
     if req.dataset_id:
         media = _MEDIA_DATASETS.get(req.dataset_id)
@@ -1729,7 +1751,7 @@ async def validate_key(req: ValidateKeyRequest):
 
 @app.post("/api/discover")
 async def discover(req: DiscoverRequest):
-    ws = Path(tempfile.mkdtemp(prefix="19labs_discover_"))
+    ws = _make_workspace(f"19labs_discover_{str(uuid.uuid4())[:8]}")
     cleanup_ws = True
     try:
         import sys
@@ -2524,9 +2546,10 @@ def download_artifact(run_id: str, artifact_name: str):
         if not row:
             raise HTTPException(404, "Run not found")
         result = json.loads(row["result_json"]) if row["result_json"] else {}
-        # Reconstruct workspace path: prefix was 19labs_{run_id}_  in tempdir
-        import glob as _glob, tempfile as _tmp
-        ws_candidates = _glob.glob(str(Path(_tmp.gettempdir()) / f"19labs_{run_id}_*"))
+        # Reconstruct workspace path from persistent storage
+        import glob as _glob
+        _ws_exact = _WS_DIR / f"19labs_{run_id}"
+        ws_candidates = [str(_ws_exact)] if _ws_exact.exists() else _glob.glob(str(_WS_DIR / f"19labs_{run_id}_*"))
         if ws_candidates:
             ws_str = ws_candidates[0]
         else:
@@ -2585,11 +2608,14 @@ def get_predictions(run_id: str, limit: int = 500):
                 if result:
                     ws_str = (result.result_json or {}).get("ws") if isinstance(result.result_json, dict) else None
                     if not ws_str:
-                        import json as _j, glob as _g, tempfile as _tf
-                        td = pathlib.Path(_tf.gettempdir())
-                        matches = list(td.glob(f"19labs_{run_id}_*"))
-                        if matches:
-                            ws_str = str(matches[0])
+                        _ws_exact = _WS_DIR / f"19labs_{run_id}"
+                        if _ws_exact.exists():
+                            ws_str = str(_ws_exact)
+                        else:
+                            import glob as _g
+                            matches = list(_g.glob(str(_WS_DIR / f"19labs_{run_id}_*")))
+                            if matches:
+                                ws_str = str(matches[0])
         except Exception:
             pass
     if not ws_str:
