@@ -1351,67 +1351,55 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
         _files_block = ""
 
     # Build compact structured context for agent message generation
+    _da_struct = _domain_analysis_text(obj_analysis) if isinstance(obj_analysis, dict) else ""
     _da_baseline = obj_analysis.get("baseline_approach", "") if isinstance(obj_analysis, dict) else ""
     _da_imbalance = obj_analysis.get("class_imbalance", "") if isinstance(obj_analysis, dict) else ""
     _da_warnings = obj_analysis.get("critical_warnings", []) if isinstance(obj_analysis, dict) else []
 
-    # ── Build advice dict programmatically — no extra LLM call needed ──
-    # All data is already available from obj + obj_analysis.
-    _task = obj.get("task", "Regression")
-    _target = obj.get("target", "")
-    _metric = obj.get("metric", "rmse")
-    _domain = obj.get("domain", "General")
-    _reasoning = obj.get("reasoning", "")
+    advice_raw = ask(
+        "You are a sharp, decisive ML engineer. Output ONLY JSON. No questions, no chat.",
+        f"""Generate a JSON response for this ML dataset.
+{_prev_block}{_correction_block}
+STRUCTURED ANALYSIS:
+{_da_struct or "(see profile below)"}
 
-    # Short task label for the agent message
-    _task_label_map = {
-        "BinaryClassification": "binary classification",
-        "MultiClassClassification": "multi-class classification",
-        "Regression": "regression",
-        "TimeSeriesForecasting": "time series forecasting",
-        "SentimentAnalysis": "sentiment analysis",
-        "ImageClassification": "image classification",
-        "AudioClassification": "audio classification",
-        "Clustering": "clustering",
-        "AnomalyDetection": "anomaly detection",
-    }
-    _task_label = _task_label_map.get(_task, _task.lower())
+DATA PROFILE:
+- rows: {profile['rows']:,} | cols: {profile['cols']}
+- headers: {profile['headers']}
+- signals: {profile.get('signals', [])}
+{_files_block}
+INFERRED OBJECTIVE:
+- task: {obj['task']} | target: {obj['target']} | metric: {obj['metric']} | domain: {obj['domain']}
 
-    # Build imbalance warning lines
-    _imbalance_warnings = []
-    if isinstance(obj_analysis, dict):
-        for _col_info in obj_analysis.get("imbalanced_cols", []):
-            if isinstance(_col_info, dict):
-                _imbalance_warnings.append(
-                    f"\u26a0\ufe0f **{_col_info.get('col','')}** has {_col_info.get('pct','')}% class imbalance"
-                    " \u2014 model will be trained with class weighting to avoid bias toward the majority class."
-                )
-
-    # Agent message: deterministic, no LLM needed
-    _baseline_short = (_da_baseline or "").split(".")[0].strip()
-    _agent_msg = (
-        f"I'll train a **{_task_label}** model to predict **{_target}**,"
-        f" optimizing for **{_metric.upper()}**."
+Return STRICT JSON:
+{{
+  "recommended_objective": "short objective sentence",
+  "recommended_metric": "{obj['metric']}",
+  "clarifying_questions": [],
+  "decision_tree": [],
+  "experiment_directions": ["exp1: {_da_baseline or 'baseline model'}", "exp2: tuned with CV", "exp3: ensemble"],
+  "risks": {json.dumps(_da_warnings[:2]) if _da_warnings else '["check for data leakage"]'},
+  "first_iteration_plan": "one concise paragraph describing the baseline approach",
+  "agent_message": "1-2 SHORT sentences ONLY. Format: 'Predicting **[TARGET]** ([task type], [metric]). [Baseline model + key reason]. Say **go** to start.' NEVER ask questions. NEVER explain more than 2 things."
+}}""",
+        800
     )
-    if _baseline_short:
-        _agent_msg += f" Starting with: {_baseline_short}."
-
-    advice_raw = json.dumps({
-        "recommended_objective": f"Predict {_target} ({_task_label}) optimizing for {_metric}",
-        "recommended_metric": _metric,
-        "clarifying_questions": [],
-        "decision_tree": [],
-        "experiment_directions": [
-            f"exp1: {_da_baseline or 'baseline model'}",
-            "exp2: tuned with cross-validation and feature engineering",
-            "exp3: ensemble / stacking",
-        ],
-        "risks": _da_warnings[:2] if _da_warnings else ["check for data leakage"],
-        "first_iteration_plan": _da_baseline or f"Train a {_task_label} model on {_target} using gradient boosting.",
-        "agent_message": _agent_msg,
-        "imbalance_warnings": _imbalance_warnings,
-    })
     advice = _extract_json_blob(advice_raw)
+
+    # ── Minimal post-process: only fix factually wrong task language + strip generic openers ──
+    if isinstance(advice, dict):
+        _msg = advice.get("agent_message", "") or ""
+        _task = obj.get("task", "")
+        # Strip generic dataset-scan openers if the LLM generates them anyway
+        _msg = re.sub(
+            r"^(I['']ve scanned your dataset[^.]*\.\s*|I analyzed your data[^.]*\.\s*|"
+            r"I found [0-9,]+ rows[^.]*\.\s*|After (scanning|analyzing)[^.]*\.\s*)",
+            "", _msg, flags=re.IGNORECASE).lstrip()
+        if "classif" in _task.lower():
+            _msg = re.sub(r'\bregression baseline\b', 'classification baseline', _msg, flags=re.IGNORECASE)
+            _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
+            _msg = re.sub(r'\bstart with a regression\b', 'start with a classification', _msg, flags=re.IGNORECASE)
+        advice["agent_message"] = _msg
     return {
         "profile": profile,
         "objective": obj,
@@ -3962,27 +3950,10 @@ def run_research(
     consecutive_crashes = 0
 
     init_results_tsv(ws)
-
-    # For Exp 1 with no history, skip write_program_md — seed from domain analysis directly.
-    # write_program_md makes a full LLM call but adds no value when there's no history/insights yet.
-    # From Exp 2+ (after we have real results), the full plan is written with experiment history.
-    if not history and not insights:
-        _da = domain_analysis if isinstance(domain_analysis, dict) else {}
-        program_md = (
-            f"# Research Plan\n\n"
-            f"**Task:** {obj.get('task','Regression')} · **Target:** {obj.get('target','')} · **Metric:** {obj.get('metric','rmse')}\n\n"
-            f"**Baseline approach:** {_da.get('baseline_approach','gradient boosting baseline')}\n\n"
-            f"**Better approach:** {_da.get('better_approach','tuned model with cross-validation')}\n\n"
-            f"**Advanced approach:** {_da.get('advanced_approach','ensemble / stacking')}\n\n"
-            f"**Domain:** {obj.get('domain','General')} | **Good enough:** {obj.get('good_enough','')}\n"
-        )
-        narrate(log_callback, "writing_plan")
-        log.engine("program.md seeded from domain analysis (no history — skipping LLM plan call)")
-    else:
-        narrate(log_callback, "writing_plan")
-        program_md = write_program_md(profile, obj, history, insights, domain_analysis=domain_analysis)
-        log.engine("program.md written (research spec — drives all experiments)")
+    narrate(log_callback, "writing_plan")
+    program_md = write_program_md(profile, obj, history, insights, domain_analysis=domain_analysis)
     (ws / "program.md").write_text(program_md)
+    log.engine("program.md written (research spec — drives all experiments)")
 
     narrate(log_callback, "writing_code", num=1, approach="initial baseline model")
     train_py = write_train_py(program_md, profile, obj, 1, history, domain_analysis=domain_analysis)
