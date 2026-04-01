@@ -1158,6 +1158,32 @@ def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
     return None
 
 
+def _joblib_load_auto(path):
+    """joblib.load with automatic pip-install on ImportError, then retry (up to 3x)."""
+    import importlib as _il, sys as _sys, subprocess as _sp, joblib as _jl
+    _pip_map = {"imblearn": "imbalanced-learn", "sklearn": "scikit-learn",
+                "xgboost": "xgboost", "lightgbm": "lightgbm", "catboost": "catboost==1.2.7",
+                "shap": "shap", "optuna": "optuna", "category_encoders": "category-encoders",
+                "umap": "umap-learn", "hdbscan": "hdbscan"}
+    for _ in range(3):
+        try:
+            return _jl.load(path)
+        except ImportError as _ie:
+            _top = str(_ie).replace("No module named ", "").strip("'\" ").split(".")[0]
+            _pkg = _pip_map.get(_top, _top.replace("_", "-"))
+            print(f"[predict] Missing '{_top}' — auto-installing '{_pkg}'...", flush=True)
+            _r = _sp.run([_sys.executable, "-m", "pip", "install", _pkg, "-q",
+                          "--no-warn-script-location"], timeout=180, capture_output=True)
+            if _r.returncode != 0:
+                raise ImportError(f"Could not install '{_pkg}': {_r.stderr[-300:]}")
+            _il.invalidate_caches()
+            for _k in [k for k in _sys.modules if k.startswith(_top)]:
+                _sys.modules.pop(_k, None)
+        except Exception:
+            raise
+    raise RuntimeError("Model load failed after auto-install")
+
+
 def _find_model_path(run_id: str, run: dict) -> "Path | None":
     """Find model file — checks result_json base64, filesystem, then DB BLOB."""
     # 0. Best: model_b64 embedded in result_json — only use if it's a binary model format
@@ -2954,7 +2980,7 @@ async def predict(run_id: str, req: PredictRequest):
 
     model = None
     try:
-        model = joblib.load(model_path)
+        model = _joblib_load_auto(model_path)
     except Exception:
         pass
     if model is None:
@@ -3111,8 +3137,9 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
 
     model = None
     load_err = None
+
     try:
-        _loaded = joblib.load(model_path)
+        _loaded = _joblib_load_auto(model_path)
         # Handle AG reference dict saved in pkl
         if isinstance(_loaded, dict) and _loaded.get("type") == "autogluon":
             _ap2 = _loaded.get("ag_path", "")
