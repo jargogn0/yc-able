@@ -3091,6 +3091,33 @@ def _prediction_json_response(sub: "pd.DataFrame", run_id: str) -> JSONResponse:
     })
 
 
+@app.get("/api/run/{run_id}/debug-model")
+async def debug_model(run_id: str):
+    """Diagnose why model loading fails for a run — shows real error from joblib."""
+    run = _get_run_or_404(run_id)
+    model_path = _find_model_path(run_id, run)
+    if not model_path:
+        return {"model_found": False, "error": "No model file found anywhere"}
+    info = {"model_found": True, "model_path": str(model_path), "size_kb": model_path.stat().st_size // 1024}
+    try:
+        import joblib as _jl
+        _jl.load(model_path)
+        info["joblib_load"] = "OK"
+    except Exception as _je:
+        info["joblib_load"] = f"{type(_je).__name__}: {_je}"
+    try:
+        import xgboost as _xgb; _b = _xgb.Booster(); _b.load_model(str(model_path))
+        info["xgb_native_load"] = "OK"
+    except Exception as _xe:
+        info["xgb_native_load"] = str(_xe)[:200]
+    try:
+        import catboost as _cb; _c = _cb.CatBoostClassifier(); _c.load_model(str(model_path))
+        info["catboost_native_load"] = "OK"
+    except Exception as _ce:
+        info["catboost_native_load"] = str(_ce)[:200]
+    return info
+
+
 @app.post("/api/run/{run_id}/predict-file")
 async def predict_file(run_id: str, file: UploadFile = File(...)):
     """Accept a CSV file upload, run predictions with the stored model, return submission.csv."""
@@ -3154,23 +3181,23 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         model = _loaded
     except Exception as _e1:
         load_err = _e1
-        print(f"[predict-file] joblib.load failed: {_e1}", flush=True)
+        print(f"[predict-file] joblib.load failed: {type(_e1).__name__}: {_e1}", flush=True)
     if model is None:
         try:
             import xgboost as xgb
             _bst = xgb.Booster(); _bst.load_model(str(model_path)); model = _bst
         except Exception as _e2:
-            load_err = _e2
+            print(f"[predict-file] xgb native load failed: {_e2}", flush=True)
     if model is None:
         try:
             import catboost as cb
             try: _cbt = cb.CatBoostClassifier(); _cbt.load_model(str(model_path)); model = _cbt
             except Exception: _cbt = cb.CatBoostRegressor(); _cbt.load_model(str(model_path)); model = _cbt
         except Exception as _e3:
-            load_err = _e3
+            print(f"[predict-file] catboost native load failed: {_e3}", flush=True)
     if model is None:
-        _first_err = load_err  # last fallback err; joblib err already printed above
-        raise HTTPException(500, f"Failed to load model: {_first_err}. If this is a version mismatch, re-run the experiment to retrain.")
+        # Always show the FIRST error (joblib), not the last fallback
+        raise HTTPException(500, f"Failed to load model: {load_err}")
 
     # Keep ID column aside
     id_col = next((c for c in df.columns if c.lower() in ("id", "customerid", "customer_id", "passengerid")), None)
