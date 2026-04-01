@@ -4186,15 +4186,25 @@ document.getElementById('cmd-input')?.addEventListener('input',e=>{cmdSel=0;rend
 let activeAbort=null;
 async function cancelRun(){
   if(!S.running)return;
-  toast('Stopping after current experiment... Results will be preserved.','warn');
-  chat('sys','Stopping gracefully — results from completed experiments will be kept.');
-  setBadge('STOPPING','warn');
-  sbUpdate({status:'Stopping...',running:true});
+  // Close SSE and update UI immediately — subprocess is killed within 0.5s server-side
+  if(S._es){try{S._es.close();}catch(_){} S._es=null;}
+  S.running=false;
+  document.getElementById('stop-btn').style.display='none';
+  document.getElementById('cdot').className='chat-dot';
+  setBadge('STOPPED','warn');
+  chat('sys','Run stopped. Best results so far are preserved.');
+  sbUpdate({status:'Stopped',running:false});
+  updStatus();
   if(S.runId){
     try{await apiFetch(`${BASE}/api/run/${S.runId}/cancel`,{method:'POST'})}catch(_){}
+    // Load whatever results were captured so far
+    try{
+      const st=await(await apiFetch(`${BASE}/api/run/${S.runId}/status`)).json();
+      if(st.best){S.best=st.best;showBest(st.best,st.objective,S.runId);}
+      if(st.report){S.report=st.report;showRpt(st.report);}
+      addRunHistory(S.runId,'done',S.file?.name||'Run');
+    }catch(_){}
   }
-  // Don't close EventSource yet — let the engine finish its current experiment
-  // The SSE stream will send __DONE__ when the engine wraps up
 }
 
 // ═══════════════════════════════════════════

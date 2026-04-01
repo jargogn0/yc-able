@@ -1955,7 +1955,7 @@ async def cancel_run(run_id: str):
     if cancel_ev:
         cancel_ev.set()
     run["status"] = "stopping"
-    run["logs"].append({"tag": "sys", "msg": "Stopping after current experiment... Results will be preserved.", "ts": time.strftime("%H:%M:%S")})
+    run["logs"].append({"tag": "sys", "msg": "Run stopped by user.", "ts": time.strftime("%H:%M:%S")})
     return {"ok": True, "msg": "Stopping gracefully — results from completed experiments will be kept"}
 
 # ── DELETE RUN ─────────────────────────────────────────────────
@@ -2166,9 +2166,9 @@ async def stream_logs(run_id: str):
                 yield f"data: {json.dumps({'tag':'sys','msg':'__DONE__','ts':time.strftime('%H:%M:%S'),'elapsed':round(time.time()-run_start,1)})}\n\n"
                 break
             if run["status"] == "stopping":
-                for _ in range(30):
-                    await asyncio.sleep(1)
-                    # Flush any new logs while waiting
+                # Process was killed — flush remaining logs then signal done within ~5s
+                for _ in range(10):
+                    await asyncio.sleep(0.5)
                     while sent < len(run["logs"]):
                         entry = dict(run["logs"][sent])
                         entry["elapsed"] = round(time.time() - run_start, 1)
