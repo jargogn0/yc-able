@@ -3227,7 +3227,7 @@ async function saveInlineKey(){
 // ═══════════════════════════════════════════
 async function launchRun(){
   if(S.running||!S.file)return;
-  if(!S.analyzed){chat('ai','Let me analyze first...');await runDiscover(S.hint||'');return}
+  if(!S.analyzed){chat('ai','Let me take a look at the data first...');await runDiscover(S.hint||'');return}
   if(C.demo){await runPreview();return}
   // Auth gate — require login or own API key
   if(!_authUser){
@@ -3498,10 +3498,10 @@ function procMsg(d){
   else if(msg.includes('Inferring task'))setProg(22);
   else if(msg.includes('objective.md'))setProg(30);
   else if(msg.includes('Generating report'))setProg(85);
-  else if(msg.includes('Git repo initialized'))toast('Git initialized — version control active','ok',3000);
-  else if(msg.includes('Git commit')&&msg.includes('KEEP'))toast('Committed — experiment kept','ok',2500);
-  else if(msg.includes('Git reset'))toast('Reverted to last good state','warn',3000);
-  else if(msg.includes('pivoting strategy'))chat('ai','<strong>Stagnation detected</strong> — pivoting strategy. New approach incoming...');
+  else if(msg.includes('Git repo initialized'))toast('Version control active','ok',2500);
+  else if(msg.includes('Git commit')&&msg.includes('KEEP'))toast('Experiment saved','ok',2000);
+  else if(msg.includes('Git reset'))toast('Rolled back to last good state','warn',3000);
+  else if(msg.includes('pivoting strategy'))chat('ai','Been stuck for a few rounds — trying a completely different approach.');
 
   // ── AutoGluon live model narration ─────────────────────────────
   const _agFit=msg.match(/Fitting model:\s*([A-Za-z0-9_]+)/);
@@ -3556,7 +3556,7 @@ function procMsg(d){
     if(msg.includes('recovery succeeded')){}// silent — agent narrates this
   }
   if(tag==='error'){S.m.fail++;updStatus()}
-  if(msg.includes('hard resetting')){chat('ai','<strong>3 crashes in a row</strong> — hard resetting to last good checkpoint via git')}
+  if(msg.includes('hard resetting')||msg.includes('Three errors in a row')){chat('ai','Three errors in a row — rolling back to the last working state and trying again.')}
   if(msg.includes('train.py written')||msg.includes('Updated requirements')){
     fetchTrainPy();
   }

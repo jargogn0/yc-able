@@ -317,25 +317,25 @@ def git_get_commit_hash(ws):
 def narrate(cb, event_type, **kwargs):
     """Generate intelligent real-time narration for the chat during experiments."""
     messages = {
-        "profiling_start": "Scanning your dataset — analyzing column types, distributions, missing values, and statistical patterns.",
-        "profiling_done": lambda: f"Dataset ready: {kwargs.get('rows', '?'):,} rows, {kwargs.get('cols', '?')} columns. {kwargs.get('signals', '')}",
-        "domain_analysis": "Running domain analysis — identifying the best modeling strategy for this data type...",
-        "domain_done": lambda: f"Strategy set: {kwargs.get('domain', 'General')} — {kwargs.get('strategy', 'gradient boosting baseline')}",
-        "writing_plan": "Writing the research plan (program.md) — this is the blueprint for all experiments.",
-        "writing_code": lambda: f"Writing experiment #{kwargs.get('num', 1)} — {kwargs.get('approach', 'generating training code')}...",
-        "installing": lambda: f"Installing {kwargs.get('pkg', 'packages')}... (auto-detected from imports)",
-        "executing": lambda: f"Running experiment #{kwargs.get('num', 1)}... {kwargs.get('model', '')} training in progress.",
+        "profiling_start": "Let me take a look at your data...",
+        "profiling_done": lambda: f"Got it — {kwargs.get('rows', '?'):,} rows, {kwargs.get('cols', '?')} columns. {kwargs.get('signals', '')}",
+        "domain_analysis": "Thinking through the best approach for this dataset...",
+        "domain_done": lambda: f"{kwargs.get('domain', 'General')} problem. I'll start with {kwargs.get('strategy', 'a gradient boosting baseline')}.",
+        "writing_plan": "Planning the experiments...",
+        "writing_code": lambda: f"Writing the training code for experiment #{kwargs.get('num', 1)}...",
+        "installing": lambda: f"Installing {kwargs.get('pkg', 'required packages')}...",
+        "executing": lambda: f"Training {kwargs.get('model', 'the model')}... this may take a minute.",
         "metrics_parsed": lambda: _narrate_metrics(kwargs),
-        "keep_decision": lambda: f"KEEP — {kwargs.get('model', 'model')} achieved {kwargs.get('metric', 'metric')}={kwargs.get('val', 0):.4f}. {kwargs.get('reason', 'New best score.')}",
-        "discard_decision": lambda: f"DISCARD — {kwargs.get('reason', 'Score did not improve.')} Trying a different approach next.",
-        "crash_recovery": lambda: f"Experiment crashed ({kwargs.get('reason', 'error')}). Auto-repairing and retrying...",
-        "hard_reset": "3 crashes in a row — hard resetting to last known good checkpoint via git.",
-        "stagnation": "Stagnation detected — pivoting to a completely different modeling strategy.",
-        "good_enough": lambda: f"Hit the quality threshold! {kwargs.get('metric', 'metric')}={kwargs.get('val', 0):.4f} is excellent for this domain.",
-        "final_report": "Generating final report with findings, methodology, and deployment package...",
-        "overfitting_warning": lambda: f"Overfitting detected on #{kwargs.get('num', '?')}: train={kwargs.get('train', 0):.4f} vs test={kwargs.get('test', 0):.4f}. Next experiment will add regularization.",
-        "improvement": lambda: f"Improvement! {kwargs.get('metric', 'metric')} went from {kwargs.get('prev', 0):.4f} → {kwargs.get('curr', 0):.4f} ({kwargs.get('pct', 0):+.1f}%)",
-        "predictions_ready": lambda: f"📊 {kwargs.get('summary', 'Forecast table ready')} — switch to the Results tab to see actual vs predicted values.",
+        "keep_decision": lambda: f"Good result — keeping this. {kwargs.get('reason', 'New best score.')}",
+        "discard_decision": lambda: f"Didn't improve — reverting and trying a different approach. {kwargs.get('reason', '')}",
+        "crash_recovery": lambda: f"Hit an error ({kwargs.get('reason', 'unknown')}) — auto-fixing and retrying...",
+        "hard_reset": "Three errors in a row — rolling back to the last working state.",
+        "stagnation": "We've been stuck for a few rounds — time to try something completely different.",
+        "good_enough": lambda: f"We hit the target — {kwargs.get('metric', 'metric')}={kwargs.get('val', 0):.4f}. That's a solid result for this domain.",
+        "final_report": "Wrapping up — putting together the final report...",
+        "overfitting_warning": lambda: f"The model is memorising training data (train={kwargs.get('train', 0):.4f} vs test={kwargs.get('test', 0):.4f}) — adding regularisation next.",
+        "improvement": lambda: f"{kwargs.get('metric', 'metric')} improved: {kwargs.get('prev', 0):.4f} → {kwargs.get('curr', 0):.4f} ({kwargs.get('pct', 0):+.1f}%)",
+        "predictions_ready": lambda: f"{kwargs.get('summary', 'Predictions ready')} — check the Results tab.",
     }
 
     template = messages.get(event_type)
@@ -352,11 +352,10 @@ def _narrate_metrics(kwargs):
     primary = kwargs.get('primary_metric', 'metric')
     val = kwargs.get('val')
 
-    parts = [f"{model} finished"]
+    parts = [f"{model} done"]
     if val is not None:
         parts.append(f"— {primary}={val:.4f}")
 
-    # Detect overfitting
     train_key = f"train_{primary}"
     test_key = f"test_{primary}"
     if train_key in metrics and test_key in metrics:
@@ -364,9 +363,9 @@ def _narrate_metrics(kwargs):
         test_v = metrics[test_key]
         ratio = abs(train_v - test_v) / max(abs(test_v), 1e-10)
         if ratio > 0.3:
-            parts.append(f"(overfitting: train={train_v:.4f}, test={test_v:.4f})")
+            parts.append(f"(train={train_v:.4f} vs test={test_v:.4f} — some overfitting)")
         else:
-            parts.append(f"(good generalization: train={train_v:.4f} ≈ test={test_v:.4f})")
+            parts.append(f"(train={train_v:.4f}, test={test_v:.4f} — generalises well)")
 
     return " ".join(parts)
 
