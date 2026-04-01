@@ -1745,8 +1745,10 @@ predictor.fit(
     train_df,
     time_limit=_time_budget,
     presets='best_quality',
-    excluded_model_types=['KNN'],  # KNN too slow on large datasets
-    ag_args_fit={{'num_cpus': 'auto'}},
+    excluded_model_types=['KNN', 'NN_TORCH'],  # KNN too slow; NN_TORCH too memory-hungry on Railway
+    ag_args_fit={{'num_cpus': 2, 'num_gpus': 0}},
+    num_bag_folds=4,    # limit bagging to reduce peak memory vs default 8
+    num_stack_levels=1, # one stacking level (best_quality uses 2 by default → doubles peak memory)
 )
 
 # ── 5. EVALUATE ────────────────────────────────────────────────────────
