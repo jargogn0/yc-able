@@ -2832,7 +2832,11 @@ async function send(){
   const isNo=/^(no|nah|nope|change|different|wrong|redo|try again)$/i.test(lo.trim());
 
   if(isContinuous){S.continuous=true;chat('ai','<strong>Continuous mode activated.</strong> Running until peak performance or manually stopped.');if(!S.analyzed){await autoDiscover()}if(S.analyzed){S.confirmed=true;await launchRun()}return}
-  if(S.running){chat('ai',"Experiments running — check the Experiments tab for live results.");return}
+  if(S.running){
+    const isStopCmd=/^(stop|cancel|pause|abort|halt|kill)$/i.test(lo.trim());
+    if(isStopCmd){cancelRun();return}
+    await chatWithAI(text);return;
+  }
 
   if(S.best){
     if(lo.includes('deploy api')||lo.includes('deploy as api')||lo.includes('create api')||lo.includes('live api')){deployAsAPI(S.runId);return}

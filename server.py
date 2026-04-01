@@ -2674,11 +2674,12 @@ def get_packages():
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     api_key = req.api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
+    provider = (req.provider or "claude").lower()
+    if not api_key and provider != "bedrock":
         raise HTTPException(400, "API key required for chat")
     from engine import chat_with_data
     try:
-        response = chat_with_data(req.message, req.context, api_key, req.provider, model=req.model or None)
+        response = chat_with_data(req.message, req.context, api_key, provider, model=req.model or None)
         return {"ok": True, "response": response}
     except Exception as e:
         return {"ok": False, "error": str(e)}

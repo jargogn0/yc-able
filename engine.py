@@ -1451,7 +1451,7 @@ def _infer_model_name(code: str) -> str:
 
 
 # ── EXECUTE (Karpathy-style: redirect to run.log, grep metrics) ─
-def execute(code, csv_path, ws, exp_num, data_sep=","):
+def execute(code, csv_path, ws, exp_num, data_sep=",", cancel_event=None):
     ws = pathlib.Path(ws)
     script = ws / "train.py"
     run_log = ws / "run.log"
@@ -1463,22 +1463,36 @@ def execute(code, csv_path, ws, exp_num, data_sep=","):
 
     t0 = time.time()
     try:
-        # Redirect ALL output to run.log — never flood context (Karpathy rule)
+        # Use Popen so we can kill immediately on cancel_event
         with open(run_log, "w") as log_f:
-            p = subprocess.run(
+            proc = subprocess.Popen(
                 [sys.executable, str(script)],
                 stdout=log_f, stderr=subprocess.STDOUT,
-                timeout=EXEC_TIMEOUT, cwd=str(ws),
+                cwd=str(ws),
             )
+
+        # Poll until done, cancelled, or timed out
+        deadline = time.time() + EXEC_TIMEOUT
+        while proc.poll() is None:
+            if cancel_event and cancel_event.is_set():
+                proc.kill()
+                proc.wait()
+                return dict(success=False, cancelled=True, error="Cancelled by user.",
+                            elapsed=time.time() - t0, stdout="")
+            if time.time() > deadline:
+                proc.kill()
+                proc.wait()
+                return dict(success=False, error=f"Timeout {EXEC_TIMEOUT}s — killed", elapsed=EXEC_TIMEOUT)
+            time.sleep(0.5)
+
         elapsed = time.time() - t0
         stdout = run_log.read_text() if run_log.exists() else ""
 
-        if p.returncode != 0:
-            # Read tail of log for error context (like `tail -n 50 run.log`)
+        if proc.returncode != 0:
             tail = "\n".join(stdout.split("\n")[-50:])
             return dict(success=False, error=tail[-600:], elapsed=elapsed, stdout=stdout)
 
-        # Grep metrics from log (like `grep "^val_bpb:" run.log`)
+        # Grep metrics from log
         for line in reversed(stdout.strip().split("\n")):
             line = line.strip()
             if line.startswith("{"):
@@ -1491,9 +1505,6 @@ def execute(code, csv_path, ws, exp_num, data_sep=","):
         return dict(success=False,
             error=f"No JSON in stdout. Tail: {stdout[-300:]}",
             elapsed=elapsed, stdout=stdout, fixable_output=has_metrics)
-    except subprocess.TimeoutExpired:
-        # Kill on timeout — treat as failure (Karpathy: if >10min, kill and discard)
-        return dict(success=False, error=f"Timeout {EXEC_TIMEOUT}s — killed", elapsed=EXEC_TIMEOUT)
     except Exception as e:
         return dict(success=False, error=str(e), elapsed=time.time() - t0)
 
@@ -4007,7 +4018,10 @@ def run_research(
 
         # RUN — all output to run.log, grep metrics from log
         narrate(log_callback, "executing", num=n, model=_infer_model_name(train_py))
-        res = execute(train_py, csv_path, ws, n, data_sep=profile.get("detected_sep", ","))
+        res = execute(train_py, csv_path, ws, n, data_sep=profile.get("detected_sep", ","), cancel_event=cancel_event)
+        if res.get("cancelled"):
+            log.engine("Run cancelled by user — stopping.")
+            break
 
         score = None
         error = None
@@ -4575,31 +4589,33 @@ BEHAVIOR — DECISIVE, NOT CONVERSATIONAL:
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": message})
 
+    # Use the shared client infrastructure (handles Bedrock, OpenAI, Claude, Gemini uniformly)
+    _init_client(api_key or "", provider, model=model)
+
     try:
-        if provider == "openai" and OpenAI:
-            client = OpenAI(api_key=api_key)
-            resp = client.chat.completions.create(
-                model=model or "gpt-4o",
+        if _provider in ("openai", "gemini"):
+            _model = _active_gemini_model if _provider == "gemini" else _active_openai_model
+            r = _client.chat.completions.create(
+                model=_model,
+                max_completion_tokens=1000,
                 messages=[{"role": "system", "content": system}] + messages,
-                max_tokens=1000
             )
-            return resp.choices[0].message.content
+            return r.choices[0].message.content
         else:
-            client = Anthropic(api_key=api_key)
-            resp = client.messages.create(
-                model=model or CLAUDE_MODEL, max_tokens=1000,
+            model_id = BEDROCK_MODEL if _provider == "bedrock" else _active_claude_model
+            if _provider == "bedrock" and not model_id.startswith(("us.", "eu.", "ap.")):
+                model_id = f"us.{model_id}"
+            r = _client.messages.create(
+                model=model_id, max_tokens=1000,
                 system=system,
-                messages=messages
+                messages=messages,
             )
-            return resp.content[0].text
+            return r.content[0].text
     except Exception as e:
+        clean = _classify_api_error(e)
+        if clean:
+            return f"❌ {clean}"
         err = str(e)
-        if "401" in err or "invalid" in err.lower() and "key" in err.lower():
-            return "❌ Invalid API key — please update your key in Settings (top-right ⚙)."
-        if "429" in err or "rate" in err.lower():
-            return "⏱ Rate limit hit — wait a moment and try again."
-        if "insufficient_quota" in err or "quota" in err.lower():
-            return "💳 API quota exceeded — check your billing at your provider dashboard."
         return f"I couldn't process that — {err[:120]}"
 
 
