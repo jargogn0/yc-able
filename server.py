@@ -387,11 +387,16 @@ def _save_run_to_db(run_id: str, run: dict):
                 if len(serialized) <= 4 * 1024 * 1024:  # 4 MB cap
                     result_json_str = serialized
                 else:
-                    # Strip large fields and try again
-                    slim = {k: v for k, v in result.items() if k not in ("plots", "csv_data")}
+                    # Strip large fields and try again — remove model_b64 too (model is in _MODELS_DIR)
+                    slim = {k: v for k, v in result.items() if k not in ("plots", "csv_data", "model_b64", "run_logs", "train_code")}
                     slim_serialized = json.dumps(slim)
                     if len(slim_serialized) <= 4 * 1024 * 1024:
                         result_json_str = slim_serialized
+                    else:
+                        # Last resort: only essential metadata
+                        essential_keys = ("objective", "best", "history", "total_experiments", "model_ag_path", "_ws_files", "deploy_path")
+                        tiny = {k: v for k, v in result.items() if k in essential_keys}
+                        result_json_str = json.dumps(tiny)
             except Exception:
                 pass
         conn = DBConn()
@@ -1101,8 +1106,8 @@ def _get_run_or_404(run_id: str):
         conn = DBConn()
         row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
         conn.close()
-        if row and row["result_json"]:
-            result = json.loads(row["result_json"])
+        if row:
+            result = json.loads(row["result_json"]) if row["result_json"] else None
             # Try to recover workspace path from /tmp glob (still valid within 4-hour window)
             import glob as _glob
             _ws_candidates = [str(_WS_DIR / f"19labs_{run_id}")] if (_WS_DIR / f"19labs_{run_id}").exists() else _glob.glob(str(_WS_DIR / f"19labs_{run_id}_*"))
@@ -2922,14 +2927,14 @@ async def create_api_server(run_id: str, request: Request):
 @app.post("/api/run/{run_id}/predict")
 async def predict(run_id: str, req: PredictRequest):
     run = _get_run_or_404(run_id)
-    result = run.get("result")
-    if not result:
-        raise HTTPException(400, "Run not finished yet")
+    result = run.get("result") or {}
 
     model_path = _find_model_path(run_id, run)
     if not model_path:
-        _has_b64b = bool((result or {}).get("model_b64"))
-        _ws_files_b = (result or {}).get("_ws_files", [])
+        if not result:
+            raise HTTPException(400, "Run not finished yet — no model found")
+        _has_b64b = bool(result.get("model_b64"))
+        _ws_files_b = result.get("_ws_files", [])
         raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64b else 'NO'}, ws_files={_ws_files_b}")
 
     import joblib
@@ -3056,7 +3061,11 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     run = _get_run_or_404(run_id)
     result = run.get("result")
     if not result:
-        raise HTTPException(400, "Run not finished yet")
+        # Result metadata lost (large model stripped from DB) — check if model file still exists
+        _rescue_path = _find_model_path(run_id, {"result": {}})
+        if not _rescue_path:
+            raise HTTPException(400, "Run not finished yet — no model found")
+        result = {}  # minimal; model exists but objective metadata is gone
 
     # Try AutoGluon first (most reliable — handles feature types automatically)
     _ag_path = _find_autogluon_path(run_id, run)
