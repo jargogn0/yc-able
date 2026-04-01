@@ -1,6 +1,6 @@
 [phases.setup]
-aptPkgs = ["libgomp1", "libopenblas-dev", "liblapack-dev"]
-cmds = ["ldconfig"]
+aptPkgs = ["libgomp1", "libopenblas-dev", "liblapack-dev", "libomp-dev"]
+cmds = ["ldconfig", "find /usr -name 'libgomp.so*' 2>/dev/null || true"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]

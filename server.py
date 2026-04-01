@@ -10,7 +10,34 @@
 import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
 import urllib.request, urllib.parse, urllib.error
 
-# Pre-import sklearn to resolve libgomp.so.1 at startup (not lazily at predict time)
+# ── libgomp: force-load OpenMP shared library before any ML package needs it ──
+# LightGBM/sklearn C extensions link against libgomp.so.1 at runtime.
+# If the dynamic linker can't find it, prediction fails with "cannot open shared object file".
+# Solution: locate the library, load it with ctypes (pins it into the process),
+# and set LD_LIBRARY_PATH so child processes (subprocesses) also find it.
+try:
+    import ctypes, glob as _gl
+    _gomp_candidates = (
+        _gl.glob("/usr/lib/*/libgomp.so.1") +
+        _gl.glob("/usr/lib/libgomp.so.1") +
+        _gl.glob("/usr/local/lib/libgomp.so.1") +
+        _gl.glob("/lib/*/libgomp.so.1") +
+        _gl.glob("/usr/lib/*/libgomp.so*") +
+        _gl.glob("/usr/lib/libgomp.so*")
+    )
+    for _gpath in _gomp_candidates:
+        try:
+            ctypes.CDLL(_gpath)
+            _gdir = str(__import__("pathlib").Path(_gpath).parent)
+            os.environ["LD_LIBRARY_PATH"] = _gdir + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+            print(f"[startup] libgomp loaded from {_gpath}", flush=True)
+            break
+        except Exception:
+            continue
+except Exception as _ge:
+    print(f"[startup] libgomp pre-load failed: {_ge}", flush=True)
+
+# Pre-import sklearn/joblib to trigger any remaining linker resolution
 try:
     import sklearn.ensemble, sklearn.preprocessing, joblib  # noqa: F401
 except Exception:
