@@ -1,5 +1,6 @@
 [phases.setup]
 aptPkgs = ["libgomp1", "libopenblas-dev", "liblapack-dev"]
+cmds = ["ldconfig"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]

@@ -9,6 +9,12 @@
 """
 import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
 import urllib.request, urllib.parse, urllib.error
+
+# Pre-import sklearn to resolve libgomp.so.1 at startup (not lazily at predict time)
+try:
+    import sklearn.ensemble, sklearn.preprocessing, joblib  # noqa: F401
+except Exception:
+    pass
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, RedirectResponse
