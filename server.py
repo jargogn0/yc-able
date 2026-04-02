@@ -3221,6 +3221,23 @@ def _prediction_json_response(sub: "pd.DataFrame", run_id: str) -> JSONResponse:
     })
 
 
+@app.get("/api/debug/models")
+async def debug_list_models():
+    """List all persisted models in run_models DB table."""
+    try:
+        _dbc = DBConn()
+        rows = _dbc.execute(
+            "SELECT run_id, model_ext, length(model_data) as bytes, created FROM run_models ORDER BY created DESC LIMIT 50"
+        ).fetchall()
+        _dbc.close()
+        items = [{"run_id": r["run_id"], "ext": r["model_ext"], "kb": (r["bytes"] or 0) // 1024, "ts": r["created"]} for r in rows]
+    except Exception as e:
+        items = [{"error": str(e)}]
+    # Also list filesystem models
+    fs_models = [{"file": f.name, "kb": f.stat().st_size // 1024} for f in _MODELS_DIR.glob("*") if f.is_file()]
+    return {"db_models": items, "fs_models": fs_models, "models_dir": str(_MODELS_DIR)}
+
+
 @app.get("/api/run/{run_id}/debug-model")
 async def debug_model(run_id: str):
     """Diagnose why model loading fails for a run — shows real error from joblib."""
