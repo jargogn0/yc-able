@@ -2359,6 +2359,11 @@ function updStatus(){
   document.getElementById('s-exp').textContent=S.m.exp+(S.continuous&&S.running?' ∞':'');
   document.getElementById('s-best').textContent=S.m.best;
   document.getElementById('s-run').textContent=S.runId||'--';
+  // Update input placeholder to hint that chat is live during a run
+  const cin=document.getElementById('cin');
+  if(cin) cin.placeholder=S.running
+    ? 'Ask me anything, or type "stop" to cancel...'
+    : (MODE_PLACEHOLDERS[S.mode]||'Describe what you want to build...');
 }
 function newExperiment(){
   // Reset run state — keep dataset and Kaggle context loaded
@@ -2791,6 +2796,8 @@ async function send(){
 
   // ── CHAT MODE ──────────────────────────────
   if(S.mode==='chat'){
+    // Always allow chat while agent is running
+    if(S.running){await chatWithAI(text);return;}
     // "go" / "run" / "start" in chat mode → guide to Agent mode
     const isRunCmd=/^(go|run|start|launch|execute|do it|let'?s go|train|analyze)$/i.test(lo.trim());
     if(isRunCmd){
