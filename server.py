@@ -11,18 +11,71 @@ import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secr
 import urllib.request, urllib.parse, urllib.error
 
 # ── libgomp: force-load OpenMP with correct SONAME before any ML package ──
-# Problem: manylinux wheels bundle libgomp-HASH.so.1.0.0 with mangled ELF SONAME.
-# lightgbm calls dlopen("libgomp.so.1") — the mangled SONAME never matches.
-# Fix: copy the bundled file to /tmp/libgomp.so.1, use patchelf to rewrite its
-# SONAME to "libgomp.so.1", THEN load it. Now the linker registers it under the
-# canonical name and all subsequent dlopen("libgomp.so.1") calls succeed.
-try:
-    import ctypes, glob as _gl, sys as _sys, shutil as _sh, subprocess as _sp
-    from pathlib import Path as _PL
+# manylinux wheels bundle libgomp-HASH.so.1.0.0 with that hash baked into the
+# ELF SONAME field. lightgbm calls dlopen("libgomp.so.1") — the hash name never
+# matches. Fix: pure-Python ELF patch rewrites the SONAME string in .dynstr
+# in-place (new name is shorter → null-pad remaining bytes), then load via
+# ctypes RTLD_GLOBAL so the linker registers it as "libgomp.so.1".
 
+def _patch_elf_soname(path, new_soname):
+    """Rewrite ELF SONAME in-place. new_soname must be <= byte-length of current SONAME."""
+    import struct
+    with open(path, 'r+b') as _f:
+        _d = bytearray(_f.read())
+    if _d[:4] != b'\x7fELF':
+        return False, "not ELF"
+    _fmt = '<' if _d[5] == 1 else '>'
+    if _d[4] != 2:
+        return False, "only 64-bit ELF supported"
+    # Parse Elf64_Ehdr fields we need
+    _shoff,   = struct.unpack_from(_fmt+'Q', _d, 40)
+    _shentsz, = struct.unpack_from(_fmt+'H', _d, 58)
+    _shnum,   = struct.unpack_from(_fmt+'H', _d, 60)
+    _shstrndx,= struct.unpack_from(_fmt+'H', _d, 62)
+    def _sh(i):
+        o = _shoff + i * _shentsz
+        return dict(
+            name    = struct.unpack_from(_fmt+'I', _d, o)[0],
+            type    = struct.unpack_from(_fmt+'I', _d, o+4)[0],
+            offset  = struct.unpack_from(_fmt+'Q', _d, o+24)[0],
+            size    = struct.unpack_from(_fmt+'Q', _d, o+32)[0],
+        )
+    _secs = [_sh(i) for i in range(_shnum)]
+    _shstr = _sh(_shstrndx)
+    # Find .dynstr (name) and .dynamic (type=SHT_DYNAMIC=6)
+    _dynstr = next((s for s in _secs
+                    if _d[_shstr['offset']+s['name']:].split(b'\x00')[0] == b'.dynstr'), None)
+    _dynamic = next((s for s in _secs if s['type'] == 6), None)
+    if not _dynstr or not _dynamic:
+        return False, ".dynstr or .dynamic section not found"
+    # Scan .dynamic for DT_SONAME=14; each Elf64_Dyn is 16 bytes (int64 tag, uint64 val)
+    _soname_str_off = None
+    for i in range(_dynamic['size'] // 16):
+        _o = _dynamic['offset'] + i * 16
+        _tag, = struct.unpack_from(_fmt+'q', _d, _o)
+        if _tag == 14:   # DT_SONAME
+            _soname_str_off, = struct.unpack_from(_fmt+'Q', _d, _o+8)
+            break
+        if _tag == 0: break  # DT_NULL
+    if _soname_str_off is None:
+        return False, "DT_SONAME entry not found in .dynamic"
+    _s = _dynstr['offset'] + _soname_str_off
+    _e = _d.index(b'\x00', _s)
+    _old = _d[_s:_e].decode()
+    _nb = new_soname.encode()
+    if len(_nb) > _e - _s:
+        return False, f"new SONAME ({len(_nb)}B) > available space ({_e-_s}B)"
+    # Overwrite: new name + null terminator + zero-pad remainder
+    _d[_s:_e+1] = _nb + b'\x00' * (_e - _s - len(_nb) + 1)
+    with open(path, 'wb') as _f:
+        _f.write(bytes(_d))
+    return True, f"patched SONAME {_old!r} -> {new_soname!r}"
+
+try:
+    import ctypes, glob as _gl, sys as _sys, shutil as _sh
     _gomp_loaded = False
 
-    # 1. Try canonical name first (works if system libgomp1 apt pkg is present)
+    # 1. Try canonical name first (works if system libgomp1 is in ldconfig)
     try:
         ctypes.CDLL("libgomp.so.1", mode=ctypes.RTLD_GLOBAL)
         print("[startup] libgomp.so.1 loaded via system ldconfig", flush=True)
@@ -30,32 +83,28 @@ try:
     except Exception:
         pass
 
-    # 2. Patch-and-load: copy bundled file → fix SONAME → load
+    # 2. Pure-Python ELF SONAME patch: copy bundled → patch SONAME → load
     if not _gomp_loaded:
         _bundled = (
             [p for sp in _sys.path for p in _gl.glob(sp + "/*.libs/libgomp*")] +
-            _gl.glob("/usr/local/lib/libgomp.so.1") +
-            _gl.glob("/usr/lib/*/libgomp.so*") +
-            _gl.glob("/nix/store/*/lib/libgomp.so*")
+            _gl.glob("/usr/local/lib/libgomp*.so*") +
+            _gl.glob("/usr/lib/*/libgomp*.so*") +
+            _gl.glob("/nix/store/*/lib/libgomp*.so*")
         )
+        _bundled = [p for p in _bundled if "libgomp.so.1" not in p]  # skip already-canonical
         print(f"[startup] libgomp bundled candidates: {_bundled[:3]}", flush=True)
         for _src in _bundled:
             try:
-                _dst = "/tmp/libgomp.so.1"
+                _dst = "/tmp/libgomp_patched.so"
                 _sh.copy2(_src, _dst)
-                # Patch ELF SONAME so linker registers it as "libgomp.so.1"
-                _pe = _sp.run(["patchelf", "--set-soname", "libgomp.so.1", _dst],
-                              capture_output=True, text=True)
-                if _pe.returncode == 0:
-                    print(f"[startup] patchelf OK: SONAME set to libgomp.so.1", flush=True)
-                else:
-                    print(f"[startup] patchelf failed: {_pe.stderr.strip()}", flush=True)
+                _ok, _msg = _patch_elf_soname(_dst, "libgomp.so.1")
+                print(f"[startup] ELF patch: {_msg}", flush=True)
                 ctypes.CDLL(_dst, mode=ctypes.RTLD_GLOBAL)
-                print(f"[startup] libgomp.so.1 loaded (patched from {_src})", flush=True)
+                print(f"[startup] libgomp.so.1 loaded (ELF-patched from {_src})", flush=True)
                 _gomp_loaded = True
                 break
-            except Exception as _pe2:
-                print(f"[startup] patch-load failed for {_src}: {_pe2}", flush=True)
+            except Exception as _e2:
+                print(f"[startup] patch-load failed for {_src}: {_e2}", flush=True)
                 continue
 
     if not _gomp_loaded:
