@@ -2421,6 +2421,7 @@ document.addEventListener('click',function(e){
   if(!btn)return;
   const action=btn.dataset.action;
   if(action==='switch-agent'){setMode('agent');chat('sys','Switched to Agent mode — say go to start.');}
+  if(action==='open-settings'){openSettings();}
 });
 function typing(on){
   const ex=document.getElementById('ti');if(ex)ex.remove();
@@ -2942,7 +2943,7 @@ async function chatWithAI(message){
       const err=j.error||'Chat failed';
       const isAuth=err.includes('401')||err.toLowerCase().includes('invalid')||err.toLowerCase().includes('key');
       if(isAuth){
-        chat('ai','Invalid API key — please update it in Settings.<br><br><button onclick="openSettings()" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);color:#fca5a5;font-size:12px;cursor:pointer">Fix API Key →</button>');
+        chat('ai','Invalid API key — please update it in Settings.<br><br><button data-action="open-settings" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);color:#fca5a5;font-size:12px;cursor:pointer">Fix API Key →</button>');
       } else {
         chat('err',err.replace(/\{.*\}/s,'').trim()||'Chat failed');
       }
@@ -2953,6 +2954,16 @@ async function chatWithAI(message){
     S._chatHistory.push({role:'assistant',content:j.response});
     if(S._chatHistory.length>40)S._chatHistory=S._chatHistory.slice(-40);
     chat('ai',j.response);
+
+    // ── If agent is running, inject actionable messages as live hints ──
+    // Questions (contain ? or start with question words) → chat only, no hint
+    const isQuestion=/\?$|^\s*(what|how|why|when|where|who|is|are|can|does|do|did|will|would|could|should)\b/i.test(message);
+    if(S.running && S.runId && !isQuestion){
+      try{
+        await apiFetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:message})});
+        chat('sys','<span style="opacity:.6;font-size:11px">↳ Hint sent to agent — will apply on next experiment</span>');
+      }catch(_){}
+    }
   }catch(e){typing(false);chat('err',`Chat error: ${esc(e.message.slice(0,80))}`)}
 }
 

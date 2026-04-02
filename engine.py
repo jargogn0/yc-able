@@ -3824,6 +3824,7 @@ def run_research(
     cancel_event=None,
     provider="claude",
     model=None,
+    live_hints=None,  # shared list appended by /api/run/{id}/hint during the run
 ):
     """
     Karpathy-discipline autoresearch loop.
@@ -4003,6 +4004,16 @@ def run_research(
         if cancel_event and cancel_event.is_set():
             log.engine("Graceful stop — wrapping up with results from completed experiments.")
             break
+
+        # ── Consume any live hints sent by the user via chat ──────
+        if live_hints:
+            _new_hints = list(live_hints)
+            live_hints.clear()
+            _combined = "; ".join(_new_hints)
+            _prev = obj.get("user_hint", "")
+            obj["user_hint"] = ((_prev + "; " + _combined) if _prev else _combined)
+            log.engine(f"💬 Live hint injected → obj.user_hint = \"{obj['user_hint']}\"")
+
         log.engine(f"\n{'═'*50}\nEXPERIMENT {n}/{budget} {'(continuous)' if continuous else ''}\n{'═'*50}")
 
         # Pre-exec guardrails

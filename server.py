@@ -1698,6 +1698,7 @@ async def start_run(req: RunRequest, request: Request):
         started=time.time(), provider=req.provider,
         hint=req.hint or "", budget=req.budget,
         cancel_event=cancel_event,
+        live_hints=[],  # appended by /api/run/{id}/hint during the run
     )
     # Persist immediately so the run survives a server restart
     _save_run_to_db(run_id, RUNS[run_id])
@@ -1738,6 +1739,7 @@ async def start_run(req: RunRequest, request: Request):
                 cancel_event=cancel_event,
                 provider=req.provider or "claude",
                 model=req.model or None,
+                live_hints=RUNS[run_id]["live_hints"],  # shared list — appended by /hint endpoint
             )
             # Capture train.py content and logs into result so they survive DB persistence
             if result is None:
@@ -2053,6 +2055,23 @@ Be concrete, confident, and brief. No hedging."""
 
     return StreamingResponse(_stream(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ── LIVE HINT ──────────────────────────────────────────────────
+@app.post("/api/run/{run_id}/hint")
+async def inject_hint(run_id: str, req: Request):
+    body = await req.json()
+    hint = (body.get("hint") or "").strip()
+    if not hint:
+        raise HTTPException(400, "hint required")
+    if run_id not in RUNS:
+        raise HTTPException(404, "Run not found")
+    run = RUNS[run_id]
+    if run["status"] != "running":
+        return {"ok": False, "msg": "Run not active"}
+    run.setdefault("live_hints", []).append(hint)
+    run["logs"].append({"tag": "sys", "msg": f"💬 User hint: {hint}", "ts": time.strftime("%H:%M:%S")})
+    return {"ok": True}
 
 
 # ── CANCEL RUN ─────────────────────────────────────────────────
