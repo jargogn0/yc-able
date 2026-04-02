@@ -1244,8 +1244,11 @@ def _get_run_or_404(run_id: str):
     raise HTTPException(404, "Run not found")
 
 
+import functools
+
+@functools.lru_cache(maxsize=3)
 def _load_autogluon_predictor(ag_path: str):
-    """Load an AutoGluon TabularPredictor from its saved directory."""
+    """Load an AutoGluon TabularPredictor from its saved directory (LRU-cached, maxsize=3)."""
     from autogluon.tabular import TabularPredictor as _AGP
     return _AGP.load(ag_path, require_version_match=False)
 
@@ -1277,7 +1280,7 @@ def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
     return None
 
 
-def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_code: str = "", train_csv_path: str = "") -> dict:
+def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_code: str = "", train_csv_path: str = "", label_classes: "list | None" = None) -> dict:
     """Run prediction in a fresh Python subprocess.
     Training already works in subprocess (xgboost/lgbm find libgomp via their bundled RPATH).
     Mirrors that environment instead of fighting in-process libgomp resolution."""
@@ -1433,24 +1436,28 @@ if preds is None:
     sys.exit(1)
 
 # ── Inverse label-encode integer predictions back to original class names ──
-# The LLM-generated train.py uses LabelEncoder on the target but doesn't save
-# the encoder. Refit on the training CSV target column to undo the encoding.
-if train_csv_path and target:
+# Try: (1) refit LabelEncoder from training CSV, (2) stored label_classes fallback.
+_label_classes_fallback = {repr(label_classes or [])}
+if preds is not None and target:
     try:
-        _tdf2 = pd.read_csv(train_csv_path)
-        if target in _tdf2.columns and str(_tdf2[target].dtype) in ('object', 'category'):
-            from sklearn.preprocessing import LabelEncoder as _LEnc
-            _le2 = _LEnc()
-            _le2.fit(_tdf2[target].dropna().astype(str))
-            _n_cls = len(_le2.classes_)
+        _decoded = None
+        if train_csv_path and os.path.exists(train_csv_path):
+            _tdf2 = pd.read_csv(train_csv_path)
+            if target in _tdf2.columns and str(_tdf2[target].dtype) in ('object', 'category'):
+                from sklearn.preprocessing import LabelEncoder as _LEnc
+                _le2 = _LEnc()
+                _le2.fit(_tdf2[target].dropna().astype(str))
+                _classes = list(_le2.classes_)
+                _sample = preds[:min(20, len(preds))]
+                if all(isinstance(p, (int, float)) and float(p) == int(float(p)) and 0 <= int(float(p)) < len(_classes) for p in _sample):
+                    _decoded = [_classes[int(float(p))] for p in preds]
+        if _decoded is None and _label_classes_fallback:
+            _classes = sorted(_label_classes_fallback)
             _sample = preds[:min(20, len(preds))]
-            _are_int = all(
-                isinstance(p, (int, float)) and float(p) == int(float(p))
-                and 0 <= int(float(p)) < _n_cls
-                for p in _sample
-            )
-            if _are_int:
-                preds = list(_le2.inverse_transform([int(float(p)) for p in preds]))
+            if all(isinstance(p, (int, float)) and float(p) == int(float(p)) and 0 <= int(float(p)) < len(_classes) for p in _sample):
+                _decoded = [_classes[int(float(p))] for p in preds]
+        if _decoded is not None:
+            preds = _decoded
     except Exception:
         pass
 
@@ -2061,6 +2068,14 @@ async def start_run(req: RunRequest, request: Request):
                     result["train_code"] = train_py_path.read_text()
                 except Exception:
                     pass
+            # Save train_code to persistent file so it survives DB 4MB strip (line ~510)
+            if result.get("train_code"):
+                try:
+                    _tc_dst = _MODELS_DIR / f"{run_id}_train.py"
+                    _tc_dst.write_text(result["train_code"])
+                    result["train_code_path"] = str(_tc_dst)
+                except Exception:
+                    pass
             # Capture feature_columns.json saved by train.py for prediction alignment
             _fc_path = ws / "feature_columns.json"
             if _fc_path.exists():
@@ -2099,6 +2114,24 @@ async def start_run(req: RunRequest, request: Request):
                     print(f"[models] AutoGluon model copied to persistent storage: {_ag_persistent}", flush=True)
                 except Exception as _age:
                     print(f"[models] AutoGluon persist failed: {_age}", flush=True)
+
+            # ── Persist explain data + label classes for post-workspace predictions ──
+            _csv_src = Path(run.get("csv", ""))
+            if _csv_src.exists():
+                try:
+                    import pandas as _epd
+                    _edf = _epd.read_csv(_csv_src, nrows=500)
+                    _explain_dst = _MODELS_DIR / f"{run_id}_explain.csv"
+                    _edf.to_csv(_explain_dst, index=False)
+                    result["explain_csv"] = str(_explain_dst)
+                    # Capture label classes for categorical target (survives workspace cleanup)
+                    _obj2 = (result.get("objective") or {})
+                    _target2 = _obj2.get("target", "")
+                    if _target2 and _target2 in _edf.columns and str(_edf[_target2].dtype) in ("object", "category"):
+                        result["label_classes"] = sorted(_edf[_target2].dropna().astype(str).unique().tolist())
+                    print(f"[run] explain data + label_classes saved → {_explain_dst}", flush=True)
+                except Exception as _ee:
+                    print(f"[run] explain data save failed: {_ee}", flush=True)
 
             # Priority 2: standard pkl/joblib — embed as base64 in result_json
             _model_src = None
@@ -3662,11 +3695,22 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     # bundled RPATH. We mirror that here to avoid in-process libgomp issues.
     # Also pass training CSV path so the subprocess can determine exact OHE columns.
     _train_csv_path = run.get("csv", "")
+    # Load train_code from persistent file if not in result (stripped when result > 4MB)
+    _train_code = (result or {}).get("train_code", "")
+    if not _train_code:
+        _tc_file = _MODELS_DIR / f"{run_id}_train.py"
+        if _tc_file.exists():
+            try:
+                _train_code = _tc_file.read_text()
+            except Exception:
+                pass
+    _label_classes = (result or {}).get("label_classes")
     try:
         _sub_result = await asyncio.to_thread(
             _predict_subprocess, model_path, contents, target,
-            (result or {}).get("train_code", ""),
+            _train_code,
             _train_csv_path,
+            _label_classes,
         )
         id_col_s = _sub_result.get("id_col")
         id_vals_s = _sub_result["id_vals"]
@@ -3981,9 +4025,17 @@ async def serve_predict(run_id: str, request: Request):
     model_path = _find_model_path(run_id, run)
     if model_path:
         try:
+            _srv_train_code = result.get("train_code", "")
+            if not _srv_train_code:
+                _srv_tc_file = _MODELS_DIR / f"{run_id}_train.py"
+                if _srv_tc_file.exists():
+                    try:
+                        _srv_train_code = _srv_tc_file.read_text()
+                    except Exception:
+                        pass
             _sub = await asyncio.to_thread(
                 _predict_subprocess, model_path, csv_bytes, target,
-                result.get("train_code", ""), run.get("csv", "")
+                _srv_train_code, run.get("csv", ""), result.get("label_classes")
             )
             return {"ok": True, "predictions": _sub["preds"], "count": len(_sub["preds"]), "model": "pkl"}
         except Exception as _se:
@@ -4383,8 +4435,8 @@ async def get_leaderboard(run_id: str):
     if not _ag_path:
         return {"ok": False, "error": "AutoGluon model not found for this run"}
     try:
-        pred = _load_autogluon_predictor(_ag_path)
-        lb = pred.leaderboard(silent=True)
+        pred = await asyncio.to_thread(_load_autogluon_predictor, _ag_path)
+        lb = await asyncio.to_thread(pred.leaderboard, silent=True)
         cols = [c for c in ["model", "score_val", "fit_time", "pred_time_val"] if c in lb.columns]
         rows = lb[cols].head(20).to_dict("records")
         # Normalise: replace NaN with None for JSON serialisation
@@ -4414,10 +4466,11 @@ async def explain_model(run_id: str):
     if _ag_path:
         try:
             import pandas as pd
-            pred = _load_autogluon_predictor(_ag_path)
+            pred = await asyncio.to_thread(_load_autogluon_predictor, _ag_path)
             obj = (result or {}).get("objective") or {}
             target = obj.get("target", "")
-            csv_path = run.get("csv", "")
+            # Prefer persistent explain_csv (survives workspace cleanup) over raw csv
+            csv_path = result.get("explain_csv") or run.get("csv", "")
             df = None
             if csv_path and Path(csv_path).exists():
                 df = pd.read_csv(csv_path, nrows=500)
@@ -4429,7 +4482,7 @@ async def explain_model(run_id: str):
                 df = df.fillna(0)
 
             try:
-                fi_df = pred.feature_importance(data=df, silent=True) if df is not None else pred.feature_importance(silent=True)
+                fi_df = await asyncio.to_thread(pred.feature_importance, data=df, silent=True) if df is not None else await asyncio.to_thread(pred.feature_importance, silent=True)
                 fi_list = [{"feature": str(row.Index), "importance": float(row.importance)}
                            for row in fi_df.itertuples()][:20]
             except Exception:
