@@ -1,1 +1,1 @@
-web: export GOMP=$(python3 -c "import glob,sys; paths=sum([glob.glob(sp+'/*.libs/libgomp*') for sp in sys.path],[]) + glob.glob('/usr/lib/*/libgomp.so.1') + glob.glob('/nix/store/*/lib/libgomp.so.1'); print(paths[0] if paths else '')" 2>/dev/null); [ -n "$GOMP" ] && export LD_PRELOAD="$GOMP" && export LD_LIBRARY_PATH="$(dirname $GOMP):$LD_LIBRARY_PATH" && echo "Procfile: libgomp at $GOMP"; uvicorn server:app --host 0.0.0.0 --port $PORT
+web: uvicorn server:app --host 0.0.0.0 --port $PORT
