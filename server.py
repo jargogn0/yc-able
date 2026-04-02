@@ -1212,6 +1212,106 @@ def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
     return None
 
 
+def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_code: str = "") -> dict:
+    """Run prediction in a fresh Python subprocess.
+    Training already works in subprocess (xgboost/lgbm find libgomp via their bundled RPATH).
+    Mirrors that environment instead of fighting in-process libgomp resolution."""
+    import subprocess, json, tempfile as _tf
+    with _tf.TemporaryDirectory() as _td:
+        _tdp = Path(_td)
+        _csv_path = _tdp / "test.csv"
+        _csv_path.write_bytes(csv_bytes)
+        _model_path_str = str(model_path)
+        _script = f"""
+import sys, json, warnings
+warnings.filterwarnings('ignore')
+
+import pandas as pd
+import numpy as np
+
+df = pd.read_csv({str(_csv_path)!r})
+target = {target!r}
+features = df.drop(columns=[c for c in [target] if c and c in df.columns])
+id_col = next((c for c in df.columns if c.lower() in ('id','customerid','customer_id','passengerid')), None)
+id_vals = df[id_col].tolist() if id_col else list(range(len(df)))
+
+def encode(f):
+    from sklearn.preprocessing import LabelEncoder
+    fe = f.copy()
+    for col in fe.select_dtypes(include=['object','category']).columns:
+        le = LabelEncoder()
+        fe[col] = le.fit_transform(fe[col].astype(str))
+    return fe.fillna(0)
+
+model_path = {_model_path_str!r}
+train_code = {train_code!r}
+preds = None
+
+# Try joblib
+try:
+    import joblib
+    model = joblib.load(model_path)
+    try:
+        preds = model.predict(features).tolist()
+    except Exception:
+        preds = model.predict(encode(features)).tolist()
+except Exception as e1:
+    # Try exec(train_code) to define custom classes then reload
+    if train_code:
+        try:
+            exec(train_code, {{}})
+            import joblib, pickle
+            class _Up(pickle.Unpickler):
+                _ns = {{}}
+                def find_class(self, mod, name):
+                    exec(train_code, self._ns)
+                    if name in self._ns: return self._ns[name]
+                    return super().find_class(mod, name)
+            with open(model_path, 'rb') as f:
+                model = _Up(f).load()
+            preds = model.predict(features).tolist()
+        except Exception as e2:
+            pass
+
+# Try xgboost native
+if preds is None:
+    try:
+        import xgboost as xgb
+        bst = xgb.Booster(); bst.load_model(model_path)
+        dmat = xgb.DMatrix(encode(features))
+        raw = bst.predict(dmat)
+        preds = (raw > 0.5).astype(int).tolist() if raw.ndim == 1 and set(raw.round()) <= {{0.0,1.0}} else raw.tolist()
+    except Exception: pass
+
+# Try catboost
+if preds is None:
+    try:
+        import catboost as cb
+        try: m = cb.CatBoostClassifier(); m.load_model(model_path)
+        except Exception: m = cb.CatBoostRegressor(); m.load_model(model_path)
+        preds = m.predict(features).tolist()
+    except Exception: pass
+
+if preds is None:
+    print(json.dumps({{"error": "all loaders failed"}}))
+    sys.exit(1)
+
+print(json.dumps({{"id_col": id_col, "id_vals": id_vals, "preds": [str(p) for p in preds]}}))
+"""
+        _script_path = _tdp / "predict.py"
+        _script_path.write_text(_script)
+        _r = subprocess.run(
+            [sys.executable, str(_script_path)],
+            capture_output=True, text=True, timeout=300
+        )
+        if _r.returncode != 0 or not _r.stdout.strip():
+            raise RuntimeError(f"predict subprocess: {_r.stderr[-600:]}")
+        _out = json.loads(_r.stdout.strip())
+        if "error" in _out:
+            raise RuntimeError(_out["error"])
+        return _out
+
+
 def _joblib_load_auto(path, train_code: str = ""):
     """joblib.load with two recovery strategies:
     1. ImportError → auto-install the missing package, retry.
@@ -3319,12 +3419,32 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         _ws_files = (result or {}).get("_ws_files", [])
         raise HTTPException(404, f"No model found. model_b64={'YES' if _has_b64 else 'NO'}, ws_files={_ws_files}")
 
+    # ── Subprocess prediction (primary path) ──────────────────────────────────
+    # Training runs in a subprocess where xgboost/lightgbm work fine via their
+    # bundled RPATH. We mirror that here to avoid in-process libgomp issues.
+    try:
+        _sub_result = await asyncio.to_thread(
+            _predict_subprocess, model_path, contents, target,
+            (result or {}).get("train_code", "")
+        )
+        id_col_s = _sub_result.get("id_col")
+        id_vals_s = _sub_result["id_vals"]
+        preds_s = _sub_result["preds"]
+        sub_target_s = target or "prediction"
+        _sub_df = pd.DataFrame({
+            (id_col_s or "id"): id_vals_s,
+            sub_target_s: preds_s,
+        })
+        return _prediction_json_response(_sub_df, run_id)
+    except Exception as _sub_err:
+        print(f"[predict-file] subprocess predict failed: {_sub_err} — trying in-process", flush=True)
+
+    # ── In-process fallback ────────────────────────────────────────────────────
     model = None
     load_err = None
 
     try:
         _loaded = _joblib_load_auto(model_path, train_code=(result or {}).get("train_code", ""))
-        # Handle AG reference dict saved in pkl
         if isinstance(_loaded, dict) and _loaded.get("type") == "autogluon":
             _ap2 = _loaded.get("ag_path", "")
             if _ap2 and Path(_ap2).exists():
@@ -3353,7 +3473,6 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         except Exception as _e3:
             print(f"[predict-file] catboost native load failed: {_e3}", flush=True)
     if model is None:
-        # Always show the FIRST error (joblib), not the last fallback
         raise HTTPException(500, f"Failed to load model: {load_err}")
 
     # Keep ID column aside
