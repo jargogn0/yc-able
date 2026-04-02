@@ -2058,6 +2058,36 @@ Be concrete, confident, and brief. No hedging."""
 
 
 # ── LIVE HINT ──────────────────────────────────────────────────
+@app.post("/api/dataset/{dataset_id}/primary")
+async def set_primary_file(dataset_id: str, req: Request):
+    """Switch which file in a multi-file ZIP is treated as primary (train file)."""
+    body = await req.json()
+    filename = (body.get("filename") or "").strip()
+    if not filename:
+        raise HTTPException(400, "filename required")
+    media = _MEDIA_DATASETS.get(dataset_id)
+    if not media:
+        raise HTTPException(404, "Dataset not found")
+    all_files = media.get("all_files", [])
+    # Find the matching file path
+    match = next((f for f in all_files if Path(f).name == filename), None)
+    if not match:
+        raise HTTPException(404, f"File '{filename}' not in dataset")
+    # Update primary
+    media["primary"] = match
+    # Return preview CSV of the new primary file
+    try:
+        import io as _io
+        import pandas as _pd_prev
+        _preview_df = _pd_prev.read_csv(match, nrows=100)
+        _preview_buf = _io.StringIO()
+        _preview_df.to_csv(_preview_buf, index=False)
+        _preview_csv = _preview_buf.getvalue()
+    except Exception:
+        _preview_csv = ""
+    return {"ok": True, "filename": filename, "preview_csv": _preview_csv}
+
+
 @app.post("/api/run/{run_id}/hint")
 async def inject_hint(run_id: str, req: Request):
     body = await req.json()

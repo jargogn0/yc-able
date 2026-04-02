@@ -2338,16 +2338,34 @@ function updSide(){
   if(!S.file){fl.innerHTML='';return}
   let h=`<div class="side-sec">Dataset</div>`;
   if(S.allFiles&&S.allFiles.length>1){
-    // Multi-file ZIP — show all files, primary highlighted
+    // Multi-file ZIP — show all files, primary highlighted; click to switch preview
     S.allFiles.forEach(name=>{
       const isPrimary=name===S.file.name;
-      h+=`<div class="side-item${isPrimary?' act':''}"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isPrimary?'var(--accent)':'#3f3f46'};font-size:9px">${isPrimary?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':''}</div></div>`;
+      const label=isPrimary?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':'';
+      const clickable=!isPrimary&&S.dataset_id?`data-action="select-file" data-filename="${esc(name)}" style="cursor:pointer"`:'';
+      h+=`<div class="side-item${isPrimary?' act':''}" ${clickable}><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isPrimary?'var(--accent)':'#3f3f46'};font-size:9px">${label}</div></div>`;
     });
   } else {
     const kb=(S.file.size/1024).toFixed(1);
     h+=`<div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
   }
   fl.innerHTML=h;
+}
+async function selectZipFile(filename){
+  if(!S.dataset_id||!S.allFiles)return;
+  try{
+    const res=await apiFetch(`${BASE}/api/dataset/${S.dataset_id}/primary`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename})});
+    if(!res.ok)return;
+    // Update primary filename in state (keep a synthetic File-like object)
+    S.file={name:filename,size:0};
+    if(res.preview_csv){
+      const parsed=parseCSV(res.preview_csv);
+      S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+      showDataPreview();
+    }
+    updSide();
+    chat('sys',`Switched preview to <strong>${esc(filename)}</strong>.`);
+  }catch(e){console.error('selectZipFile',e);}
 }
 function updStatus(){
   const s=document.getElementById('run-stat');
@@ -2422,6 +2440,10 @@ document.addEventListener('click',function(e){
   const action=btn.dataset.action;
   if(action==='switch-agent'){setMode('agent');chat('sys','Switched to Agent mode — say go to start.');}
   if(action==='open-settings'){openSettings();}
+  if(action==='select-file'){
+    const fname=btn.dataset.filename;
+    if(fname&&S.dataset_id)selectZipFile(fname);
+  }
 });
 function typing(on){
   const ex=document.getElementById('ti');if(ex)ex.remove();
