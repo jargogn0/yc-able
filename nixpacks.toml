@@ -1,11 +1,9 @@
 [phases.setup]
-aptPkgs = ["libgomp1", "libopenblas-dev", "liblapack-dev", "libomp-dev"]
-cmds = [
-  "find /usr/lib -name 'libgomp.so*' -exec echo 'Found: {}' \\;",
-  "echo /usr/lib/x86_64-linux-gnu > /etc/ld.so.conf.d/x86_64-extra.conf",
-  "echo /usr/lib/aarch64-linux-gnu > /etc/ld.so.conf.d/aarch64-extra.conf",
-  "ldconfig"
-]
+aptPkgs = ["libgomp1", "libopenblas-dev", "liblapack-dev"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = [
+  "pip install -r requirements.txt",
+  "python3 -c \"import glob, sys, os, shutil; libs = sorted(sum([glob.glob(sp+'/*.libs/libgomp*') for sp in sys.path],[]) + glob.glob('/usr/lib/*/libgomp.so*') + glob.glob('/usr/lib/libgomp.so*')); print('libgomp candidates:', libs); src = libs[0] if libs else None; dst = '/usr/local/lib/libgomp.so.1'; os.makedirs('/usr/local/lib', exist_ok=True); (os.path.exists(dst) or shutil.copy2(src, dst)) if src else print('WARNING: no libgomp found'); print('libgomp.so.1 at', dst, ':', os.path.exists(dst))\"",
+  "ldconfig"
+]
