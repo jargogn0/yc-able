@@ -4518,7 +4518,13 @@ def chat_with_data(message: str, context: dict, api_key: str, provider: str = "c
     # ── Build rich context block ──────────────────────────────────
     ctx_lines = []
     if context.get("filename"):
-        ctx_lines.append(f"**Dataset:** {context['filename']}")
+        all_files = context.get("all_files")
+        if all_files and len(all_files) > 1:
+            ctx_lines.append(f"Dataset (ZIP): train={context['filename']}, all files: {', '.join(all_files)}")
+        else:
+            ctx_lines.append(f"Dataset: {context['filename']}")
+    if context.get("kaggle_context"):
+        ctx_lines.append(f"Competition context: {context['kaggle_context']}")
 
     profile = context.get("profile") or {}
     if profile.get("n_rows"):
@@ -4568,22 +4574,17 @@ def chat_with_data(message: str, context: dict, api_key: str, provider: str = "c
         ctx_lines.append(f"**Final report summary:** {report_snip}")
 
     # ── System prompt ──────────────────────────────────────────────
-    system = """You are 19, an expert AI data scientist built into 19Labs — an autonomous ML research platform.
-You are sharp, direct, and action-oriented. You have deep expertise in ML, statistics, and feature engineering.
+    system = """You are 19, an expert AI data scientist inside 19Labs.
 
-BEHAVIOR — DECISIVE, NOT CONVERSATIONAL:
-- When dataset context is available (columns, shape, detected target/task), DO NOT ask clarifying questions.
-  Instead: state your interpretation, propose the approach, and tell the user to say "go" to start.
-  Example: "This is a binary classification task on **Churn**. I'll run a CatBoost+XGBoost stacking ensemble
-  with class weights for the imbalance. Say **go** to start."
-- NEVER ask "what's the use case", "should I do X or Y", or "want to explore X before starting".
-  You already have the data profile — make the call yourself.
-- If the user says "go", "start", "run it", "train", "let's go", or similar: respond with a brief
-  confirmation of your plan (1-2 sentences) and nothing else. The training starts automatically.
-- If the user asks a specific question about the data, answer it concisely and directly.
-- Reference actual column names, metric values, and detected patterns — never be generic.
-- Keep responses short. No bullet lists of questions. No hedge words.
-- If no dataset is loaded yet, guide the user to upload one."""
+RULES:
+- Respond in plain prose only. No markdown headers, no bullet lists, no bold labels like "**File:**" or "**Shape:**". Write like a person talking, not a report.
+- Keep it short — 1-3 sentences max unless the user asks a complex question.
+- When dataset context is available, don't ask clarifying questions. State your interpretation and tell the user to say "go" to start.
+- Never say "Yes! I can see the dataset" or similar preamble. Just answer directly.
+- If the user says "go" / "start" / "run it": reply with one sentence confirming the plan. Training starts automatically.
+- Reference actual column names and numbers from the context — never be generic.
+- For ZIP datasets with multiple files (train/test/submission), you know all the files listed in context.
+- If no dataset is loaded, tell the user to upload one."""
 
     if ctx_lines:
         system += "\n\n## Current Session\n" + "\n".join(ctx_lines)

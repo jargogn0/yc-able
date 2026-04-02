@@ -2338,12 +2338,14 @@ function updSide(){
   if(!S.file){fl.innerHTML='';return}
   let h=`<div class="side-sec">Dataset</div>`;
   if(S.allFiles&&S.allFiles.length>1){
-    // Multi-file ZIP — show all files, primary highlighted; click to switch preview
+    // Multi-file ZIP — show all files; highlighted = currently previewed file (S.previewFile or train file)
+    const activeFile=S.previewFile||S.file?.name;
     S.allFiles.forEach(name=>{
-      const isPrimary=name===S.file.name;
-      const label=isPrimary?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':'';
-      const clickable=!isPrimary&&S.dataset_id?`data-action="select-file" data-filename="${esc(name)}" style="cursor:pointer"`:'';
-      h+=`<div class="side-item${isPrimary?' act':''}" ${clickable}><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isPrimary?'var(--accent)':'#3f3f46'};font-size:9px">${label}</div></div>`;
+      const isActive=name===activeFile;
+      const isTrainFile=name===S.file?.name;
+      const label=isTrainFile?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':'';
+      const clickable=!isActive&&S.dataset_id?`data-action="select-file" data-filename="${esc(name)}" style="cursor:pointer"`:'';
+      h+=`<div class="side-item${isActive?' act':''}" ${clickable}><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isTrainFile?'var(--accent)':'#3f3f46'};font-size:9px">${label}</div></div>`;
     });
   } else {
     const kb=(S.file.size/1024).toFixed(1);
@@ -2356,15 +2358,15 @@ async function selectZipFile(filename){
   try{
     const res=await apiFetch(`${BASE}/api/dataset/${S.dataset_id}/primary`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename})});
     if(!res.ok)return;
-    // Update primary filename in state (keep a synthetic File-like object)
-    S.file={name:filename,size:0};
-    if(res.preview_csv){
-      const parsed=parseCSV(res.preview_csv);
+    const j=await res.json();
+    // Only switch the visual preview — S.file stays as the actual train file for AI/run
+    S.previewFile=filename;
+    if(j.preview_csv){
+      const parsed=parseCSV(j.preview_csv);
       S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
       showDataPreview();
     }
     updSide();
-    chat('sys',`Switched preview to <strong>${esc(filename)}</strong>.`);
   }catch(e){console.error('selectZipFile',e);}
 }
 function updStatus(){
@@ -2939,6 +2941,8 @@ async function chatWithAI(message){
   const prof=S.discovery?.profile||{};
   const ctx={
     filename:S.file?.name,
+    all_files:S.allFiles,
+    kaggle_context:S.kaggleContext,
     profile:{
       n_rows:prof.rows||prof.n_rows,
       n_cols:prof.cols||prof.n_cols,
@@ -5919,7 +5923,7 @@ async function handleFile(f,preloadedText){
     chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset. Click <strong>Join All Datasets</strong> in the sidebar to merge them.`);
     return;
   }
-  S.file=f;S.dataset_id=null;S.media_info=null;S.allFiles=null;S.kaggleContext=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
+  S.file=f;S.dataset_id=null;S.media_info=null;S.allFiles=null;S.previewFile=null;S.kaggleContext=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
   document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
   document.getElementById('dz-title').textContent=f.name;
   document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
