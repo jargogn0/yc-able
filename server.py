@@ -35,7 +35,7 @@ try:
         try:
             ctypes.CDLL(_gpath, mode=ctypes.RTLD_GLOBAL)
             _gdir = str(_PL(_gpath).parent)
-            # Create canonical libgomp.so.1 symlink so lightgbm/catboost find it by name
+            # Create canonical libgomp.so.1 in same dir + /tmp
             _canonical = str(_PL(_gdir) / "libgomp.so.1")
             if not os.path.exists(_canonical):
                 try:
@@ -47,12 +47,22 @@ try:
                         print(f"[startup] copied libgomp to {_canonical}", flush=True)
                     except Exception as _ce:
                         print(f"[startup] could not create {_canonical}: {_ce}", flush=True)
-            # Also try /tmp which is always writable
             _tmp_gomp = "/tmp/libgomp.so.1"
             if not os.path.exists(_tmp_gomp):
                 try: _sh.copy2(_gpath, _tmp_gomp)
                 except Exception: pass
+            # Set LD_LIBRARY_PATH BEFORE loading by canonical name
             os.environ["LD_LIBRARY_PATH"] = _gdir + ":/tmp:" + os.environ.get("LD_LIBRARY_PATH", "")
+            # Load via canonical name — registers "libgomp.so.1" in the dynamic linker cache
+            # so subsequent dlopen("libgomp.so.1") (by lightgbm/catboost) gets a cache hit
+            for _cname in [_canonical, _tmp_gomp]:
+                if os.path.exists(_cname):
+                    try:
+                        ctypes.CDLL(_cname, mode=ctypes.RTLD_GLOBAL)
+                        print(f"[startup] libgomp registered as libgomp.so.1 via {_cname}", flush=True)
+                        break
+                    except Exception as _re:
+                        print(f"[startup] canonical load {_cname} failed: {_re}", flush=True)
             print(f"[startup] libgomp loaded from {_gpath}", flush=True)
             _gomp_loaded = True
             break
