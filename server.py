@@ -11,29 +11,39 @@ import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secr
 import urllib.request, urllib.parse, urllib.error
 
 # ── libgomp: force-load OpenMP shared library before any ML package needs it ──
-# LightGBM/sklearn C extensions link against libgomp.so.1 at runtime.
-# If the dynamic linker can't find it, prediction fails with "cannot open shared object file".
-# Solution: locate the library, load it with ctypes (pins it into the process),
-# and set LD_LIBRARY_PATH so child processes (subprocesses) also find it.
+# pip wheels (xgboost, lightgbm) bundle libgomp inside site-packages/*.libs/
+# System paths + bundled wheel paths are both searched.
 try:
-    import ctypes, glob as _gl
+    import ctypes, glob as _gl, sys as _sys
+    # Search system paths AND pip-bundled locations (*.libs dirs inside site-packages)
+    _site_libs = [p for sp in _sys.path for p in _gl.glob(sp + "/*.libs/libgomp*")]
     _gomp_candidates = (
+        _site_libs +                                         # pip wheel bundled (highest priority)
         _gl.glob("/usr/lib/*/libgomp.so.1") +
         _gl.glob("/usr/lib/libgomp.so.1") +
         _gl.glob("/usr/local/lib/libgomp.so.1") +
         _gl.glob("/lib/*/libgomp.so.1") +
         _gl.glob("/usr/lib/*/libgomp.so*") +
-        _gl.glob("/usr/lib/libgomp.so*")
+        _gl.glob("/usr/lib/libgomp.so*") +
+        _gl.glob("/nix/store/*/lib/libgomp.so*") +          # Nixpacks nix store
+        _gl.glob("/nix/store/*/lib/libgomp.so.1")
     )
+    print(f"[startup] libgomp candidates: {_gomp_candidates[:5]}", flush=True)
+    _gomp_loaded = False
     for _gpath in _gomp_candidates:
         try:
-            ctypes.CDLL(_gpath, mode=ctypes.RTLD_GLOBAL)  # RTLD_GLOBAL makes symbols visible to all .so files
+            ctypes.CDLL(_gpath, mode=ctypes.RTLD_GLOBAL)
             _gdir = str(__import__("pathlib").Path(_gpath).parent)
             os.environ["LD_LIBRARY_PATH"] = _gdir + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+            os.environ["LD_PRELOAD"] = _gpath + " " + os.environ.get("LD_PRELOAD", "").strip()
             print(f"[startup] libgomp loaded from {_gpath}", flush=True)
+            _gomp_loaded = True
             break
-        except Exception:
+        except Exception as _ge2:
+            print(f"[startup] libgomp candidate failed {_gpath}: {_ge2}", flush=True)
             continue
+    if not _gomp_loaded:
+        print("[startup] WARNING: libgomp not found anywhere — prediction of xgb/lgbm models may fail", flush=True)
 except Exception as _ge:
     print(f"[startup] libgomp pre-load failed: {_ge}", flush=True)
 
