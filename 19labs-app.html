@@ -2605,8 +2605,6 @@ function renderDataDashboard(){
 }
 function _buildDataDashboardHTML(){
   if(!S.cols||!S.rows)return'';
-
-  // ── column index
   const ci=c=>S.cols.indexOf(c);
 
   // ── numeric values (non-null) for a column
