@@ -1353,6 +1353,13 @@ def align_features(f, model):
                 if fn and not fn[0].startswith('f'): expected = list(fn)
             except Exception: pass
     if expected is None:
+        # Heuristic: take first n_features_in_ OHE cols
+        # Test-only OHE categories typically sort to the end, so first N cols match training
+        _n = getattr(model, 'n_features_in_', None)
+        if _n:
+            fe = pd.get_dummies(f.copy().fillna(0))
+            if 0 < _n < len(fe.columns):
+                return fe.iloc[:, :_n]
         return encode(f)
     fe = pd.get_dummies(f.copy().fillna(0))
     for col in expected:
@@ -2009,6 +2016,17 @@ async def start_run(req: RunRequest, request: Request):
                     result["train_code"] = train_py_path.read_text()
                 except Exception:
                     pass
+            # Capture feature_columns.json saved by train.py for prediction alignment
+            _fc_path = ws / "feature_columns.json"
+            if _fc_path.exists():
+                try:
+                    import json as _jmod
+                    _fc_cols = _jmod.loads(_fc_path.read_text())
+                    if isinstance(_fc_cols, list) and _fc_cols:
+                        result["feature_columns"] = _fc_cols
+                        print(f"[run] feature_columns.json captured: {len(_fc_cols)} cols", flush=True)
+                except Exception as _fce:
+                    print(f"[run] feature_columns.json read failed: {_fce}", flush=True)
             result["run_logs"] = [{"tag": l["tag"], "msg": l["msg"], "ts": l.get("ts", "")}
                                   for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
             # Record what files exist in workspace for diagnostics
@@ -3709,7 +3727,7 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
             return f.reindex(columns=feat_names, fill_value=0)
         return f
 
-    def _ohe_align(f, feat_names):
+    def _ohe_align(f, feat_names, n_expected=None):
         """One-hot encode then align — for models trained with pd.get_dummies."""
         fe = pd.get_dummies(f.copy().fillna(0))
         if feat_names:
@@ -3720,10 +3738,20 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
                 return fe[feat_names]
             except Exception:
                 pass
+        elif n_expected and 0 < n_expected < len(fe.columns):
+            # Best-effort heuristic: test-only OHE categories typically sort to the end
+            print(f"[predict-file] OHE heuristic: taking first {n_expected} of {len(fe.columns)} cols", flush=True)
+            return fe.iloc[:, :n_expected]
         return fe
 
     feat_names = _model_feature_names(model)
-    # Fallback: use training CSV OHE columns (most reliable — exact column list)
+    # Fallback 1: use stored feature_columns from training (saved by train.py)
+    if feat_names is None and result:
+        _stored_fc = result.get("feature_columns")
+        if _stored_fc and isinstance(_stored_fc, list):
+            feat_names = _stored_fc
+            print(f"[predict-file] feat_names from stored feature_columns: {len(feat_names)} cols", flush=True)
+    # Fallback 2: use training CSV OHE columns (most reliable — exact column list)
     if feat_names is None and _train_csv_path:
         try:
             _tdf = pd.read_csv(_train_csv_path)
@@ -3732,8 +3760,12 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
             print(f"[predict-file] feat_names from training CSV: {len(feat_names)} cols", flush=True)
         except Exception as _tce:
             print(f"[predict-file] training CSV OHE fallback failed: {_tce}", flush=True)
+    # Heuristic: if feat_names still None but model knows feature count,
+    # take first n_features_in_ OHE columns (test-only categories sort alphabetically
+    # to the end, so first N cols usually match training columns)
+    _n_expected = getattr(model, 'n_features_in_', None)
     encoded = _align(_encode_cats(features), feat_names)
-    ohe_encoded = _ohe_align(features, feat_names)
+    ohe_encoded = _ohe_align(features, feat_names, _n_expected)
 
     def _try(fn):
         nonlocal preds, _last_err

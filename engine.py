@@ -2088,6 +2088,13 @@ KARPATHY DISCIPLINE (MANDATORY):
   SMOTE/oversampling MUST NOT be inside the sklearn Pipeline — apply it only to X_train/y_train before fitting:
     X_res, y_res = SMOTE().fit_resample(X_train, y_train); model.fit(X_res, y_res)
   The Pipeline must only contain steps that run at inference time (preprocessing + model). SMOTE is training-only.
+- MANDATORY feature_columns.json — save the exact OHE column list used for training BEFORE joblib.dump:
+  ```python
+  import json as _json
+  _fc = list(X_train.columns.tolist() if hasattr(X_train, 'columns') else [f'f{{i}}' for i in range(X_train.shape[1])])
+  with open('feature_columns.json', 'w') as _fcf: _json.dump(_fc, _fcf)
+  ```
+  Save this AFTER pd.get_dummies / preprocessing, using the final X_train column list. This enables correct prediction alignment.
 - PRIMARY METRIC: {obj.get('metric','rmse').upper()} — optimize for THIS, not RMSE.
   Use as eval_metric in LightGBM/XGBoost/CatBoost. Use as scoring in cross_val_score.
 - MANDATORY predictions.csv — ALWAYS save this file after fitting, no exceptions:
