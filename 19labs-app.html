@@ -3325,17 +3325,7 @@ async function runDiscover(hint){
   sbUpdate({status:'Analyzing...',running:true});
   let key=C.key||gk(C.provider);
 
-  // Timed interim messages so the user knows what's happening during the wait
-  const _fname=S.file?.name||'your file';
-  const _interimMsgs=[
-    `Reading <strong>${esc(_fname)}</strong>...`,
-    `Scanning column types, distributions, and correlations...`,
-    `Working out what to predict and which approach fits best...`,
-    `Almost there — putting the plan together...`,
-  ];
-  const _delays=[400,4000,10000,18000];
   S._discoverActive=true;
-  const _timers=_delays.map((d,i)=>setTimeout(()=>{if(S._discoverActive)chat('ai',_interimMsgs[i],true);},d));
 
   try{
     // Include the current objective so the LLM can interpret corrections in context
@@ -3347,7 +3337,7 @@ async function runDiscover(hint){
       ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
       :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
-    S._discoverActive=false;_timers.forEach(clearTimeout);
+    S._discoverActive=false;
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){
@@ -3420,7 +3410,7 @@ async function runDiscover(hint){
       _syncPlanPanel();
     }
   }catch(e){
-    S._discoverActive=false;_timers.forEach(clearTimeout);
+    S._discoverActive=false;
     typing(false);chat('err',`Analysis failed: ${esc(e.message)}`);setBadge('ERROR','err');
     sbUpdate({status:'Analysis failed',running:false,error:true});
   }
