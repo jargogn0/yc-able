@@ -11,75 +11,63 @@ import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secr
 import urllib.request, urllib.parse, urllib.error
 
 # ── libgomp: force-load OpenMP shared library before any ML package needs it ──
-# manylinux pip wheels bundle libgomp as libgomp-HASH.so.1.0.0 (mangled name).
-# lightgbm/catboost look for the canonical name "libgomp.so.1" and fail.
-# Fix: find the hashed file, create a canonical symlink next to it, add its
-# directory to LD_LIBRARY_PATH so ALL libraries find it by the standard name.
+# build phase (fix_libgomp.py + patchelf) copies xgboost-bundled libgomp to
+# /usr/local/lib/libgomp.so.1 with SONAME patched to "libgomp.so.1", then
+# ldconfig registers it. Loading by canonical name here ensures lightgbm/
+# catboost find it in the linker namespace (RTLD_GLOBAL) even without apt.
 try:
     import ctypes, glob as _gl, sys as _sys, shutil as _sh
     from pathlib import Path as _PL
-    _site_libs = [p for sp in _sys.path for p in _gl.glob(sp + "/*.libs/libgomp*")]
+
+    # Ordered preference: system apt path → build-time copy → bundled xgboost
     _gomp_candidates = (
-        _site_libs +
-        _gl.glob("/usr/lib/*/libgomp.so.1") +
-        _gl.glob("/usr/lib/libgomp.so.1") +
+        _gl.glob("/usr/lib/x86_64-linux-gnu/libgomp.so.1") +
+        _gl.glob("/usr/lib/aarch64-linux-gnu/libgomp.so.1") +
         _gl.glob("/usr/local/lib/libgomp.so.1") +
+        _gl.glob("/usr/lib/*/libgomp.so.1") +
         _gl.glob("/lib/*/libgomp.so.1") +
+        [p for sp in _sys.path for p in _gl.glob(sp + "/*.libs/libgomp*")] +
         _gl.glob("/usr/lib/*/libgomp.so*") +
-        _gl.glob("/usr/lib/libgomp.so*") +
         _gl.glob("/nix/store/*/lib/libgomp.so*")
     )
     print(f"[startup] libgomp candidates: {_gomp_candidates[:5]}", flush=True)
+
     _gomp_loaded = False
-    for _gpath in _gomp_candidates:
-        try:
-            ctypes.CDLL(_gpath, mode=ctypes.RTLD_GLOBAL)
-            _gdir = str(_PL(_gpath).parent)
-            # Create canonical libgomp.so.1 in same dir + /tmp
-            _canonical = str(_PL(_gdir) / "libgomp.so.1")
-            if not os.path.exists(_canonical):
-                try:
-                    os.symlink(_gpath, _canonical)
-                    print(f"[startup] symlink {_canonical} -> {_gpath}", flush=True)
-                except Exception:
-                    try:
-                        _sh.copy2(_gpath, _canonical)
-                        print(f"[startup] copied libgomp to {_canonical}", flush=True)
-                    except Exception as _ce:
-                        print(f"[startup] could not create {_canonical}: {_ce}", flush=True)
-            _tmp_gomp = "/tmp/libgomp.so.1"
-            if not os.path.exists(_tmp_gomp):
-                try: _sh.copy2(_gpath, _tmp_gomp)
-                except Exception: pass
-            # Set LD_LIBRARY_PATH BEFORE loading by canonical name
-            os.environ["LD_LIBRARY_PATH"] = _gdir + ":/tmp:" + os.environ.get("LD_LIBRARY_PATH", "")
-            # Load canonical name to register in linker cache
-            for _cname in [_canonical, _tmp_gomp]:
-                if os.path.exists(_cname):
-                    try:
-                        ctypes.CDLL(_cname, mode=ctypes.RTLD_GLOBAL)
-                        print(f"[startup] libgomp registered as libgomp.so.1 via {_cname}", flush=True)
-                        break
-                    except Exception as _re:
-                        print(f"[startup] canonical load {_cname} failed: {_re}", flush=True)
-            # Update system ldconfig cache so ALL libraries find libgomp.so.1
+
+    # 1. Try loading by canonical name (works if ldconfig registered it at build time)
+    try:
+        ctypes.CDLL("libgomp.so.1", mode=ctypes.RTLD_GLOBAL)
+        print("[startup] libgomp.so.1 loaded via ldconfig", flush=True)
+        _gomp_loaded = True
+    except Exception as _lce:
+        print(f"[startup] ldconfig load failed: {_lce}", flush=True)
+
+    # 2. Explicit path fallback
+    if not _gomp_loaded:
+        for _gpath in _gomp_candidates:
             try:
-                with open("/etc/ld.so.conf.d/19labs-ml.conf", "w") as _ldf:
-                    _ldf.write(_gdir + "\n/tmp\n")
-                os.system("ldconfig 2>/dev/null")
-                print(f"[startup] ldconfig updated: {_gdir}", flush=True)
-            except Exception as _lde:
-                print(f"[startup] ldconfig update skipped: {_lde}", flush=True)
-            print(f"[startup] libgomp loaded from {_gpath}", flush=True)
-            _gomp_loaded = True
-            break
-        except Exception as _ge2:
-            print(f"[startup] libgomp candidate failed {_gpath}: {_ge2}", flush=True)
-            continue
+                ctypes.CDLL(_gpath, mode=ctypes.RTLD_GLOBAL)
+                _gdir = str(_PL(_gpath).parent)
+                os.environ["LD_LIBRARY_PATH"] = _gdir + ":/tmp:" + os.environ.get("LD_LIBRARY_PATH", "")
+                print(f"[startup] libgomp loaded from {_gpath}", flush=True)
+                _gomp_loaded = True
+                # Also try to register under canonical name
+                _canonical = str(_PL(_gdir) / "libgomp.so.1")
+                if not os.path.exists(_canonical):
+                    try: _sh.copy2(_gpath, _canonical)
+                    except Exception: pass
+                for _cn in [_canonical, "/tmp/libgomp.so.1"]:
+                    if os.path.exists(_cn):
+                        try: ctypes.CDLL(_cn, mode=ctypes.RTLD_GLOBAL)
+                        except Exception: pass
+                break
+            except Exception as _ge2:
+                continue
+
     if not _gomp_loaded:
         print("[startup] WARNING: libgomp not found — prediction may fail", flush=True)
 except Exception as _ge:
-    print(f"[startup] libgomp pre-load failed: {_ge}", flush=True)
+    print(f"[startup] libgomp pre-load error: {_ge}", flush=True)
 
 # Pre-import sklearn/joblib AND the ML prediction libraries to trigger linker
 # resolution while libgomp is already loaded and LD_LIBRARY_PATH is correct.

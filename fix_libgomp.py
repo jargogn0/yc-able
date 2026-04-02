@@ -53,6 +53,24 @@ if os.path.exists(DST):
 shutil.copy2(src, DST)
 print(f"Copied to {DST}")
 
+# Patch the ELF SONAME so the linker registers it as "libgomp.so.1".
+# Without this, loading the file still registers under the mangled name
+# (e.g. libgomp-e985bcbb.so.1.0.0) and lightgbm's dlopen("libgomp.so.1") fails.
+try:
+    import subprocess
+    result = subprocess.run(
+        ["patchelf", "--set-soname", "libgomp.so.1", DST],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        print("patchelf: SONAME set to libgomp.so.1")
+    else:
+        print(f"patchelf failed (non-fatal): {result.stderr.strip()}")
+except FileNotFoundError:
+    print("patchelf not found — SONAME not patched (ldconfig may not map libgomp.so.1 correctly)")
+except Exception as e:
+    print(f"patchelf error (non-fatal): {e}")
+
 # Also create symlink for any versioned name differences
 for alias in ["/usr/local/lib/libgomp.so", "/usr/local/lib/libgomp.so.1.0.0"]:
     if not os.path.exists(alias):

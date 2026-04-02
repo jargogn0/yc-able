@@ -1,5 +1,5 @@
 [phases.setup]
-aptPkgs = ["libgomp1", "libopenblas-dev", "liblapack-dev"]
+aptPkgs = ["libgomp1", "libopenblas-dev", "liblapack-dev", "patchelf"]
 
 [phases.install]
 cmds = [
