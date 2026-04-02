@@ -1432,6 +1432,28 @@ if preds is None:
     print(json.dumps({{"error": "all loaders failed"}}))
     sys.exit(1)
 
+# ── Inverse label-encode integer predictions back to original class names ──
+# The LLM-generated train.py uses LabelEncoder on the target but doesn't save
+# the encoder. Refit on the training CSV target column to undo the encoding.
+if train_csv_path and target:
+    try:
+        _tdf2 = pd.read_csv(train_csv_path)
+        if target in _tdf2.columns and str(_tdf2[target].dtype) in ('object', 'category'):
+            from sklearn.preprocessing import LabelEncoder as _LEnc
+            _le2 = _LEnc()
+            _le2.fit(_tdf2[target].dropna().astype(str))
+            _n_cls = len(_le2.classes_)
+            _sample = preds[:min(20, len(preds))]
+            _are_int = all(
+                isinstance(p, (int, float)) and float(p) == int(float(p))
+                and 0 <= int(float(p)) < _n_cls
+                for p in _sample
+            )
+            if _are_int:
+                preds = list(_le2.inverse_transform([int(float(p)) for p in preds]))
+    except Exception:
+        pass
+
 print(json.dumps({{"id_col": id_col, "id_vals": id_vals, "preds": [str(p) for p in preds]}}))
 """
         _script_path = _tdp / "predict.py"
@@ -3849,7 +3871,37 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     if preds is None:
         raise HTTPException(400, f"Prediction failed: {_last_err}")
 
+    # ── Inverse label-encode integer predictions → original class names ──
+    # LLM train.py uses LabelEncoder on target but doesn't save encoder.
+    # Refit on training CSV target column to undo the encoding.
+    _label_decoded = False
+    if _train_csv_path and target:
+        try:
+            _tdf2 = pd.read_csv(_train_csv_path)
+            if target in _tdf2.columns and _tdf2[target].dtype == object:
+                from sklearn.preprocessing import LabelEncoder as _LEnc
+                _le2 = _LEnc()
+                _le2.fit(_tdf2[target].dropna().astype(str))
+                _n_cls = len(_le2.classes_)
+                _pa = _np.asarray(preds).flatten()
+                _are_int = (
+                    _np.all(_pa == _np.round(_pa)) and
+                    _np.all((_pa >= 0) & (_pa < _n_cls))
+                )
+                if _are_int:
+                    preds = _le2.inverse_transform(_pa.astype(int))
+                    _label_decoded = True
+                    print(f"[predict-file] Inverse label-encoded {_n_cls} classes: {list(_le2.classes_)}", flush=True)
+        except Exception as _lee:
+            print(f"[predict-file] label decode failed: {_lee}", flush=True)
+
     # ── Inverse-transform if model was trained on log-transformed target ──
+    if _label_decoded:
+        # String predictions — skip numeric transforms
+        sub_target = target or "prediction"
+        sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
+        return _prediction_json_response(sub, run_id)
+
     preds = _np.asarray(preds, dtype=float).flatten()
     _should_expm1 = False
     try:
