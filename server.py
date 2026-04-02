@@ -53,8 +53,7 @@ try:
                 except Exception: pass
             # Set LD_LIBRARY_PATH BEFORE loading by canonical name
             os.environ["LD_LIBRARY_PATH"] = _gdir + ":/tmp:" + os.environ.get("LD_LIBRARY_PATH", "")
-            # Load via canonical name — registers "libgomp.so.1" in the dynamic linker cache
-            # so subsequent dlopen("libgomp.so.1") (by lightgbm/catboost) gets a cache hit
+            # Load canonical name to register in linker cache
             for _cname in [_canonical, _tmp_gomp]:
                 if os.path.exists(_cname):
                     try:
@@ -63,6 +62,14 @@ try:
                         break
                     except Exception as _re:
                         print(f"[startup] canonical load {_cname} failed: {_re}", flush=True)
+            # Update system ldconfig cache so ALL libraries find libgomp.so.1
+            try:
+                with open("/etc/ld.so.conf.d/19labs-ml.conf", "w") as _ldf:
+                    _ldf.write(_gdir + "\n/tmp\n")
+                os.system("ldconfig 2>/dev/null")
+                print(f"[startup] ldconfig updated: {_gdir}", flush=True)
+            except Exception as _lde:
+                print(f"[startup] ldconfig update skipped: {_lde}", flush=True)
             print(f"[startup] libgomp loaded from {_gpath}", flush=True)
             _gomp_loaded = True
             break
