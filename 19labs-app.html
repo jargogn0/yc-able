@@ -2855,14 +2855,6 @@ function setMode(m){
   if(m==='plan'&&S.file&&!S.analyzed&&!S._discoverActive){
     setTimeout(()=>runDiscover(S.hint||''),300);
   }
-  // Chat → Agent: auto-launch if a file is loaded
-  if(m==='agent'&&prev==='chat'&&S.file&&!S.running){
-    setTimeout(async()=>{
-      if(!S.analyzed){await autoDiscover();}
-      if(S.analyzed&&!S.running){S.confirmed=true;launchRun();}
-    },400);
-    return;
-  }
   // Carry plan objective to agent mode (from plan mode)
   if(m==='agent'&&S.analyzed&&S.discovery&&!S.running){
     const obj=S.discovery.objective||S.discovery.discovery||{};
@@ -3010,7 +3002,15 @@ async function send(){
   if(S.running){
     const isStopCmd=/^(stop|cancel|pause|abort|halt|kill)$/i.test(lo.trim());
     if(isStopCmd){cancelRun();return}
-    await chatWithAI(text);return;
+    // Inject as live hint immediately (no LLM round-trip while server is busy with run)
+    const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does)/i.test(lo);
+    if(!isQuestion&&S.runId){
+      fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
+      chat('sys','<span style="font-size:11px;opacity:.65">↳ Sent to agent — will apply on next experiment</span>');
+    } else {
+      await chatWithAI(text);
+    }
+    return;
   }
 
   if(S.best){
@@ -6138,7 +6138,7 @@ async function handleFile(f,preloadedText){
         toast(`Loaded ${info.num_files} files from ZIP`,'ok',3000);
         const fileList=info.all_files.map(n=>`<code>${esc(n)}</code>`).join(', ');
         chat('sys',`Loaded <strong>${info.num_files} files</strong> from ZIP: ${fileList}. Training on <strong>${esc(info.filename)}</strong>.`);
-        autoDiscover();
+        if(S.mode!=='chat')autoDiscover();
         return;
       }
 
@@ -6152,7 +6152,7 @@ async function handleFile(f,preloadedText){
       document.getElementById('p-data').style.display='';
       document.getElementById('ws-empty').style.display='none';
       stab('data');
-      autoDiscover();
+      if(S.mode!=='chat')autoDiscover();
     }catch(e){toast('Upload failed: '+e.message,'err');}
     return;
   }
@@ -6203,7 +6203,7 @@ async function handleFile(f,preloadedText){
 
   // On mobile: briefly show data preview then switch to chat for agent response
   if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),800);}
-  autoDiscover();
+  if(S.mode!=='chat')autoDiscover();
 }
 
 // ═══════════════════════════════════════════
