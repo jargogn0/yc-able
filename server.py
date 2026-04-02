@@ -3940,6 +3940,58 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     return _prediction_json_response(sub, run_id)
 
 
+@app.post("/api/serve/{run_id}/predict")
+async def serve_predict(run_id: str, request: Request):
+    """Persistent live prediction endpoint — accepts JSON rows, returns predictions.
+    Call from any app: POST {"data": [{"col": val, ...}]} → {"predictions": [...]}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Request body must be valid JSON")
+    # Accept multiple input shapes: {"data": [...]}, {"rows": [...]}, or a bare list/dict
+    if isinstance(body, list):
+        rows = body
+    elif isinstance(body, dict):
+        rows = body.get("data") or body.get("rows") or [body]
+    else:
+        raise HTTPException(400, "Expected JSON object or array")
+
+    import pandas as pd
+    df = pd.DataFrame(rows)
+    csv_bytes = df.to_csv(index=False).encode()
+
+    run = _get_run_or_404(run_id)
+    result = run.get("result") or {}
+    obj = result.get("objective") or {}
+    target = obj.get("target", "")
+
+    # AutoGluon (primary)
+    _ag_path = _find_autogluon_path(run_id, run)
+    if _ag_path:
+        try:
+            _ag = _load_autogluon_predictor(_ag_path)
+            _df = df.drop(columns=[c for c in [target] if c in df.columns])
+            preds = _ag.predict(_df).tolist()
+            return {"ok": True, "predictions": preds, "count": len(preds), "model": "autogluon"}
+        except Exception as _age:
+            print(f"[serve] AutoGluon predict failed: {_age}", flush=True)
+
+    # Subprocess fallback (full label-decoding stack)
+    model_path = _find_model_path(run_id, run)
+    if model_path:
+        try:
+            _sub = await asyncio.to_thread(
+                _predict_subprocess, model_path, csv_bytes, target,
+                result.get("train_code", ""), run.get("csv", "")
+            )
+            return {"ok": True, "predictions": _sub["preds"], "count": len(_sub["preds"]), "model": "pkl"}
+        except Exception as _se:
+            raise HTTPException(500, f"Prediction failed: {_se}")
+
+    raise HTTPException(404, "No model found for this run — it may have expired")
+
+
 # ── TIER 2: URL Data Connector ────────────────────────────────
 
 class FetchURLRequest(BaseModel):
@@ -4321,16 +4373,95 @@ async def transform_data(req: TransformRequest):
         return {"ok": False, "error": str(e)}
 
 
+# ── AutoGluon Leaderboard ─────────────────────────────────────
+
+@app.get("/api/run/{run_id}/leaderboard")
+async def get_leaderboard(run_id: str):
+    """Return AutoGluon internal model leaderboard (all candidates + scores)."""
+    run = _get_run_or_404(run_id)
+    _ag_path = _find_autogluon_path(run_id, run)
+    if not _ag_path:
+        return {"ok": False, "error": "AutoGluon model not found for this run"}
+    try:
+        pred = _load_autogluon_predictor(_ag_path)
+        lb = pred.leaderboard(silent=True)
+        cols = [c for c in ["model", "score_val", "fit_time", "pred_time_val"] if c in lb.columns]
+        rows = lb[cols].head(20).to_dict("records")
+        # Normalise: replace NaN with None for JSON serialisation
+        import math
+        for r in rows:
+            for k, v in r.items():
+                if isinstance(v, float) and math.isnan(v):
+                    r[k] = None
+        metric = str(pred.eval_metric) if hasattr(pred, "eval_metric") else "score"
+        return {"ok": True, "rows": rows, "metric": metric}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ── TIER 2: SHAP Explainability ──────────────────────────────
 
 @app.get("/api/run/{run_id}/explain")
 async def explain_model(run_id: str):
-    """Generate SHAP-based model explainability data."""
+    """Generate model explainability data — AutoGluon feature importance or SHAP."""
     run = _get_run_or_404(run_id)
     result = run.get("result")
     if not result:
         raise HTTPException(400, "Run not finished yet")
 
+    # ── AutoGluon path (primary — most runs use AutoGluon) ────────────
+    _ag_path = _find_autogluon_path(run_id, run)
+    if _ag_path:
+        try:
+            import pandas as pd
+            pred = _load_autogluon_predictor(_ag_path)
+            obj = (result or {}).get("objective") or {}
+            target = obj.get("target", "")
+            csv_path = run.get("csv", "")
+            df = None
+            if csv_path and Path(csv_path).exists():
+                df = pd.read_csv(csv_path, nrows=500)
+                if target and target in df.columns:
+                    df = df.drop(columns=[target])
+                cat_cols = df.select_dtypes(include=["object", "category"]).columns
+                for col in cat_cols:
+                    df[col] = pd.factorize(df[col])[0]
+                df = df.fillna(0)
+
+            try:
+                fi_df = pred.feature_importance(data=df, silent=True) if df is not None else pred.feature_importance(silent=True)
+                fi_list = [{"feature": str(row.Index), "importance": float(row.importance)}
+                           for row in fi_df.itertuples()][:20]
+            except Exception:
+                # Fallback: use raw model importances
+                fi_list = []
+                try:
+                    import numpy as np
+                    model_names = pred.get_model_names()
+                    best = model_names[0] if model_names else None
+                    if best:
+                        m = pred.load_learner(best)
+                        if hasattr(m, "feature_importances_"):
+                            fn = pred.feature_metadata_in.get_features()
+                            for i, v in enumerate(m.feature_importances_[:20]):
+                                fi_list.append({"feature": fn[i] if i < len(fn) else f"f{i}", "importance": float(v)})
+                except Exception:
+                    pass
+
+            if not fi_list:
+                return {"ok": False, "error": "Could not compute feature importance for this AutoGluon model"}
+
+            return {
+                "ok": True,
+                "method": "autogluon",
+                "model_type": "AutoGluon Ensemble",
+                "feature_importance": fi_list,
+                "top_features": [f["feature"] for f in fi_list[:5]],
+            }
+        except Exception as e:
+            return {"ok": False, "error": f"AutoGluon explain failed: {e}"}
+
+    # ── sklearn/XGBoost/LightGBM path (joblib pkl) ────────────────────
     model_path = _find_model_path(run_id, run)
     if not model_path:
         return {"ok": False, "error": "No model found"}

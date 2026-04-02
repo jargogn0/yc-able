@@ -112,6 +112,23 @@ body.desktop-mac .topbar{padding-left:84px}
 .pp-running-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.4s infinite}
 .btn-modify:hover{border-color:var(--border-2);color:var(--text)}
 
+/* Live API card */
+.live-api-card{background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(59,130,246,.04));border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:14px 16px;margin:2px 0}
+.lac-head{font-size:13px;font-weight:700;color:#4ade80;margin-bottom:3px}
+.lac-sub{font-size:11px;color:var(--text-3);margin-bottom:10px}
+.lac-code{font-family:var(--mono);font-size:11px;color:var(--text-2);background:var(--surface-2);border-radius:6px;padding:10px 12px;overflow-x:auto;white-space:pre;margin-bottom:8px;border:1px solid var(--border);line-height:1.6}
+.lac-copy{padding:5px 12px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#4ade80;border-radius:6px;font-size:11px;cursor:pointer;transition:background var(--t)}
+.lac-copy:hover{background:rgba(34,197,94,.2)}
+/* AutoGluon leaderboard */
+.lb-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin:12px 16px}
+.lb-title{font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:10px}
+.lb-metric{font-weight:400;color:var(--text-3);margin-left:6px;font-size:11px}
+.lb-table{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}
+.lb-table th{color:var(--text-3);font-weight:600;text-align:left;padding:4px 8px 4px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:9px;letter-spacing:.6px}
+.lb-table td{padding:5px 8px 5px 0;color:var(--text-2);border-bottom:1px solid rgba(255,255,255,.03)}
+.lb-best td{color:var(--text);font-weight:600}
+.lb-best td:nth-child(2){color:var(--accent)}
+
 /* Deploy prompt card */
 .deploy-prompt{background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(167,139,250,.05));border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:16px 18px;margin:4px 0}
 .deploy-prompt h4{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}
@@ -3663,6 +3680,14 @@ async function launchRun(){
       const resTab=document.querySelector('.tab[data-t="results"]');
       if(resTab&&!resTab.querySelector('.tab-badge'))resTab.innerHTML='Results <span class="tab-badge">!</span>';
     }
+    // Show live prediction API card
+    if(S.runId&&S.best){
+      const _apiUrl=`${BASE}/api/serve/${S.runId}/predict`;
+      const _exCol=(S.cols||[]).find(c=>c.toLowerCase()!==((S.discovery?.objective||S.discovery?.discovery||{}).target||'').toLowerCase())||S.cols?.[0]||'feature';
+      const _exVal=S.colTypes?.[_exCol]==='numeric'?'1.5':'"value"';
+      const _curlSnippet=`curl -X POST ${_apiUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{"data": [{"${esc(_exCol)}": ${_exVal}}]}'`;
+      chat('ai',`<div class="live-api-card"><div class="lac-head">Your model is live</div><div class="lac-sub">Permanent prediction endpoint — call it from any app, anytime</div><pre class="lac-code" id="lac-${S.runId}">${_curlSnippet}</pre><button class="lac-copy" onclick="navigator.clipboard.writeText(document.getElementById('lac-${S.runId}').textContent.trim());toast('Copied','ok',2000)">Copy curl</button></div>`);
+    }
     // Enable predict panel + explain panel
     showPredictPanel();
     loadExplainability();
@@ -4224,6 +4249,23 @@ async function loadForecastTable(runId){
     });
     h+=`</tbody></table></div></div>`;
     el.innerHTML=h;
+    // Append AutoGluon leaderboard if available
+    try{
+      const lr=await apiFetch(`${BASE}/api/run/${runId}/leaderboard`);
+      const lj=await lr.json();
+      if(lj.ok&&lj.rows?.length){
+        const metric=lj.metric||'score';
+        let lh=`<div class="lb-card"><div class="lb-title">AutoGluon Internal Leaderboard <span class="lb-metric">${esc(String(metric))}</span></div>`;
+        lh+=`<table class="lb-table"><thead><tr><th>Model</th><th>${esc(String(metric))}</th><th>Fit time</th></tr></thead><tbody>`;
+        lj.rows.forEach((row,i)=>{
+          const score=row.score_val!=null?Number(row.score_val).toFixed(4):'—';
+          const ft=row.fit_time!=null?Number(row.fit_time).toFixed(1)+'s':'—';
+          lh+=`<tr class="${i===0?'lb-best':''}"><td>${esc(String(row.model))}</td><td>${score}</td><td>${ft}</td></tr>`;
+        });
+        lh+=`</tbody></table></div>`;
+        el.insertAdjacentHTML('beforeend',lh);
+      }
+    }catch(_){}
   }catch(e){
     el.innerHTML=`<div style="padding:32px;color:var(--text-3);font-size:13px;text-align:center">Error loading results: ${esc(e.message.slice(0,80))}</div>`;
   }
