@@ -2379,16 +2379,41 @@ function updSide(){
   if(!S.file){fl.innerHTML='';return}
   let h=`<div class="side-sec">Dataset</div>`;
   if(S.allFiles&&S.allFiles.length>1){
-    // Multi-file ZIP — show all files, primary highlighted
+    // Multi-file ZIP — show all files, primary highlighted, each clickable
     S.allFiles.forEach(name=>{
       const isPrimary=name===S.file.name;
-      h+=`<div class="side-item${isPrimary?' act':''}"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isPrimary?'var(--accent)':'#3f3f46'};font-size:9px">${isPrimary?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':''}</div></div>`;
+      const tag=isPrimary?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':'';
+      h+=`<div class="side-item${isPrimary?' act':''}" style="cursor:pointer" onclick="switchDatasetFile(${JSON.stringify(name)})"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isPrimary?'var(--accent)':'#3f3f46'};font-size:9px">${tag}</div></div>`;
     });
   } else {
     const kb=(S.file.size/1024).toFixed(1);
     h+=`<div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
   }
   fl.innerHTML=h;
+}
+async function switchDatasetFile(name){
+  if(!S.dataset_id||!name)return;
+  // Don't re-fetch if already showing this file
+  if(S.previewFile===name)return;
+  toast(`Loading ${name}…`,'ok',1500);
+  try{
+    const r=await apiFetch(`${BASE}/api/dataset/${encodeURIComponent(S.dataset_id)}/file/${encodeURIComponent(name)}`);
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.detail||'Load failed','err');return;}
+    const j=await r.json();
+    S.previewFile=name;
+    // Update data table with this file's preview
+    const parsed=parseCSV(j.csv);
+    S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+    showDataPreview();
+    // Highlight active file in sidebar
+    document.querySelectorAll('#file-list .side-item').forEach(el=>{
+      const n=el.querySelector('.si-name')?.textContent;
+      el.classList.toggle('act',n===name);
+      const meta=el.querySelector('.si-meta');
+      if(meta)meta.style.color=n===name?'var(--accent)':'#3f3f46';
+    });
+    stab('data');
+  }catch(e){toast('Load failed: '+e.message,'err');}
 }
 function updStatus(){
   const s=document.getElementById('run-stat');
@@ -2825,7 +2850,15 @@ function setMode(m){
   if(m==='plan'&&S.file&&!S.analyzed&&!S._discoverActive){
     setTimeout(()=>runDiscover(S.hint||''),300);
   }
-  // Carry plan objective to agent mode
+  // Chat → Agent: auto-launch if a file is loaded
+  if(m==='agent'&&prev==='chat'&&S.file&&!S.running){
+    setTimeout(async()=>{
+      if(!S.analyzed){await autoDiscover();}
+      if(S.analyzed&&!S.running){S.confirmed=true;launchRun();}
+    },400);
+    return;
+  }
+  // Carry plan objective to agent mode (from plan mode)
   if(m==='agent'&&S.analyzed&&S.discovery&&!S.running){
     const obj=S.discovery.objective||S.discovery.discovery||{};
     if(obj.task&&!S.confirmed){

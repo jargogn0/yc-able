@@ -1527,6 +1527,29 @@ async def upload_media_dataset(file: UploadFile = File(...)):
     return {"dataset_id": dataset_id, **info}
 
 
+@app.get("/api/dataset/{dataset_id}/file/{filename}")
+async def get_dataset_file(dataset_id: str, filename: str):
+    """Return a CSV preview for a specific file within a multi-file dataset."""
+    import urllib.parse
+    filename = urllib.parse.unquote(filename)
+    media = _MEDIA_DATASETS.get(dataset_id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    all_files = media.get("all_files", [])
+    # Find the matching file (by basename)
+    target = next((f for f in all_files if Path(f).name == filename), None)
+    if not target or not Path(target).exists():
+        raise HTTPException(status_code=404, detail=f"File {filename!r} not found in dataset")
+    try:
+        import pandas as _pd, io as _io
+        df = _pd.read_csv(target, nrows=200)
+        buf = _io.StringIO()
+        df.to_csv(buf, index=False)
+        return {"ok": True, "csv": buf.getvalue(), "rows": len(df), "cols": len(df.columns)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/run")
 async def start_run(req: RunRequest, request: Request):
     user = _get_user(_token_from_request(request))
