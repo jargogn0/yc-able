@@ -2278,13 +2278,13 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function nl2br(s){return s.replace(/\n/g,'<br>')}
 function safeHtml(s){
   const t=esc(String(s));
-  const tags=['strong','code','em','br','p','ul','ol','li','h1','h2','h3','h4','pre','b','i','span','div'];
+  const tags=['strong','code','em','br','p','ul','ol','li','h1','h2','h3','h4','pre','b','i','span','div','button','a'];
   let r=t;
   tags.forEach(tag=>{
     r=r.replace(new RegExp(`&lt;${tag}(\\s[^&]*?)?&gt;`,'gi'),(m,attrs)=>{
       if(!attrs)return `<${tag}>`;
       const clean=attrs.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
-      // Allow class but strip event handlers
+      // Strip event handlers (on*) — use data-action for safe interactivity
       const safeAttrs=clean.replace(/on\w+\s*=\s*["'][^"']*["']/gi,'').replace(/on\w+\s*=[^\s>]*/gi,'');
       return `<${tag}${safeAttrs}>`;
     });
@@ -2410,6 +2410,13 @@ function chat(role,text,raw){
   if(atBottom)c.scrollTop=c.scrollHeight;
   if(role==='ai'||role==='sys') _mobChatActivity();
 }
+// Delegated handler for data-action buttons rendered inside chat messages
+document.addEventListener('click',function(e){
+  const btn=e.target.closest('[data-action]');
+  if(!btn)return;
+  const action=btn.dataset.action;
+  if(action==='switch-agent'){setMode('agent');chat('sys','Switched to Agent mode — say go to start.');}
+});
 function typing(on){
   const ex=document.getElementById('ti');if(ex)ex.remove();
   if(!on)return;
@@ -2787,7 +2794,7 @@ async function send(){
     // "go" / "run" / "start" in chat mode → guide to Agent mode
     const isRunCmd=/^(go|run|start|launch|execute|do it|let'?s go|train|analyze)$/i.test(lo.trim());
     if(isRunCmd){
-      chat('ai','To run experiments switch to <strong>Agent mode</strong> using the button above — Chat mode is for asking questions only.<br><br><button onclick="setMode(\'agent\');chat(\'sys\',\'Switched to Agent mode — say go to start.\')" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.12);color:#a5b4fc;font-size:12px;cursor:pointer">Switch to Agent mode →</button>');
+      chat('ai','To run experiments switch to <strong>Agent mode</strong> using the button above — Chat mode is for asking questions only.<br><br><button data-action="switch-agent" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.12);color:#a5b4fc;font-size:12px;cursor:pointer">Switch to Agent mode →</button>');
       return;
     }
     if(!S.file&&!lo.includes('setting')&&!lo.includes('key')){
