@@ -27,7 +27,7 @@ try:
     )
     for _gpath in _gomp_candidates:
         try:
-            ctypes.CDLL(_gpath)
+            ctypes.CDLL(_gpath, mode=ctypes.RTLD_GLOBAL)  # RTLD_GLOBAL makes symbols visible to all .so files
             _gdir = str(__import__("pathlib").Path(_gpath).parent)
             os.environ["LD_LIBRARY_PATH"] = _gdir + ":" + os.environ.get("LD_LIBRARY_PATH", "")
             print(f"[startup] libgomp loaded from {_gpath}", flush=True)
