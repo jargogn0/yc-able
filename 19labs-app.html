@@ -85,6 +85,31 @@ body.desktop-mac .topbar{padding-left:84px}
 .btn-execute{flex:1;padding:11px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;transition:all var(--t)}
 .btn-execute:hover{background:var(--accent-2)}
 .btn-modify{padding:11px 16px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;transition:all var(--t)}
+/* ── Inline Plan Panel ─────────────────────────────────────────────── */
+.plan-panel{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;flex-direction:column;gap:8px;flex-shrink:0;animation:ppIn .18s ease}
+@keyframes ppIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.pp-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pp-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--accent)}
+.pp-actions-row{display:flex;gap:6px;align-items:center}
+.pp-btn-exec{padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:background var(--t)}
+.pp-btn-exec:hover{background:var(--accent-2)}
+.pp-btn-refine{padding:5px 10px;background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;transition:all var(--t)}
+.pp-btn-refine:hover{color:var(--text);border-color:var(--accent)}
+.pp-fields{display:flex;flex-wrap:wrap;gap:6px}
+.pp-field{background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:6px 10px;display:flex;flex-direction:column;gap:2px;min-width:80px}
+.pp-field-l{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3)}
+.pp-field-v{font-size:12px;color:var(--text);line-height:1.3}
+.pp-field.pp-plan{flex:1 1 100%;min-width:200px}
+.pp-risks{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.18);border-radius:5px;padding:6px 10px;font-size:11px;color:var(--amber);line-height:1.6}
+.pp-refine-row{display:flex;gap:6px;animation:ppIn .15s ease}
+.pp-refine-in{flex:1;padding:7px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:12px;outline:none;transition:border-color var(--t)}
+.pp-refine-in:focus{border-color:var(--accent)}
+.pp-refine-in::placeholder{color:var(--text-3)}
+.pp-btn-sm{padding:7px 12px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;transition:all var(--t)}
+.pp-btn-sm:hover{background:var(--surface-3);color:var(--text)}
+/* Running indicator strip in plan panel */
+.pp-running{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--accent);padding:6px 10px;background:rgba(99,102,241,.06);border-radius:5px;border:1px solid rgba(99,102,241,.15)}
+.pp-running-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.4s infinite}
 .btn-modify:hover{border-color:var(--border-2);color:var(--text)}
 
 /* Deploy prompt card */
@@ -1445,6 +1470,22 @@ input[type=file]{display:none}
       </div>
       <div class="chat-dot" id="cdot"><img src="/ghost.svg" alt=""></div>
     </div>
+    <!-- PLAN PANEL — shown inline when Plan mode is active and analysis is ready -->
+    <div id="plan-panel" class="plan-panel" style="display:none">
+      <div class="pp-head">
+        <span class="pp-label">Research Plan</span>
+        <div class="pp-actions-row">
+          <button class="pp-btn-refine" onclick="planRefineToggle()" id="pp-refine-btn" title="Refine plan">✏ Refine</button>
+          <button class="pp-btn-exec" onclick="executePlan()">▶ Execute Plan</button>
+        </div>
+      </div>
+      <div class="pp-fields" id="pp-fields"></div>
+      <div class="pp-risks" id="pp-risks" style="display:none"></div>
+      <div class="pp-refine-row" id="pp-refine-row" style="display:none">
+        <input class="pp-refine-in" id="pp-refine-in" placeholder="Change target, task type, metric, or approach…" onkeydown="if(event.key==='Enter')planRefineSubmit()">
+        <button class="pp-btn-sm" onclick="planRefineSubmit()">Update</button>
+      </div>
+    </div>
     <div class="chat-msgs" id="msgs">
       <div class="cw" id="cw">
         <div class="cw-i"><img src="/ghost.svg" alt="19Labs"></div>
@@ -2338,14 +2379,13 @@ function updSide(){
   if(!S.file){fl.innerHTML='';return}
   let h=`<div class="side-sec">Dataset</div>`;
   if(S.allFiles&&S.allFiles.length>1){
-    // Multi-file ZIP — show all files; highlighted = currently previewed file (S.previewFile or train file)
+    // Multi-file ZIP — show all files; highlighted = currently previewed file, each clickable
     const activeFile=S.previewFile||S.file?.name;
     S.allFiles.forEach(name=>{
       const isActive=name===activeFile;
       const isTrainFile=name===S.file?.name;
       const label=isTrainFile?'train':name.toLowerCase().startsWith('test')?'test':name.toLowerCase().includes('sample')||name.toLowerCase().includes('sub')?'submit':'';
-      const clickable=!isActive&&S.dataset_id?`data-action="select-file" data-filename="${esc(name)}" style="cursor:pointer"`:'';
-      h+=`<div class="side-item${isActive?' act':''}" ${clickable}><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isTrainFile?'var(--accent)':'#3f3f46'};font-size:9px">${label}</div></div>`;
+      h+=`<div class="side-item${isActive?' act':''}" style="cursor:pointer" onclick="switchDatasetFile(${JSON.stringify(name)})"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isTrainFile?'var(--accent)':'#3f3f46'};font-size:9px">${label}</div></div>`;
     });
   } else {
     const kb=(S.file.size/1024).toFixed(1);
@@ -2353,21 +2393,20 @@ function updSide(){
   }
   fl.innerHTML=h;
 }
-async function selectZipFile(filename){
-  if(!S.dataset_id||!S.allFiles)return;
+async function switchDatasetFile(name){
+  if(!S.dataset_id||!name)return;
+  if(S.previewFile===name)return;
+  toast(`Loading ${name}…`,'ok',1500);
   try{
-    const res=await apiFetch(`${BASE}/api/dataset/${S.dataset_id}/primary`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename})});
-    if(!res.ok)return;
-    const j=await res.json();
-    // Only switch the visual preview — S.file stays as the actual train file for AI/run
-    S.previewFile=filename;
-    if(j.preview_csv){
-      const parsed=parseCSV(j.preview_csv);
-      S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
-      showDataPreview();
-    }
-    updSide();
-  }catch(e){console.error('selectZipFile',e);}
+    const r=await apiFetch(`${BASE}/api/dataset/${encodeURIComponent(S.dataset_id)}/file/${encodeURIComponent(name)}`);
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.detail||'Load failed','err');return;}
+    const j=await r.json();
+    S.previewFile=name;
+    const parsed=parseCSV(j.csv);
+    S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+    showDataPreview();
+    updSide();stab('data');
+  }catch(e){toast('Load failed: '+e.message,'err');}
 }
 function updStatus(){
   const s=document.getElementById('run-stat');
@@ -2379,6 +2418,8 @@ function updStatus(){
   document.getElementById('s-exp').textContent=S.m.exp+(S.continuous&&S.running?' ∞':'');
   document.getElementById('s-best').textContent=S.m.best;
   document.getElementById('s-run').textContent=S.runId||'--';
+  // Keep inline plan panel running strip in sync
+  if(S.analyzed&&S.discovery)_renderPlanPanel();
   // Update input placeholder to hint that chat is live during a run
   const cin=document.getElementById('cin');
   if(cin) cin.placeholder=S.running
@@ -2798,6 +2839,7 @@ const MODE_WELCOME={
   agent:'<strong>Agent mode.</strong> I\'ll autonomously profile your data, plan experiments, run them, and iterate until I find the best model.'
 };
 function setMode(m){
+  const prev=S.mode;
   S.mode=m;
   localStorage.setItem('19labs_mode',m);
   ['chat','plan','agent'].forEach(x=>{
@@ -2805,7 +2847,92 @@ function setMode(m){
     if(btn)btn.classList.toggle('active',x===m);
   });
   document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];
-  chat('sys',MODE_WELCOME[m]);
+  // Show/hide the plan panel
+  _syncPlanPanel();
+  // Only show welcome if mode actually changed
+  if(prev!==m)chat('sys',MODE_WELCOME[m]);
+  // Auto-trigger analysis when switching to plan mode with a file
+  if(m==='plan'&&S.file&&!S.analyzed&&!S._discoverActive){
+    setTimeout(()=>runDiscover(S.hint||''),300);
+  }
+  // Chat → Agent: auto-launch if a file is loaded
+  if(m==='agent'&&prev==='chat'&&S.file&&!S.running){
+    setTimeout(async()=>{
+      if(!S.analyzed){await autoDiscover();}
+      if(S.analyzed&&!S.running){S.confirmed=true;launchRun();}
+    },400);
+    return;
+  }
+  // Carry plan objective to agent mode (from plan mode)
+  if(m==='agent'&&S.analyzed&&S.discovery&&!S.running){
+    const obj=S.discovery.objective||S.discovery.discovery||{};
+    if(obj.task&&!S.confirmed){
+      chat('sys',`<span style="font-size:11px;color:var(--text-3)">Plan loaded — target: <strong>${esc(obj.target||'?')}</strong> · ${esc(obj.task||'')} · ${esc(obj.metric||'')}. Say <strong>go</strong> to start.</span>`);
+    }
+  }
+}
+
+// Sync inline plan panel visibility
+function _syncPlanPanel(){
+  const pp=document.getElementById('plan-panel');if(!pp)return;
+  if(S.mode==='plan'&&S.analyzed&&S.discovery){
+    _renderPlanPanel();
+    pp.style.display='';
+  } else {
+    pp.style.display='none';
+  }
+}
+
+function _renderPlanPanel(){
+  const d=S.discovery?.discovery||{};
+  const obj=S.discovery?.objective||{};
+  const fields=document.getElementById('pp-fields');
+  if(!fields)return;
+  const f=(label,val,cls='')=>val?`<div class="pp-field ${cls}"><div class="pp-field-l">${label}</div><div class="pp-field-v">${esc(String(val))}</div></div>`:'';
+  fields.innerHTML=
+    f('Target',obj.target||d.target_column)+
+    f('Task',obj.task)+
+    f('Metric',obj.metric)+
+    f('Budget',`${S.budget} experiment${S.budget!==1?'s':''}`)+
+    (d.first_iteration_plan?f('Approach',d.first_iteration_plan,'pp-plan'):'');
+  const risks=document.getElementById('pp-risks');
+  if(risks){
+    if(d.risks&&d.risks.length){
+      risks.style.display='';
+      risks.innerHTML='⚠ '+d.risks.slice(0,2).map(r=>esc(r)).join(' · ');
+    } else risks.style.display='none';
+  }
+  // Show running state if agent is active
+  const pp=document.getElementById('plan-panel');
+  let runStrip=pp.querySelector('.pp-running');
+  if(S.running){
+    if(!runStrip){runStrip=document.createElement('div');runStrip.className='pp-running';pp.appendChild(runStrip)}
+    runStrip.innerHTML=`<span class="pp-running-dot"></span>Agent running — experiment ${S.m.exp} · best: ${S.m.best}`;
+  } else if(runStrip){runStrip.remove()}
+}
+
+function planRefineToggle(){
+  const row=document.getElementById('pp-refine-row');
+  if(!row)return;
+  const open=row.style.display==='none'||!row.style.display;
+  row.style.display=open?'flex':'none';
+  const btn=document.getElementById('pp-refine-btn');
+  if(btn)btn.style.color=open?'var(--accent)':'';
+  if(open)setTimeout(()=>document.getElementById('pp-refine-in')?.focus(),50);
+}
+
+function planRefineSubmit(){
+  const val=(document.getElementById('pp-refine-in')?.value||'').trim();if(!val)return;
+  document.getElementById('pp-refine-in').value='';
+  document.getElementById('pp-refine-row').style.display='none';
+  // If agent is running, also inject as live hint
+  if(S.running&&S.runId){
+    fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:val})}).catch(()=>{});
+    chat('sys',`<span style="font-size:11px;color:var(--text-3)">↳ Hint sent to agent: "${esc(val.slice(0,60))}"</span>`);
+  }
+  S.hint=val;
+  chat('ai',`Updating plan: "${esc(val)}"…`);
+  runDiscover(val);
 }
 
 // ═══════════════════════════════════════════
@@ -2839,19 +2966,28 @@ async function send(){
   if(S.mode==='plan'){
     if(!S.file){chat('ai',"Drop a CSV first so I can analyze it.");return}
     if(lo.includes('setting')||lo.includes('api key')){openSettings();chat('sys','Settings opened.');return}
-    const isExecute=/^(execute|run|go|launch|start|do it|confirm|yes|yep|yeah|approved|lgtm)$/i.test(lo.trim());
-    // If plan exists and user confirms → switch to agent and run
-    if(isExecute&&S.analyzed){
-      setMode('agent');
-      S.confirmed=true;
-      chat('ai',"Switching to <strong>Agent mode</strong> and launching experiments now.");
-      await launchRun();return;
+    const isExecute=/^(execute|run|go|launch|start|do it|confirm|yes|yep|yeah|approved|lgtm|ship it)$/i.test(lo.trim());
+    const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does|explain|tell me)/i.test(lo);
+    // If agent is running → send hint AND chat response
+    if(S.running&&S.runId){
+      await chatWithAI(text);
+      if(!isQuestion){
+        try{await fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})});
+        chat('sys','<span style="font-size:11px;opacity:.6">↳ Hint sent to agent</span>');}catch(_){}
+      }
+      return;
     }
-    // Otherwise analyze / re-analyze
+    // If plan exists and user confirms → execute
+    if(isExecute&&S.analyzed){
+      executePlan();return;
+    }
+    // Questions about existing plan → chat response
+    if(isQuestion&&S.analyzed){
+      await chatWithAI(text);return;
+    }
+    // Otherwise analyze / re-analyze with new objective
     S.hint=text;
     await runDiscover(text);
-    // Auto-show plan card after analysis
-    if(S.analyzed)setTimeout(showPlanCard,400);
     return;
   }
 
@@ -3017,8 +3153,12 @@ function modifyPlan(){
 }
 function executePlan(){
   hidePlanCard();
-  if(S.mode==='plan')setMode('agent');
-  S.confirmed=true;chat('ai',"Plan confirmed. Switching to <strong>Agent mode</strong> and launching experiments.");launchRun();
+  S.confirmed=true;
+  // Stay in plan mode — panel updates to show running state
+  // Also switch to agent mode for full experiment view
+  setMode('agent');
+  chat('ai',"Plan confirmed. Launching experiments — I'll keep you updated here.");
+  launchRun();
 }
 
 // ═══════════════════════════════════════════
@@ -3269,12 +3409,16 @@ async function runDiscover(hint){
     _html+=`</div>`;
 
     if(S.mode==='plan'){
-      _html+=`<div style="font-size:11px;color:#52525b;margin-top:6px">Review the plan below, tweak anything, then hit <strong>Execute Plan</strong>.</div>`;
+      _html+=`<div style="font-size:11px;color:#52525b;margin-top:6px">Review the plan above, tweak anything, then hit <strong>Execute Plan</strong> — or say <strong>go</strong>.</div>`;
     }
     chat('ai',_html);
     setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
     toast('Plan ready','ok');
+    // Show inline plan panel in plan mode
+    if(S.mode==='plan'){
+      _syncPlanPanel();
+    }
   }catch(e){
     S._discoverActive=false;_timers.forEach(clearTimeout);
     typing(false);chat('err',`Analysis failed: ${esc(e.message)}`);setBadge('ERROR','err');
@@ -3529,6 +3673,8 @@ async function launchRun(){
   S.running=false;S.continuous=false;
   document.getElementById('stop-btn').style.display='none';
   activeAbort=null;updStatus();
+  // Remove running strip from plan panel
+  if(S.mode==='plan')_renderPlanPanel();
 }
 
 function _getNarrBubble(){
