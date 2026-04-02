@@ -1336,6 +1336,11 @@ def align_features(f, model):
     expected = None
     if hasattr(model, 'feature_names_in_'):
         expected = list(model.feature_names_in_)
+    elif hasattr(model, 'get_booster'):
+        try:
+            fn = model.get_booster().feature_names
+            if fn: expected = list(fn)
+        except Exception: pass
     elif hasattr(model, 'feature_name_'):
         try: expected = model.feature_name_()
         except Exception: pass
@@ -1359,7 +1364,7 @@ def safe_predict(model, f):
             return result
         except Exception:
             continue
-    raise RuntimeError("All feature representations failed")
+    return None  # callers check for None
 
 model_path = {_model_path_str!r}
 train_code = {train_code!r}
@@ -1369,7 +1374,8 @@ preds = None
 try:
     import joblib
     model = joblib.load(model_path)
-    preds = safe_predict(model, features).tolist()
+    _r0 = safe_predict(model, features)
+    if _r0 is not None: preds = _r0.tolist()
 except Exception as e1:
     # Try exec(train_code) to define custom classes then reload
     if train_code:
@@ -1384,7 +1390,8 @@ except Exception as e1:
                     return super().find_class(mod, name)
             with open(model_path, 'rb') as f:
                 model = _Up(f).load()
-            preds = safe_predict(model, features).tolist()
+            _r1 = safe_predict(model, features)
+            if _r1 is not None: preds = _r1.tolist()
         except Exception as e2:
             pass
 
@@ -3664,6 +3671,12 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         # sklearn / XGBRegressor / LGBMRegressor standard attribute
         if hasattr(m, 'feature_names_in_'):
             return list(m.feature_names_in_)
+        # XGBClassifier/XGBRegressor: try the underlying Booster's feature_names
+        if hasattr(m, 'get_booster'):
+            try:
+                fn = m.get_booster().feature_names
+                if fn: return list(fn)
+            except Exception: pass
         # CatBoost sklearn API uses feature_names_ (trailing underscore)
         if hasattr(m, 'feature_names_') and m.feature_names_ is not None:
             try: return list(m.feature_names_)
