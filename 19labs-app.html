@@ -2422,8 +2422,24 @@ async function switchDatasetFile(name){
     const parsed=parseCSV(j.csv);
     S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
     showDataPreview();
+    _injectZipBanner();  // re-add banner (showDataPreview overwrites p-data)
     updSide();stab('data');
   }catch(e){toast('Load failed: '+e.message,'err');}
+}
+function _injectZipBanner(){
+  if(!S.allFiles||S.allFiles.length<=1)return;
+  const pdEl=document.getElementById('p-data');
+  if(!pdEl)return;
+  const active=S.previewFile||S.file?.name;
+  const chips=S.allFiles.map(n=>{
+    const isActive=n===active;
+    return `<span onclick="switchDatasetFile(${JSON.stringify(n)})" style="display:inline-flex;align-items:center;gap:4px;background:${isActive?'var(--accent-dim,rgba(99,102,241,.18))':'var(--surface-2,#1e2130)'};padding:3px 10px;border-radius:4px;font-size:11px;color:${isActive?'var(--accent,#818cf8)':'var(--text-2)'};cursor:pointer;border:1px solid ${isActive?'var(--accent,#818cf8)33':'transparent'};transition:opacity .15s" onmouseenter="this.style.opacity='.75'" onmouseleave="this.style.opacity='1'">${esc(n)}</span>`;
+  }).join('');
+  const banner=`<div id="zip-banner" style="padding:10px 16px 0;display:flex;flex-wrap:wrap;align-items:center;gap:6px"><span style="font-size:11px;color:var(--text-3)">${S.allFiles.length} files in ZIP:</span>${chips}</div>`;
+  // Remove existing banner if present, then prepend fresh one
+  const old=pdEl.querySelector('#zip-banner');
+  if(old)old.remove();
+  pdEl.insertAdjacentHTML('afterbegin',banner);
 }
 function updStatus(){
   const s=document.getElementById('run-stat');
@@ -6189,17 +6205,12 @@ async function handleFile(f,preloadedText){
         document.getElementById('p-data').style.display='';
         document.getElementById('ws-empty').style.display='none';
         stab('data');updSide();updStatus();
-        // Show file list banner above the data table
-        const fileChips=info.all_files.map(n=>`<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface-2,#1e2130);padding:3px 8px;border-radius:4px;font-size:11px;color:var(--text-2)">${esc(n)}</span>`).join('');
-        const banner=`<div style="padding:10px 16px 0;display:flex;flex-wrap:wrap;align-items:center;gap:6px"><span style="font-size:11px;color:var(--text-3)">${info.num_files} files in ZIP:</span>${fileChips}</div>`;
         if(info.preview_csv){
-          // Prepend banner to data table
           showDataPreview();
-          const pdEl=document.getElementById('p-data');
-          pdEl.innerHTML=banner+pdEl.innerHTML;
         } else {
-          document.getElementById('p-data').innerHTML=banner+`<div style="padding:12px 16px;font-size:12px;color:var(--text-3)">Preview unavailable for this format.</div>`;
+          document.getElementById('p-data').innerHTML=`<div style="padding:12px 16px;font-size:12px;color:var(--text-3)">Preview unavailable for this format.</div>`;
         }
+        _injectZipBanner();
         toast(`Loaded ${info.num_files} files from ZIP`,'ok',3000);
         const fileList=info.all_files.map(n=>`<code>${esc(n)}</code>`).join(', ');
         chat('sys',`Loaded <strong>${info.num_files} files</strong> from ZIP: ${fileList}. Training on <strong>${esc(info.filename)}</strong>.`);
