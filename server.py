@@ -3331,6 +3331,49 @@ def _prediction_json_response(sub: "pd.DataFrame", run_id: str) -> JSONResponse:
     })
 
 
+@app.get("/api/debug/env")
+async def debug_env():
+    """Full environment diagnostic — shows libgomp candidates, xgboost status, sys.path."""
+    import glob as _g, subprocess as _sp
+    out = {}
+    out["python"] = sys.executable
+    out["sys_path"] = sys.path[:10]
+    # libgomp search
+    _candidates = (
+        sum([_g.glob(sp + "/*.libs/libgomp*") for sp in sys.path], []) +
+        _g.glob("/usr/lib/*/libgomp.so*") + _g.glob("/usr/lib/libgomp.so*") +
+        _g.glob("/usr/local/lib/libgomp*") + _g.glob("/nix/store/*/lib/libgomp*")
+    )
+    out["libgomp_candidates"] = _candidates[:10]
+    out["usr_lib_x86"] = [f for f in _g.glob("/usr/lib/x86_64-linux-gnu/libgomp*")]
+    out["usr_local_lib_gomp"] = [f for f in _g.glob("/usr/local/lib/libgomp*")]
+    # xgboost location
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.find_spec("xgboost")
+        out["xgboost_location"] = str(_spec.origin) if _spec else "not found"
+        if _spec:
+            import os as _os
+            _xgb_dir = str(Path(_spec.origin).parent)
+            out["xgboost_libs_dir"] = _g.glob(_xgb_dir + "/../xgboost.libs/libgomp*") + _g.glob(_xgb_dir + ".libs/libgomp*")
+    except Exception as e:
+        out["xgboost_find_error"] = str(e)
+    # try importing xgboost
+    try:
+        import xgboost as _xgb
+        out["xgboost_import"] = "OK"
+        out["xgboost_version"] = _xgb.__version__
+    except Exception as e:
+        out["xgboost_import"] = f"FAILED: {e}"
+    # subprocess test
+    _r = _sp.run([sys.executable, "-c", "import xgboost; print('xgb ok')"], capture_output=True, text=True, timeout=30)
+    out["subprocess_xgb"] = _r.stdout.strip() or _r.stderr.strip()[:300]
+    # ldconfig
+    _ld = _sp.run(["ldconfig", "-p"], capture_output=True, text=True, timeout=10)
+    out["ldconfig_gomp"] = [l for l in _ld.stdout.splitlines() if "gomp" in l.lower()]
+    return out
+
+
 @app.get("/api/debug/models")
 async def debug_list_models():
     """List all persisted models in run_models DB table."""
