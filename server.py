@@ -1281,7 +1281,7 @@ def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_c
     """Run prediction in a fresh Python subprocess.
     Training already works in subprocess (xgboost/lgbm find libgomp via their bundled RPATH).
     Mirrors that environment instead of fighting in-process libgomp resolution."""
-    import subprocess, json, tempfile as _tf
+    import subprocess, json, sys, tempfile as _tf
     with _tf.TemporaryDirectory() as _td:
         _tdp = Path(_td)
         _csv_path = _tdp / "test.csv"
