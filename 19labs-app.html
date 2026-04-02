@@ -3366,7 +3366,7 @@ async function launchRun(){
       function done(err){if(_resolved)return;_resolved=true;if(es){try{es.close()}catch(_){}}err?reject(err):resolve();}
 
       function startPolling(){
-        const deadline=Date.now()+20*60*1000; // 20-min hard limit
+        const deadline=Date.now()+60*60*1000; // 60-min hard limit
         const poll=setInterval(async()=>{
           try{
             const pr=await apiFetch(`${BASE}/api/run/${run_id}/status`);

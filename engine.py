@@ -203,8 +203,8 @@ _active_gemini_model  = GEMINI_MODEL
 # Default is claude-3-5-sonnet which is widely available across regions.
 # Cross-region inference prefix format: us.anthropic.claude-... (for us-east-1/us-west-2)
 BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6")
-EXEC_TIMEOUT = 180          # hard wall-clock kill per experiment
-TIME_BUDGET  = 120          # target training budget (seconds) injected into scripts
+EXEC_TIMEOUT = 900          # hard wall-clock kill per experiment (15 min for large datasets)
+TIME_BUDGET  = 720          # target training budget (seconds) injected into scripts
 STAGNATION_LIMIT = 3
 GOOD_ENOUGH  = {"r2": 0.90, "auc": 0.92, "f1": 0.88, "accuracy": 0.90, "mape": 0.10, "rmse": 5000, "mae": 3000, "nse": 0.85}
 SECONDARY_METRICS = ["r2", "mape", "mae", "rmse", "nse"]  # always request these alongside primary
