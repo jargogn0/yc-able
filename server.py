@@ -321,6 +321,15 @@ def _init_db():
             conn._conn.rollback()  # PostgreSQL: reset aborted transaction state
         except Exception:
             pass  # SQLite or already clean
+    # Add csv_path column (stores training CSV path for post-restart label decoding)
+    try:
+        conn.execute("ALTER TABLE runs ADD COLUMN csv_path TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        try:
+            conn._conn.rollback()
+        except Exception:
+            pass
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
@@ -522,15 +531,16 @@ def _save_run_to_db(run_id: str, run: dict):
         conn.execute("""INSERT INTO runs
             (id, user_id, status, filename, provider, started, finished, hint, budget,
              best_model, best_metric_name, best_metric_val, total_experiments,
-             token_input, token_output, token_calls, yc_score, error, result_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             token_input, token_output, token_calls, yc_score, error, result_json, csv_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
               status=EXCLUDED.status, finished=EXCLUDED.finished,
               best_model=EXCLUDED.best_model, best_metric_name=EXCLUDED.best_metric_name,
               best_metric_val=EXCLUDED.best_metric_val, total_experiments=EXCLUDED.total_experiments,
               token_input=EXCLUDED.token_input, token_output=EXCLUDED.token_output,
               token_calls=EXCLUDED.token_calls, yc_score=EXCLUDED.yc_score,
-              error=EXCLUDED.error, result_json=EXCLUDED.result_json""",
+              error=EXCLUDED.error, result_json=EXCLUDED.result_json,
+              csv_path=EXCLUDED.csv_path""",
             (run_id, run.get("owner_id"),
              run.get("status", "done"),
              Path(run.get("csv", "")).name if run.get("csv") else "",
@@ -548,7 +558,8 @@ def _save_run_to_db(run_id: str, run: dict):
              tu.get("calls", 0),
              diag.get("yc_readiness_score"),
              run.get("error"),
-             result_json_str))
+             result_json_str,
+             run.get("csv", "")))
         conn.commit()
         conn.close()
     except Exception:
@@ -1235,6 +1246,7 @@ def _get_run_or_404(run_id: str):
                 "id": run_id,
                 "status": row["status"],
                 "ws": _ws_str,
+                "csv": row.get("csv_path", "") or "",
                 "result": result,
                 "hint": row.get("hint", ""),
             }
@@ -1558,11 +1570,24 @@ def _find_model_path(run_id: str, run: dict) -> "Path | None":
                 return _tmp
             except Exception as _b64e:
                 print(f"[predict] model_b64 decode failed: {_b64e}", flush=True)
-    # 1. Persistent stable path (survives restarts)
-    for ext in [".pkl", ".joblib"]:
+    # 0b. stable_model_path stored in result at run completion
+    _smp = result_d.get("stable_model_path", "")
+    if _smp and Path(_smp).exists():
+        print(f"[predict] found model via stable_model_path: {_smp}", flush=True)
+        return Path(_smp)
+    # 1. Persistent stable path (survives restarts) — check .pkl, .joblib, then any extension
+    for ext in [".pkl", ".joblib", ".ubj"]:
         stable = _MODELS_DIR / f"{run_id}{ext}"
         if stable.exists():
             return stable
+    # 1b. Glob scan _MODELS_DIR for run_id prefix (catches unexpected extensions)
+    import glob as _mg
+    _glob_hits = sorted(_mg.glob(str(_MODELS_DIR / f"{run_id}.*")))
+    for _gh in _glob_hits:
+        _gp = Path(_gh)
+        if _gp.is_file() and _gp.suffix in (".pkl", ".joblib", ".ubj") and "_ag" not in _gp.name and "_train" not in _gp.name and "_explain" not in _gp.name:
+            print(f"[predict] found model via MODELS_DIR glob: {_gp}", flush=True)
+            return _gp
     # 2. Workspace search (valid within same server session / 4-hour window)
     ws_str = run.get("ws", "")
     ws = Path(ws_str) if ws_str else None
@@ -2154,9 +2179,12 @@ async def start_run(req: RunRequest, request: Request):
                     print(f"[models] {'AG ref' if _is_ag_ref else f'Saved {len(_blob)//1024}KB'} model ({_model_src.name}) for {run_id}", flush=True)
                     # ── Persist to filesystem (fast path on same instance) ──
                     try:
-                        shutil.copy2(_model_src, _MODELS_DIR / f"{run_id}{_model_ext}")
-                    except Exception:
-                        pass
+                        _dst = _MODELS_DIR / f"{run_id}{_model_ext}"
+                        shutil.copy2(_model_src, _dst)
+                        result["stable_model_path"] = str(_dst)
+                        print(f"[models] Copied model → {_dst}", flush=True)
+                    except Exception as _cpe:
+                        print(f"[models] WARNING: filesystem copy failed: {_cpe}", flush=True)
                     # ── Persist to DB (survives redeploys — works with both SQLite and PostgreSQL) ──
                     if not _is_ag_ref:
                         try:
@@ -3685,6 +3713,38 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
             print(f"[predict-file] AutoGluon predict failed: {_age} — falling back to pkl", flush=True)
 
     model_path = _find_model_path(run_id, run)
+    if not model_path:
+        # Last-ditch recovery: workspace still exists → copy model to _MODELS_DIR right now
+        _ws_path = Path(run.get("ws", "")) if run.get("ws") else None
+        if not _ws_path or not _ws_path.exists():
+            # Try workspace by run_id pattern
+            _ws_guess = _WS_DIR / f"19labs_{run_id}"
+            if _ws_guess.exists():
+                _ws_path = _ws_guess
+        if _ws_path and _ws_path.exists():
+            for _rname in ["best_model.pkl", "model.pkl", "best_model.joblib", "model.joblib"]:
+                _rp = _ws_path / _rname
+                if _rp.is_file() and _rp.stat().st_size > 100:
+                    _dst = _MODELS_DIR / f"{run_id}{_rp.suffix}"
+                    try:
+                        shutil.copy2(_rp, _dst)
+                        model_path = _dst
+                        print(f"[predict] RECOVERY: copied {_rp} → {_dst}", flush=True)
+                        break
+                    except Exception as _re:
+                        print(f"[predict] RECOVERY copy failed: {_re}", flush=True)
+            if not model_path:
+                # rglob fallback
+                for _rp in list(_ws_path.rglob("*.pkl")) + list(_ws_path.rglob("*.joblib")):
+                    if _rp.is_file() and "sample" not in _rp.name and "ag_models" not in str(_rp) and _rp.stat().st_size > 100:
+                        _dst = _MODELS_DIR / f"{run_id}{_rp.suffix}"
+                        try:
+                            shutil.copy2(_rp, _dst)
+                            model_path = _dst
+                            print(f"[predict] RECOVERY rglob: copied {_rp} → {_dst}", flush=True)
+                            break
+                        except Exception:
+                            pass
     if not model_path:
         _has_b64 = bool((result or {}).get("model_b64"))
         _ws_files = (result or {}).get("_ws_files", [])
