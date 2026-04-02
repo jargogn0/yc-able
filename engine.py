@@ -4584,7 +4584,8 @@ RULES:
 - If the user says "go" / "start" / "run it": reply with one sentence confirming the plan. Training starts automatically.
 - Reference actual column names and numbers from the context — never be generic.
 - For ZIP datasets with multiple files (train/test/submission), you know all the files listed in context.
-- If no dataset is loaded, tell the user to upload one."""
+- If no dataset is loaded, tell the user to upload one.
+- NEVER output XML tags like <tool_call>, <tool_response>, <function_call> or similar. You have no tools. Just answer in plain text."""
 
     if ctx_lines:
         system += "\n\n## Current Session\n" + "\n".join(ctx_lines)
