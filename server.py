@@ -1330,6 +1330,37 @@ def encode(f):
         fe[col] = le.fit_transform(fe[col].astype(str))
     return fe.fillna(0)
 
+def align_features(f, model):
+    # Align test features to match what the model was trained on.
+    # If the model expected more features, training likely used one-hot encoding.
+    expected = None
+    if hasattr(model, 'feature_names_in_'):
+        expected = list(model.feature_names_in_)
+    elif hasattr(model, 'feature_name_'):
+        try: expected = model.feature_name_()
+        except Exception: pass
+    if expected is None:
+        return encode(f)
+    # Apply one-hot encoding to categoricals, then align to expected columns
+    fe = pd.get_dummies(f.copy().fillna(0))
+    for col in expected:
+        if col not in fe.columns:
+            fe[col] = 0
+    try:
+        return fe[expected]
+    except Exception:
+        return encode(f)
+
+def safe_predict(model, f):
+    # Try multiple feature representations until one works.
+    for prep in [lambda x: x, encode, lambda x: align_features(x, model)]:
+        try:
+            result = model.predict(prep(f))
+            return result
+        except Exception:
+            continue
+    raise RuntimeError("All feature representations failed")
+
 model_path = {_model_path_str!r}
 train_code = {train_code!r}
 preds = None
@@ -1338,10 +1369,7 @@ preds = None
 try:
     import joblib
     model = joblib.load(model_path)
-    try:
-        preds = model.predict(features).tolist()
-    except Exception:
-        preds = model.predict(encode(features)).tolist()
+    preds = safe_predict(model, features).tolist()
 except Exception as e1:
     # Try exec(train_code) to define custom classes then reload
     if train_code:
@@ -1356,7 +1384,7 @@ except Exception as e1:
                     return super().find_class(mod, name)
             with open(model_path, 'rb') as f:
                 model = _Up(f).load()
-            preds = model.predict(features).tolist()
+            preds = safe_predict(model, features).tolist()
         except Exception as e2:
             pass
 
@@ -3658,8 +3686,22 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
             return f.reindex(columns=feat_names, fill_value=0)
         return f
 
+    def _ohe_align(f, feat_names):
+        """One-hot encode then align — for models trained with pd.get_dummies."""
+        fe = pd.get_dummies(f.copy().fillna(0))
+        if feat_names:
+            for col in feat_names:
+                if col not in fe.columns:
+                    fe[col] = 0
+            try:
+                return fe[feat_names]
+            except Exception:
+                pass
+        return fe
+
     feat_names = _model_feature_names(model)
     encoded = _align(_encode_cats(features), feat_names)
+    ohe_encoded = _ohe_align(features, feat_names)
 
     def _try(fn):
         nonlocal preds, _last_err
@@ -3682,6 +3724,10 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
 
     # 2. Numpy array  (bypasses sklearn feature_names_in_ check; works for all sklearn-API models)
     _try(lambda: model.predict(encoded.values))
+
+    # 2b. OHE-aligned — for models trained with pd.get_dummies (feature count mismatch)
+    _try(lambda: model.predict(ohe_encoded))
+    _try(lambda: model.predict(ohe_encoded.values))
 
     # 3. XGBoost Booster → must use DMatrix
     if preds is None:
