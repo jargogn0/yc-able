@@ -2421,9 +2421,8 @@ async function switchDatasetFile(name){
     S.previewFile=name;
     const parsed=parseCSV(j.csv);
     S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
-    showDataPreview();
-    _injectZipBanner();  // re-add banner (showDataPreview overwrites p-data)
-    updSide();stab('data');
+    updSide();stab('data');    // stab calls renderDataTable — renders the new file
+    _injectZipBanner();        // inject banner AFTER stab so it's not wiped
   }catch(e){toast('Load failed: '+e.message,'err');}
 }
 function _injectZipBanner(){
@@ -6178,7 +6177,7 @@ async function handleFile(f,preloadedText){
       // Large or multi-file tabular ZIP (e.g. Kaggle competition) — kept server-side
       if(info.type==='tabular_dir'){
         S.dataset_id=info.dataset_id;S.media_info=null;
-        S.allFiles=info.all_files||[];
+        S.allFiles=info.all_files||[];S.previewFile=info.filename;
         S.file={name:info.filename,size:0};
         // Build Kaggle context hint from sample_submission columns
         const _sampCols=info.sample_submission_cols||[];
