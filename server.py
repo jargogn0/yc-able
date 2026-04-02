@@ -1240,8 +1240,30 @@ def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_c
         _csv_path.write_bytes(csv_bytes)
         _model_path_str = str(model_path)
         _script = f"""
-import sys, json, warnings
+import sys, os, glob, json, warnings, shutil
 warnings.filterwarnings('ignore')
+
+# ── libgomp bootstrap: must happen before any ML import ──────────────────────
+# Find xgboost/lightgbm bundled libgomp (libgomp-HASH.so.1.0.0) and create
+# a canonical libgomp.so.1 symlink so lightgbm/catboost find it by name.
+def _bootstrap_libgomp():
+    candidates = sum([glob.glob(sp + '/*.libs/libgomp*') for sp in sys.path], [])
+    candidates += glob.glob('/tmp/libgomp.so.1')  # copied by server startup
+    if not candidates:
+        return
+    src = candidates[0]
+    gdir = os.path.dirname(src)
+    canonical = os.path.join(gdir, 'libgomp.so.1')
+    if not os.path.exists(canonical):
+        try: shutil.copy2(src, canonical)
+        except Exception: pass
+    tmp_can = '/tmp/libgomp.so.1'
+    if not os.path.exists(tmp_can):
+        try: shutil.copy2(src, tmp_can)
+        except Exception: pass
+    ld = os.environ.get('LD_LIBRARY_PATH', '')
+    os.environ['LD_LIBRARY_PATH'] = gdir + ':/tmp:' + ld
+_bootstrap_libgomp()
 
 import pandas as pd
 import numpy as np

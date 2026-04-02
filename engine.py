@@ -4585,7 +4585,8 @@ RULES:
 - Reference actual column names and numbers from the context — never be generic.
 - For ZIP datasets with multiple files (train/test/submission), you know all the files listed in context.
 - If no dataset is loaded, tell the user to upload one.
-- NEVER output XML tags like <tool_call>, <tool_response>, <function_call> or similar. You have no tools. Just answer in plain text."""
+- NEVER output XML tags like <tool_call>, <tool_response>, <function_call> or similar. You have no tools. Just answer in plain text.
+- NEVER tell the user to run system commands (apt-get, pip install, etc.) or contact a system admin. The platform handles all dependencies automatically. If prediction fails with a library error, say it is a known infrastructure issue being fixed, not something the user needs to do."""
 
     if ctx_lines:
         system += "\n\n## Current Session\n" + "\n".join(ctx_lines)
