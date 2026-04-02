@@ -1277,7 +1277,7 @@ def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
     return None
 
 
-def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_code: str = "") -> dict:
+def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_code: str = "", train_csv_path: str = "") -> dict:
     """Run prediction in a fresh Python subprocess.
     Training already works in subprocess (xgboost/lgbm find libgomp via their bundled RPATH).
     Mirrors that environment instead of fighting in-process libgomp resolution."""
@@ -1318,9 +1318,19 @@ import numpy as np
 
 df = pd.read_csv({str(_csv_path)!r})
 target = {target!r}
+train_csv_path = {train_csv_path!r}
 features = df.drop(columns=[c for c in [target] if c and c in df.columns])
 id_col = next((c for c in df.columns if c.lower() in ('id','customerid','customer_id','passengerid')), None)
 id_vals = df[id_col].tolist() if id_col else list(range(len(df)))
+
+# Load training CSV to get exact OHE column list used during training
+_train_feat_cols = None
+if train_csv_path:
+    try:
+        _tdf = pd.read_csv(train_csv_path)
+        _tdf = _tdf.drop(columns=[c for c in [target] if c and c in _tdf.columns])
+        _train_feat_cols = list(pd.get_dummies(_tdf.fillna(0)).columns)
+    except Exception: pass
 
 def encode(f):
     from sklearn.preprocessing import LabelEncoder
@@ -1332,21 +1342,18 @@ def encode(f):
 
 def align_features(f, model):
     # Align test features to match what the model was trained on.
-    # If the model expected more features, training likely used one-hot encoding.
-    expected = None
-    if hasattr(model, 'feature_names_in_'):
-        expected = list(model.feature_names_in_)
-    elif hasattr(model, 'get_booster'):
-        try:
-            fn = model.get_booster().feature_names
-            if fn: expected = list(fn)
-        except Exception: pass
-    elif hasattr(model, 'feature_name_'):
-        try: expected = model.feature_name_()
-        except Exception: pass
+    # Priority: training CSV columns > model attribute names > label encode fallback
+    expected = _train_feat_cols  # from training CSV get_dummies (most reliable)
+    if expected is None:
+        if hasattr(model, 'feature_names_in_'):
+            expected = list(model.feature_names_in_)
+        elif hasattr(model, 'get_booster'):
+            try:
+                fn = model.get_booster().feature_names
+                if fn and not fn[0].startswith('f'): expected = list(fn)
+            except Exception: pass
     if expected is None:
         return encode(f)
-    # Apply one-hot encoding to categoricals, then align to expected columns
     fe = pd.get_dummies(f.copy().fillna(0))
     for col in expected:
         if col not in fe.columns:
@@ -3590,10 +3597,13 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
     # ── Subprocess prediction (primary path) ──────────────────────────────────
     # Training runs in a subprocess where xgboost/lightgbm work fine via their
     # bundled RPATH. We mirror that here to avoid in-process libgomp issues.
+    # Also pass training CSV path so the subprocess can determine exact OHE columns.
+    _train_csv_path = run.get("csv", "")
     try:
         _sub_result = await asyncio.to_thread(
             _predict_subprocess, model_path, contents, target,
-            (result or {}).get("train_code", "")
+            (result or {}).get("train_code", ""),
+            _train_csv_path,
         )
         id_col_s = _sub_result.get("id_col")
         id_vals_s = _sub_result["id_vals"]
@@ -3713,6 +3723,15 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
         return fe
 
     feat_names = _model_feature_names(model)
+    # Fallback: use training CSV OHE columns (most reliable — exact column list)
+    if feat_names is None and _train_csv_path:
+        try:
+            _tdf = pd.read_csv(_train_csv_path)
+            _tdf = _tdf.drop(columns=[c for c in [target] if c and c in _tdf.columns])
+            feat_names = list(pd.get_dummies(_tdf.fillna(0)).columns)
+            print(f"[predict-file] feat_names from training CSV: {len(feat_names)} cols", flush=True)
+        except Exception as _tce:
+            print(f"[predict-file] training CSV OHE fallback failed: {_tce}", flush=True)
     encoded = _align(_encode_cats(features), feat_names)
     ohe_encoded = _ohe_align(features, feat_names)
 
