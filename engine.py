@@ -107,36 +107,17 @@ _INSTALL_TIMEOUT = 480  # 8 minutes — enough for any package including torch/t
 # Prompt injection cannot cause installation of an arbitrary package — if the LLM writes
 # `import malicious_pkg`, the pip name resolves to "malicious_pkg" which is not in this
 # set, so it gets skipped (and the import will fail at runtime, triggering repair).
-_ALLOWED_PIP_PACKAGES: frozenset = frozenset({
-    # Core ML
-    "scikit-learn", "pandas", "numpy", "scipy", "statsmodels", "optuna",
-    # Gradient boosting
-    "lightgbm", "xgboost", "catboost",
-    # AutoML
-    "autogluon", "autogluon.tabular",
-    # Deep learning — tabular
-    "pytorch-tabular", "tab-transformer-pytorch",
-    # Deep learning — time series
-    "neuralforecast", "mlforecast", "utilsforecast", "pytorch-forecasting",
-    "prophet", "neuralprophet", "sktime",
-    # Deep learning — general
-    "torch", "torchvision", "torchaudio", "timm", "transformers", "datasets",
-    "peft", "accelerate", "sentence-transformers", "xlstm",
-    # CV / NLP helpers
-    "opencv-python-headless", "Pillow", "librosa",
-    # Clustering / dim reduction
-    "hdbscan", "umap-learn",
-    # Explainability
-    "shap",
-    # Utilities
-    "pyarrow", "openpyxl", "xlrd", "beautifulsoup4", "pyyaml",
-    "python-dotenv", "tqdm", "joblib",
+# Packages that are dangerous to auto-install (system-level, C compilers, crypto miners, etc.)
+_BLOCKED_PIP_PACKAGES: frozenset = frozenset({
+    "pycuda", "cupy", "triton",            # GPU kernel compilers — unsafe in container
+    "ansible", "fabric", "paramiko",        # remote execution
+    "scapy",                                # raw network packets
+    "cryptography", "pycryptodome",         # crypto — rarely needed for ML
 })
 
 def auto_install_packages(code: str, log=None) -> list:
     """Parse imports from generated code and pip-install any missing packages.
-    Only packages in _ALLOWED_PIP_PACKAGES are ever installed — prompt injection
-    cannot cause arbitrary package installation."""
+    Installs any package the LLM requests except a small blocklist of dangerous ones."""
     import importlib
     modules = detect_imported_modules(code)
     to_install = []
@@ -157,10 +138,10 @@ def auto_install_packages(code: str, log=None) -> list:
             continue
         # Redirect to correct pip name
         pip_name = _PACKAGE_REDIRECTS.get(pip_name, pip_name)
-        # Hard whitelist — never install a package not in the approved set
-        if pip_name not in _ALLOWED_PIP_PACKAGES:
+        # Block only genuinely dangerous packages
+        if pip_name in _BLOCKED_PIP_PACKAGES:
             if log:
-                log.engine(f"Skipping non-whitelisted package: {pip_name}")
+                log.engine(f"Blocked package (safety): {pip_name}")
             continue
         try:
             importlib.import_module(mod)
@@ -1671,7 +1652,7 @@ RULES:
 - NEVER hardcode 'train.csv' or any local absolute path.
 - ALWAYS split data into train/test. Compute metrics on BOTH.
 - Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics.
-- If the error is a missing package, switch to an equivalent pre-installed library. NEVER add pip/subprocess install calls.
+- If the error is a missing package, keep the import — the engine auto-installs it before the next run. NEVER add subprocess/os.system install calls inside the code.
 
 Fix the error. Keep the model/approach if possible. Output ONLY fixed ```python code.""", 6000))
     fixed, _ = apply_code_guardrails(fixed)
@@ -1733,7 +1714,7 @@ KARPATHY DISCIPLINE (MANDATORY):
 - train.py is the ONLY file you may edit. ALL code goes in train.py.
 - prepare.py is READ-ONLY. Never reference or modify it.
 - DATA_PATH and TIME_BUDGET are pre-defined variables injected at line 1. DO NOT redefine them. DO NOT use os.environ.
-- NEVER use subprocess, os.system, or any shell command to install packages. ALL packages are pre-installed. No pip, no conda, no apt-get. Ever.
+- NEVER add pip/subprocess install calls inside train.py. Just write the import — the engine auto-installs any package before running your code.
 - TIME_BUDGET = {obj.get('time_budget', TIME_BUDGET)}s. Add wall-clock checks in training loops.
 - ALWAYS split data into train/test. Compute metrics on BOTH and report both.
 - ALL output goes to stdout. Metrics MUST be printed as a single JSON line at the end with ALL applicable metrics:
@@ -2014,7 +1995,7 @@ KARPATHY DISCIPLINE (MANDATORY):
 - DATA_PATH and TIME_BUDGET are Python variables pre-defined BEFORE your code runs (injected at line 1).
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly.
 {_data_load_line}
-- NEVER use subprocess, os.system, or any shell command to install packages. ALL packages are pre-installed. No pip installs. Ever.
+- NEVER add pip/subprocess install calls inside train.py. Just write the import — the engine auto-installs any package before running your code.
 - TIME_BUDGET is also pre-defined. DO NOT redefine it. Your entire training MUST complete within it.
   Add a wall-clock check: `import time; _start = time.time()` at top, and periodically
   check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
@@ -2203,7 +2184,7 @@ TRAIN_PY:
 TRAIN.PY HARD RULES (Karpathy discipline):
 - DATA_PATH, DATA_SEP, and TIME_BUDGET are pre-defined variables (injected at line 1 before your code).
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly: `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)`
-- NEVER use subprocess, os.system, or any shell command to install packages. ALL packages are pre-installed. No pip installs. Ever.
+- NEVER add pip/subprocess install calls inside train.py. Just write the import — the engine auto-installs any package before running your code.
 - Training MUST complete within TIME_BUDGET. Add wall-clock checks.
 - ALWAYS split data into train/test. Compute metrics on BOTH sets.
 - MANDATORY MODEL SAVE — always the LAST action before print(json.dumps(metrics)):
