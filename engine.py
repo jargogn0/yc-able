@@ -1191,10 +1191,12 @@ def _smart_default_metric(task, hint=""):
 
 # ── INFER OBJECTIVE ────────────────────────────────────────────
 def infer_objective(profile, hint="", domain_analysis="", previous_objective=None):
-    # Strip machine-injected context from the user's actual words so the LLM sees a clean correction
-    _competition_ctx = re.search(r'\[COMPETITION CONTEXT[^\]]{0,2000}\]', hint or '', re.DOTALL)
-    _competition_ctx_text = _competition_ctx.group(0) if _competition_ctx else ""
-    _personal_hint = re.sub(r'\[COMPETITION CONTEXT[^\]]{0,2000}\]', '', hint or '', flags=re.DOTALL).strip()
+    # Strip machine-injected competition context from the user's actual words.
+    # Competition context is ALWAYS appended at the end of hint by the frontend,
+    # so we strip from [COMPETITION CONTEXT: to end-of-string — no bracket-counting needed.
+    _comp_match = re.search(r'\s*\[COMPETITION(?:\s+CONTEXT)?:', hint or '', re.DOTALL)
+    _competition_ctx_text = hint[_comp_match.start():] if _comp_match else ""
+    _personal_hint = (hint[:_comp_match.start()] if _comp_match else (hint or '')).strip()
     _personal_hint = re.sub(r'\s+', ' ', _personal_hint).strip()
 
     # Build context-aware hint block so the LLM can interpret corrections correctly
@@ -1234,25 +1236,26 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
     else:
         _hint_block = ""
 
-    # --- Hard-override: parse hint for an explicit target column name ---
+    # --- Hard-override: parse user's personal hint for an explicit target column name ---
+    # Use _personal_hint (competition context stripped) so we match user words only,
+    # not machine-injected submission column names like 'TargetMBE', 'TargetRMSE'.
     _forced_target = None
-    if hint:
+    _search_hint = _personal_hint or hint or ""
+    if _search_hint:
         _headers_lo = {h.lower(): h for h in profile["headers"]}
         # Pattern 1: TARGET="Churn" or TARGET='Churn' (from Kaggle context injection)
-        _m = re.search(r'TARGET\s*=\s*["\']?(\w+)["\']?', hint, re.IGNORECASE)
+        _m = re.search(r'TARGET\s*=\s*["\']?(\w+)["\']?', _search_hint, re.IGNORECASE)
         if _m and _m.group(1).lower() in _headers_lo:
             _forced_target = _headers_lo[_m.group(1).lower()]
         if not _forced_target:
-            # Pattern 2: scan ALL words in the hint for any column name match.
-            # If multiple columns are mentioned, prefer the one that is a known
-            # target-like name or appears after a predict/target keyword.
+            # Pattern 2: scan user's words for any column name match.
             _TARGET_NAMES = {
                 "churn","target","label","class","y","outcome","default","fraud",
                 "survived","response","converted","clicked","purchased","defaulted",
                 "attrition","cancelled","retained","approved","spam","toxic",
                 "sentiment","result","status","success",
             }
-            _hint_words = re.findall(r'\w+', hint.lower())
+            _hint_words = re.findall(r'\w+', _search_hint.lower())
             # First pass: exact column name mentioned anywhere in hint
             _mentioned = [_headers_lo[w] for w in _hint_words if w in _headers_lo]
             # Second pass (fuzzy): if no exact match, try substring matching
