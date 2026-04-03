@@ -3568,9 +3568,10 @@ async function runDiscover(hint){
     // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
     const _prevObj = S.discovery?.objective || null;
     const _effectiveHint=((hint||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
+    const _extraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:d.csv})):undefined;
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
-      :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     S._discoverActive=false;
     const dj=await dr.json();typing(false);
@@ -3758,9 +3759,10 @@ async function launchRun(){
   const effectiveBudget=isGuest?Math.min(S.budget,_serverConfig.guest_max_budget||4):S.budget;
   try{
     const _runHint=((obj||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
+    const _runExtraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:d.csv})):undefined;
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();

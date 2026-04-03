@@ -1309,6 +1309,7 @@ class RunRequest(BaseModel):
     hint: str = ""
     budget: int = 6
     reliability_mode: str = "balanced"
+    extra_files: list[dict] = []  # [{name, csv}] — additional datasets uploaded alongside primary
     api_key: str = ""
     provider: str = "claude"
     model: str = ""        # optional model override (e.g. "gpt-4o-mini", "claude-opus-4-6")
@@ -1324,6 +1325,7 @@ class DiscoverRequest(BaseModel):
     dataset_id: str = ""   # pre-uploaded media dataset
     hint: str = ""
     previous_objective: dict | None = None  # what the agent was proposing before the user corrected it
+    extra_files: list[dict] = []  # [{name, csv}] — additional datasets uploaded alongside primary
     api_key: str = ""
     provider: str = "claude"
     model: str = ""        # optional model override
@@ -2267,6 +2269,28 @@ async def start_run(req: RunRequest, request: Request):
         csv_path = ws / req.filename
         csv_path.write_text(req.csv, encoding="utf-8")
 
+    # Write extra uploaded datasets to workspace so train.py can access them
+    _extra_file_descs = []
+    for _ef in (req.extra_files or []):
+        _ef_name = (_ef.get("name") or "extra.csv").replace("/", "_").replace("..", "_")
+        _ef_csv = _ef.get("csv") or ""
+        if not _ef_csv or not _ef_name:
+            continue
+        try:
+            _ef_path = ws / _ef_name
+            _ef_path.write_text(_ef_csv, encoding="utf-8")
+            import pandas as _pd
+            _edf = _pd.read_csv(_ef_path, nrows=3)
+            _enrows = max(0, sum(1 for _ in open(_ef_path)) - 1)
+            _extra_file_descs.append(f"{_ef_name} ({_enrows:,} rows, cols: {list(_edf.columns)})")
+        except Exception:
+            _extra_file_descs.append(_ef_name)
+    if _extra_file_descs:
+        _extra_ctx = (" [EXTRA DATASETS IN WORKSPACE: " + "; ".join(_extra_file_descs)
+                      + " — these files are in the same directory as the training data."
+                        " Use them for feature engineering or joining if relevant.]")
+        req.hint = ((req.hint or "") + _extra_ctx).strip()
+
     cancel_event = threading.Event()
     RUNS[run_id] = dict(
         id=run_id, owner_id=user["id"] if user else None,
@@ -2577,6 +2601,25 @@ async def discover(req: DiscoverRequest):
             csv_path.write_text(req.csv, encoding="utf-8")
             data_path = str(csv_path)
             profile = profile_dataset(data_path)
+
+        # Profile extra uploaded datasets and add to companion_profiles
+        for _ef in (req.extra_files or []):
+            _ef_name = (_ef.get("name") or "extra.csv").replace("/", "_").replace("..", "_")
+            _ef_csv = _ef.get("csv") or ""
+            if not _ef_csv or not _ef_name:
+                continue
+            try:
+                _ef_path = ws / _ef_name
+                _ef_path.write_text(_ef_csv, encoding="utf-8")
+                import pandas as _pd
+                _edf = _pd.read_csv(_ef_path, nrows=5)
+                _enrows = max(0, sum(1 for _ in open(_ef_path)) - 1)
+                _companion_profiles[_ef_name] = {
+                    "rows": _enrows, "cols": len(_edf.columns),
+                    "headers": list(_edf.columns), "role": "extra",
+                }
+            except Exception:
+                pass
 
         # Merge user hint with Kaggle context so the LLM sees both
         _effective_hint = ((req.hint or "") + _kaggle_context_hint).strip()
