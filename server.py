@@ -2086,11 +2086,15 @@ async def upload_media_dataset(file: UploadFile = File(...)):
             if f.is_file() and f.suffix.lower() in _TABULAR_EXTS and not f.name.startswith(".")
         ]
         if tabular_files:
-            # Prefer train.csv / train*.csv as primary; fall back to largest file
+            # Prefer train* as primary; explicitly deprioritize test/submission files
+            # Handles Kaggle (train.csv/test.csv/sample_submission.csv)
+            # and Zindi (Train.csv/Test.csv/SampleSubmission.csv) and similar platforms
+            import re as _re
             def _primary_rank(f):
                 n = f.name.lower()
-                if n == "train.csv": return 0
-                if n.startswith("train"): return 1
+                if _re.match(r'^train\.', n): return 0          # train.csv, Train.csv
+                if n.startswith("train"):     return 1          # train_v2.csv, train_data.csv
+                if _re.search(r'test|submission|sample', n): return 3  # never pick as primary
                 return 2
             tabular_files.sort(key=lambda f: (_primary_rank(f), -f.stat().st_size))
             primary = tabular_files[0]
@@ -2249,8 +2253,9 @@ async def start_run(req: RunRequest, request: Request):
             csv_path = ws / Path(media["primary"]).name
             # Append Kaggle context to user hint so engine detects competition automatically
             _all_names = [Path(f).name for f in media.get("all_files", [])]
-            _samp = next((Path(f) for f in media.get("all_files", []) if ("sample" in Path(f).name.lower() or "submission" in Path(f).name.lower()) and Path(f).exists()), None)
-            _test = next((Path(f) for f in media.get("all_files", []) if "test" in Path(f).name.lower() and Path(f).exists()), None)
+            _primary_name = Path(media["primary"]).name.lower()
+            _samp = next((Path(f) for f in media.get("all_files", []) if ("sample" in Path(f).name.lower() or "submission" in Path(f).name.lower()) and Path(f).name.lower() != _primary_name and Path(f).exists()), None)
+            _test = next((Path(f) for f in media.get("all_files", []) if "test" in Path(f).name.lower() and "submission" not in Path(f).name.lower() and Path(f).name.lower() != _primary_name and Path(f).exists()), None)
             if _test or _samp:
                 _kparts = [f"Files in workspace: {', '.join(_all_names)}."]
                 if _test:
@@ -2593,8 +2598,8 @@ async def discover(req: DiscoverRequest):
                 # Build Kaggle context hint from companion files
                 all_file_paths = [Path(f) for f in media.get("all_files", [])]
                 all_file_names = [p.name for p in all_file_paths]
-                _test_f  = next((p for p in all_file_paths if "test" in p.name.lower() and p.exists()), None)
-                _samp_f  = next((p for p in all_file_paths if ("sample" in p.name.lower() or "submission" in p.name.lower()) and p.exists()), None)
+                _test_f  = next((p for p in all_file_paths if "test" in p.name.lower() and "submission" not in p.name.lower() and p != primary_p and p.exists()), None)
+                _samp_f  = next((p for p in all_file_paths if ("sample" in p.name.lower() or "submission" in p.name.lower()) and p != primary_p and p.exists()), None)
                 # Quick-profile companion files (headers + row count only)
                 _companion_profiles = {}
                 for _fp in all_file_paths:

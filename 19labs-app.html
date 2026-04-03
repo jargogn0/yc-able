@@ -3267,16 +3267,22 @@ async function handleMultipleFiles(fileList){
   if(files.length===1){handleFile(files[0]);return;}
 
   const lo=f=>f.name.toLowerCase();
-  // Detect roles by filename
-  const isTrainF=f=>/\btrain\b/.test(lo(f))||/^train\./i.test(f.name);
-  const isTestF =f=>/\btest\b/.test(lo(f))||/^test\./i.test(f.name);
-  const isSubF  =f=>/sample.?sub|submission/i.test(lo(f));
+  // Detect roles — robust patterns for Kaggle, Zindi, and other competition platforms
+  // Train: starts with "train" then separator, e.g. train.csv, Train.csv, train_v2.csv
+  const isTrainF=f=>/^train[._\-\s]|^train\.[a-z]/i.test(f.name)||lo(f)==='train.csv';
+  // Test: starts with "test" then separator, e.g. test.csv, Test.csv, test_final.csv
+  const isTestF =f=>/^test[._\-\s]|^test\.[a-z]/i.test(f.name)||lo(f)==='test.csv';
+  // Submission template: SampleSubmission.csv, sample_submission.csv, SubmissionFormat.csv
+  const isSubF  =f=>/sample|submission/i.test(f.name)&&!isTrainF(f)&&!isTestF(f);
 
   let trainFile=files.find(isTrainF);
   let testFile =files.find(f=>isTestF(f)&&f!==trainFile);
   let subFile  =files.find(f=>isSubF(f)&&f!==trainFile&&f!==testFile);
-  // Fallback: largest file = train
-  if(!trainFile)trainFile=files.reduce((a,b)=>a.size>b.size?a:b);
+  // Fallback: largest file that isn't test/submission = train
+  if(!trainFile){
+    const candidates=files.filter(f=>!isTestF(f)&&!isSubF(f));
+    trainFile=(candidates.length?candidates:files).reduce((a,b)=>a.size>b.size?a:b);
+  }
   const others=files.filter(f=>f!==trainFile&&f!==testFile&&f!==subFile);
 
   // Reset extras from previous session
