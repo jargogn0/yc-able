@@ -326,11 +326,15 @@ input[type=file]{display:none}
 
 /* Empty */
 .ws-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:40px}
-.we-n{display:flex;align-items:center;justify-content:center;opacity:.18;margin-bottom:4px}
-.we-n img{width:64px;height:64px;filter:drop-shadow(0 0 16px rgba(168,85,247,.6))}
+.we-n{display:flex;align-items:center;justify-content:center;opacity:.32;margin-bottom:4px}
+.we-n img{width:64px;height:64px;filter:drop-shadow(0 0 20px rgba(168,85,247,.55));animation:cwIconFloat 3s ease-in-out infinite}
 .we-t{font-size:15px;font-weight:600;color:var(--text-2)}
 .we-s{font-size:13px;color:var(--text-3);max-width:340px;line-height:1.7}
-.we-sample{margin-top:4px;background:none;border:1px solid var(--border-2);color:var(--text-3);font-size:12px;font-family:var(--sans);padding:6px 14px;border-radius:var(--r);cursor:pointer;transition:all var(--t)}.we-sample:hover{border-color:var(--border);color:var(--text-2);background:var(--surface-2)}
+.we-steps{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center}
+.we-step{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-3);padding:6px 11px;border:1px solid var(--border);border-radius:7px;background:var(--surface)}
+.we-step-n{width:17px;height:17px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.we-step-arrow{color:var(--border-2);font-size:13px;opacity:.6}
+.we-sample{margin-top:6px;background:var(--accent-soft);border:1px solid rgba(59,130,246,.25);color:var(--accent);font-size:12px;font-weight:600;font-family:var(--sans);padding:7px 18px;border-radius:var(--r);cursor:pointer;transition:all var(--t);letter-spacing:.1px}.we-sample:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 
 /* Data preview table */
 .dp{padding:16px;overflow-x:auto;max-width:100%}
@@ -532,9 +536,9 @@ input[type=file]{display:none}
 .conn-close:hover{background:var(--surface);color:var(--text)}
 .conn-status{font-size:11px;color:var(--text-3)}
 /* Sidebar connect button */
-.conn-btn{display:flex;align-items:center;gap:7px;padding:7px 14px;font-size:11px;font-weight:600;color:var(--text-3);cursor:pointer;background:none;border:none;font-family:var(--sans);width:100%;transition:all .15s;letter-spacing:.1px}
-.conn-btn:hover{color:var(--accent);background:rgba(99,102,241,.06)}
-.conn-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;flex-shrink:0}
+.conn-btn{display:flex;align-items:center;gap:8px;margin:4px 10px 2px;padding:7px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);font-size:11px;font-weight:500;cursor:pointer;transition:all var(--t);width:calc(100% - 20px);text-align:left;font-family:var(--sans);box-sizing:border-box}
+.conn-btn:hover{border-color:var(--border-2);background:var(--surface-3);color:var(--text)}
+.conn-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;flex-shrink:0;opacity:.6}
 
 /* ── DASHBOARD ── */
 .dash{padding:20px 24px 32px;min-height:100%;background:var(--bg);box-sizing:border-box}
@@ -628,7 +632,7 @@ input[type=file]{display:none}
 @keyframes cwIconIn{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
 .cw-headline-wrap{height:32px;overflow:hidden;margin-bottom:8px;position:relative;animation:cwFadeUp .5s .1s ease both}
 @keyframes cwFadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-.cw-headline{font-size:17px;font-weight:700;line-height:32px;white-space:nowrap;transition:all .4s cubic-bezier(.4,0,.2,1)}
+.cw-headline{font-size:19px;font-weight:700;line-height:32px;white-space:nowrap;transition:all .4s cubic-bezier(.4,0,.2,1)}
 .cw-headline.out{opacity:0;transform:translateY(-20px)}
 .cw-headline.in{opacity:0;transform:translateY(20px)}
 .cw-sub{font-size:12px;color:var(--text-3);max-width:270px;line-height:1.65;margin-bottom:16px;animation:cwFadeUp .5s .25s ease both}
@@ -643,10 +647,11 @@ input[type=file]{display:none}
 .cw-stat-lbl{font-size:10px;color:#3f3f46;font-weight:500;text-transform:uppercase;letter-spacing:.6px}
 .cw-stat-sep{width:1px;background:var(--border);align-self:stretch;margin:2px 0}
 .cw-domains{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:12px;animation:cwFadeUp .5s .4s ease both}
-.cw-domains-label{font-size:11px;color:var(--text-3);opacity:.55;letter-spacing:.4px;text-transform:uppercase;font-weight:500}
-.cw-domains-pills{display:grid;grid-template-columns:1fr 1fr;gap:7px;width:280px}
-.cw-domain{font-size:12px;font-weight:500;color:var(--text-2);padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);cursor:pointer;text-align:center;transition:background .15s,color .15s,border-color .15s;animation:cwSlideIn .35s ease both;line-height:1.3}
-.cw-domain:hover{background:rgba(139,92,246,.15);color:var(--accent);border-color:var(--accent)}
+.cw-domains-label{font-size:9px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#3f3f46;text-align:center;margin-bottom:2px}
+.cw-domains-pills{display:grid;grid-template-columns:1fr 1fr;gap:7px;width:290px}
+.cw-domain{font-size:12px;font-weight:500;color:var(--text-2);padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);cursor:pointer;text-align:left;transition:background .15s,color .15s,border-color .15s;animation:cwSlideIn .35s ease both;line-height:1.3;display:flex;align-items:center;gap:8px}
+.cw-domain:hover{background:rgba(139,92,246,.12);color:var(--text);border-color:rgba(167,139,250,.35)}
+.cw-di{font-size:15px;flex-shrink:0;line-height:1}
 @keyframes cwSlideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 /* Composer */
@@ -655,8 +660,8 @@ input[type=file]{display:none}
 .comp-in{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--rl);padding:10px 14px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;resize:none;min-height:42px;max-height:120px;line-height:1.5;transition:border-color var(--t)}
 .comp-in:focus{border-color:var(--accent)}
 .comp-in::placeholder{color:var(--text-3)}
-.comp-send{width:42px;height:42px;border-radius:var(--rl);border:none;background:var(--accent);color:#fff;font-size:16px;cursor:pointer;transition:all var(--t);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.comp-send:hover{background:var(--accent-2)}
+.comp-send{width:42px;height:42px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:16px;cursor:pointer;transition:all var(--t);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.comp-send:hover{background:var(--accent-2);transform:scale(1.04)}
 .comp-send svg{width:18px;height:18px;fill:currentColor}
 
 /* Inline key prompt */
@@ -783,6 +788,11 @@ input[type=file]{display:none}
 .rh-btn{background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px 5px;border-radius:4px;font-size:11px;line-height:1;transition:all 100ms}
 .rh-btn:hover{background:rgba(255,255,255,.08);color:var(--text)}
 .rh-btn.del:hover{color:#f87171}
+.rh-group{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#3f3f46;padding:10px 14px 3px;display:flex;align-items:center;gap:6px}
+.rh-group::after{content:'';flex:1;height:1px;background:#1c1c1f}
+.rh-meta{display:flex;align-items:center;gap:5px;margin-top:1px}
+.rh-score{font-family:var(--mono);font-size:9px;font-weight:600;color:#34d399;padding:1px 5px;background:rgba(52,211,153,.08);border-radius:3px;white-space:nowrap}
+.rh-score.r{color:var(--red);background:var(--red-soft)}
 
 /* ── TOAST NOTIFICATIONS ── */
 .toast-stack{position:fixed;bottom:16px;right:16px;z-index:3000;display:flex;flex-direction:column-reverse;gap:6px;pointer-events:none;max-width:380px}
@@ -832,18 +842,24 @@ input[type=file]{display:none}
 [data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);padding:4px 10px;border-radius:6px;font-size:10px;font-weight:500;white-space:nowrap;background:var(--surface-3);color:var(--text-2);border:1px solid var(--border);pointer-events:none;z-index:4000;animation:tipIn .12s ease}
 @keyframes tipIn{from{opacity:0;transform:translateX(-50%) translateY(2px)}to{opacity:1;transform:translateX(-50%)}}
 
+/* ── SCROLLBARS ── */
+.side-scroll::-webkit-scrollbar,.chat-msgs::-webkit-scrollbar,.ws-body::-webkit-scrollbar{width:4px}
+.side-scroll::-webkit-scrollbar-track,.chat-msgs::-webkit-scrollbar-track,.ws-body::-webkit-scrollbar-track{background:transparent}
+.side-scroll::-webkit-scrollbar-thumb,.chat-msgs::-webkit-scrollbar-thumb,.ws-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.side-scroll::-webkit-scrollbar-thumb:hover,.chat-msgs::-webkit-scrollbar-thumb:hover{background:var(--border-2)}
+
 /* ── COPY BUTTON ── */
 .cp-btn{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface-2);color:var(--text-3);font-size:9px;font-family:var(--mono);cursor:pointer;transition:all var(--t);vertical-align:middle;margin-left:4px}
 .cp-btn:hover{color:var(--text);border-color:var(--accent);background:var(--accent-soft)}
 .cp-btn.copied{color:var(--accent);border-color:rgba(59,130,246,.3)}
 
 /* ── URL CONNECTOR ── */
-.url-row{display:flex;gap:5px;margin:4px 10px 2px;align-items:center}
-.url-in{flex:1;padding:6px 9px;background:transparent;border:1px solid #1e1e22;border-radius:6px;color:var(--text-2);font-size:11px;outline:none;transition:border-color 150ms}
-.url-in:focus{border-color:#3f3f46}
-.url-in::placeholder{color:#2d2d32}
-.url-btn{padding:6px 11px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid #1e1e22;background:transparent;color:#52525b;cursor:pointer;transition:all 150ms;white-space:nowrap;letter-spacing:.2px}
-.url-btn:hover{border-color:#3f3f46;color:var(--text-2)}
+.url-row{display:flex;gap:4px;margin:4px 10px 2px;align-items:center}
+.url-in{flex:1;padding:6px 9px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);font-size:11px;outline:none;transition:border-color 150ms;font-family:var(--sans)}
+.url-in:focus{border-color:var(--border-2)}
+.url-in::placeholder{color:#3a3a42}
+.url-btn{padding:6px 11px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-3);cursor:pointer;transition:all 150ms;white-space:nowrap;letter-spacing:.1px;font-family:var(--sans)}
+.url-btn:hover{border-color:var(--accent);background:var(--accent);color:#fff}
 
 /* ── DATA TRANSFORMS ── */
 .dt-bar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
@@ -1453,7 +1469,13 @@ input[type=file]{display:none}
       <div class="ws-empty" id="ws-empty">
         <div class="we-n"><img src="/ghost.svg" alt="19Labs"></div>
         <div class="we-t">Drop a dataset to begin</div>
-        <div class="we-s">Upload a dataset (CSV, Excel, JSON), describe your goal, and the AI handles everything — profiling, model selection, training, evaluation, and deployment.</div>
+        <div class="we-steps">
+          <div class="we-step"><span class="we-step-n">1</span>Upload your CSV</div>
+          <div class="we-step-arrow">→</div>
+          <div class="we-step"><span class="we-step-n">2</span>Describe your goal</div>
+          <div class="we-step-arrow">→</div>
+          <div class="we-step"><span class="we-step-n">3</span>Get a trained model</div>
+        </div>
         <button class="we-sample" onclick="loadSampleDataset()">Try the Titanic dataset →</button>
       </div>
       <div id="p-data" class="dp" style="display:none"></div>
@@ -1512,12 +1534,12 @@ input[type=file]{display:none}
         <div class="cw-domains">
           <div class="cw-domains-label">For example, say</div>
           <div class="cw-domains-pills">
-            <span class="cw-domain" style="animation-delay:.40s" onclick="cwSuggest('I want to forecast sales & revenue')">forecast sales &amp; revenue</span>
-            <span class="cw-domain" style="animation-delay:.46s" onclick="cwSuggest('I want to predict customer churn')">predict customer churn</span>
-            <span class="cw-domain" style="animation-delay:.52s" onclick="cwSuggest('I want to detect fraud & anomalies')">detect fraud &amp; anomalies</span>
-            <span class="cw-domain" style="animation-delay:.58s" onclick="cwSuggest('I want to predict flood & weather')">predict flood &amp; weather</span>
-            <span class="cw-domain" style="animation-delay:.64s" onclick="cwSuggest('I want to optimize supply chain')">optimize supply chain</span>
-            <span class="cw-domain" style="animation-delay:.70s" onclick="cwSuggest('I want to classify medical outcomes')">classify medical outcomes</span>
+            <span class="cw-domain" style="animation-delay:.40s" onclick="cwSuggest('I want to forecast sales & revenue')"><span class="cw-di">📈</span>forecast sales &amp; revenue</span>
+            <span class="cw-domain" style="animation-delay:.46s" onclick="cwSuggest('I want to predict customer churn')"><span class="cw-di">📉</span>predict customer churn</span>
+            <span class="cw-domain" style="animation-delay:.52s" onclick="cwSuggest('I want to detect fraud & anomalies')"><span class="cw-di">🔍</span>detect fraud &amp; anomalies</span>
+            <span class="cw-domain" style="animation-delay:.58s" onclick="cwSuggest('I want to predict flood & weather')"><span class="cw-di">🌦</span>predict flood &amp; weather</span>
+            <span class="cw-domain" style="animation-delay:.64s" onclick="cwSuggest('I want to optimize supply chain')"><span class="cw-di">⚙️</span>optimize supply chain</span>
+            <span class="cw-domain" style="animation-delay:.70s" onclick="cwSuggest('I want to classify medical outcomes')"><span class="cw-di">🏥</span>classify medical outcomes</span>
           </div>
         </div>
       </div>
@@ -2036,9 +2058,18 @@ async function _restoreRunHistory(){
       (d.runs||[]).forEach(run=>{
         const label=run.filename||(run.best_model?`${run.best_model}`:'Run');
         const status=run.status==='done'?'done':run.status==='error'?'error':'done';
+        const _best=run.best_metric_val!=null&&run.best_metric_name
+          ?{val:run.best_metric_val,name:run.best_metric_name}:null;
         const existing=runHistory.find(rh=>rh.id===run.id);
-        if(existing){existing.status=status;if(label&&label!==run.id)existing.label=label;}
-        else if(_authUser){runHistory.push({id:run.id,status,label,_owned:true});}
+        if(existing){
+          existing.status=status;
+          if(label&&label!==run.id)existing.label=label;
+          if(_best)existing.best=_best;
+          if(run.started&&!existing.started)existing.started=run.started;
+        } else if(_authUser){
+          runHistory.push({id:run.id,status,label,_owned:true,
+            best:_best,started:run.started||null});
+        }
       });
       // Only purge stale local entries when the server returns a non-empty list
       if(serverIds.size>0){
@@ -5094,13 +5125,30 @@ const _RH_KEY='19labs_run_history';
 function _rhLoad(){try{return JSON.parse(localStorage.getItem(_RH_KEY)||'[]')}catch(_){return[]}}
 function _rhSave(){try{localStorage.setItem(_RH_KEY,JSON.stringify(runHistory.slice(0,30)))}catch(_){}}
 const runHistory=_rhLoad();
-function addRunHistory(id,status,label){
+function addRunHistory(id,status,label,meta){
   const existing=runHistory.find(r=>r.id===id);
-  if(existing){existing.status=status;existing.label=label||existing.label}
-  else runHistory.unshift({id,status,label:label||id});
+  if(existing){
+    existing.status=status;
+    if(label)existing.label=label;
+    if(meta?.best)existing.best=meta.best;
+    if(meta?.started)existing.started=meta.started;
+  } else {
+    runHistory.unshift({id,status,label:label||id,ts:Date.now()/1000,
+      best:meta?.best||null,started:meta?.started||null});
+  }
   if(runHistory.length>30)runHistory.splice(30);
   _rhSave();
   renderRunHistory();
+}
+function _rhDateGroup(r){
+  const ts=r.started||(r.ts||0);
+  if(!ts)return'Older';
+  const d=new Date(ts*1000),now=new Date();
+  const diff=Math.floor((now-d)/86400000);
+  if(diff===0)return'Today';
+  if(diff===1)return'Yesterday';
+  if(diff<=7)return'Last 7 days';
+  return'Older';
 }
 function renderRunHistory(){
   const el=document.getElementById('run-history');
@@ -5108,8 +5156,23 @@ function renderRunHistory(){
   const isAuth=_authUser&&_authUser.id&&_authUser.id!=='local';
   if(runHistory.length){
     h+=`<div class="side-sec" style="display:flex;align-items:center;justify-content:space-between">Recent Runs<button onclick="newExperiment()" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;border:1px solid var(--border-2);background:var(--surface-2);color:var(--text-3);cursor:pointer;transition:all var(--t)" onmouseover="this.style.background='var(--accent)';this.style.color='#fff';this.style.borderColor='var(--accent)'" onmouseout="this.style.background='var(--surface-2)';this.style.color='var(--text-3)';this.style.borderColor='var(--border-2)'">+ New</button></div>`;
+    let lastGroup='';
     runHistory.slice(0,20).forEach(r=>{
       const dotCls=r.status==='done'?'done':r.status==='error'?'err':'run';
+      const group=_rhDateGroup(r);
+      if(group!==lastGroup){
+        h+=`<div class="rh-group">${group}</div>`;
+        lastGroup=group;
+      }
+      // Metric badge
+      let scoreBadge='';
+      if(r.best&&r.best.val!=null){
+        const isErr=r.status==='error';
+        const val=typeof r.best.val==='number'?r.best.val.toFixed(r.best.val<1?3:1):r.best.val;
+        const name=(r.best.name||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+        scoreBadge=`<span class="rh-score${isErr?' r':''}">${name} ${val}</span>`;
+      }
+      const shortId=r.id.slice(0,8);
       const actions=isAuth?`<div class="rh-actions">
         <button class="rh-btn" title="Rename" onclick="event.stopPropagation();rhRename('${r.id}')">✎</button>
         <button class="rh-btn del" title="Delete" onclick="event.stopPropagation();rhDelete('${r.id}')">✕</button>
@@ -5118,7 +5181,7 @@ function renderRunHistory(){
         <div class="rh-dot ${dotCls}"></div>
         <div style="flex:1;min-width:0">
           <div class="rh-label">${esc(r.label)}</div>
-          <div class="rh-id">${r.id}</div>
+          <div class="rh-meta">${scoreBadge}<span class="rh-id">${shortId}</span></div>
         </div>
         ${actions}
       </div>`;
