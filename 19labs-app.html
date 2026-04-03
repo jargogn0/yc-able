@@ -3258,8 +3258,63 @@ function _buildDataDashboardHTML(){
 const dz=document.getElementById('dz');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
-dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handleFile(f)});
-function onFile(e){const files=e.target.files;if(!files||!files.length)return;for(let i=0;i<files.length;i++)handleFile(files[i])}
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');if(e.dataTransfer.files.length)handleMultipleFiles(e.dataTransfer.files)});
+function onFile(e){const files=e.target.files;if(!files||!files.length)return;handleMultipleFiles(files);e.target.value='';}
+
+async function handleMultipleFiles(fileList){
+  const files=Array.from(fileList);
+  if(!files.length)return;
+  if(files.length===1){handleFile(files[0]);return;}
+
+  const lo=f=>f.name.toLowerCase();
+  // Detect roles by filename
+  const isTrainF=f=>/\btrain\b/.test(lo(f))||/^train\./i.test(f.name);
+  const isTestF =f=>/\btest\b/.test(lo(f))||/^test\./i.test(f.name);
+  const isSubF  =f=>/sample.?sub|submission/i.test(lo(f));
+
+  let trainFile=files.find(isTrainF);
+  let testFile =files.find(f=>isTestF(f)&&f!==trainFile);
+  let subFile  =files.find(f=>isSubF(f)&&f!==trainFile&&f!==testFile);
+  // Fallback: largest file = train
+  if(!trainFile)trainFile=files.reduce((a,b)=>a.size>b.size?a:b);
+  const others=files.filter(f=>f!==trainFile&&f!==testFile&&f!==subFile);
+
+  // Reset extras from previous session
+  _extraDatasets.length=0;
+
+  // Load primary (train) — skip autoDiscover until all files are ready
+  await handleFile(trainFile,null,{skipAnalyze:true});
+
+  // Load companions silently into _extraDatasets
+  const companions=[testFile,subFile,...others].filter(Boolean);
+  for(const cf of companions){
+    const cfText=await readF(cf);
+    _extraDatasets.push({name:cf.name,csv:cfText,size:cf.size||cfText.length});
+  }
+  updSide();
+
+  // Build competition context if we have a test file
+  if(testFile){
+    const allNames=[trainFile,testFile,subFile,...others].filter(Boolean).map(f=>f.name);
+    const parts=[`Workspace files: ${allNames.join(', ')}.`,`Train on ${trainFile.name}.`,
+                 `Generate predictions for ${testFile.name} (no target column — unlabelled holdout).`];
+    if(subFile){
+      const sub=_extraDatasets.find(d=>d.name===subFile.name);
+      const subCols=sub?.csv.split('\n')[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+      if(subCols?.length){
+        parts.push(`Output must match ${subFile.name} format: columns=${JSON.stringify(subCols)}. The last column is the target to predict. Save final predictions as submission.csv.`);
+      }
+    }
+    S.kaggleContext='[COMPETITION CONTEXT: '+parts.join(' ')+']';
+    const fileDesc=`<strong>${esc(trainFile.name)}</strong> + <strong>${esc(testFile.name)}</strong>`+(subFile?` + <strong>${esc(subFile.name)}</strong>`:'');
+    chat('sys',`Detected competition setup: ${fileDesc}.<br>I'll train on <strong>${esc(trainFile.name)}</strong>, predict <strong>${esc(testFile.name)}</strong>${subFile?`, and format output as <strong>${esc(subFile.name)}</strong>`:''}.`);
+  } else {
+    const names=companions.map(f=>`<strong>${esc(f.name)}</strong>`).join(', ');
+    chat('sys',`Loaded ${files.length} files — primary: <strong>${esc(trainFile.name)}</strong>, also: ${names}.`);
+  }
+
+  autoDiscover();
+}
 
 // Test set drop zone
 const dzTest=document.getElementById('dz-test');
@@ -6786,14 +6841,16 @@ async function joinDatasets(){
 // ═══════════════════════════════════════════
 // FILE FORMAT SUPPORT (Excel, JSON)
 // ═══════════════════════════════════════════
-async function handleFile(f,preloadedText){
+async function handleFile(f,preloadedText,_opts={}){
   // If we already have a primary dataset and this is additional, add to extras
-  if(S.csv&&S.file&&S.file.name!==f.name){
+  if(S.csv&&S.file&&S.file.name!==f.name&&!_opts.asPrimary){
     const extraText=preloadedText||await readF(f);
     _extraDatasets.push({name:f.name,csv:extraText,size:f.size||extraText.length});
     updateMultiDSPanel();updSide();
-    toast(`Added ${f.name} as extra dataset — click "Join" to merge`,'ok',4000);
-    chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset. Click <strong>Join All Datasets</strong> in the sidebar to merge them.`);
+    if(!_opts.silent){
+      toast(`Added ${f.name} as extra dataset`,'ok',3000);
+      chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset.`);
+    }
     return;
   }
   S.file=f;S.dataset_id=null;S.media_info=null;S.allFiles=null;S.previewFile=null;S.kaggleContext=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
@@ -6870,7 +6927,7 @@ async function handleFile(f,preloadedText){
         toast(`Loaded ${info.num_files} files from ZIP`,'ok',3000);
         const fileList=info.all_files.map(n=>`<code>${esc(n)}</code>`).join(', ');
         chat('sys',`Loaded <strong>${info.num_files} files</strong> from ZIP: ${fileList}. Training on <strong>${esc(info.filename)}</strong>.`);
-        autoDiscover();
+        if(!_opts.skipAnalyze)autoDiscover();
         return;
       }
 
@@ -6884,7 +6941,7 @@ async function handleFile(f,preloadedText){
       document.getElementById('p-data').style.display='';
       document.getElementById('ws-empty').style.display='none';
       stab('data');
-      autoDiscover();
+      if(!_opts.skipAnalyze)autoDiscover();
     }catch(e){toast('Upload failed: '+e.message,'err');}
     return;
   }
@@ -6935,7 +6992,7 @@ async function handleFile(f,preloadedText){
 
   // On mobile: briefly show data preview then switch to chat for agent response
   if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),800);}
-  autoDiscover();
+  if(!_opts.skipAnalyze)autoDiscover();
 }
 
 // ═══════════════════════════════════════════
