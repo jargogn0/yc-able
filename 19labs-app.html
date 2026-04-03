@@ -5575,26 +5575,67 @@ function showPredictPanel(){
   }
   const target=S.best?.target||S.discovery?.objective?.target||S.objective?.target||'target';
   const model=S.best?.model||'Model';
-  el.innerHTML=`<div class="predict-panel">
-<h3>Predict</h3>
-<p style="margin:0 0 16px;font-size:12px;color:var(--text-2)"><strong>${esc(model)}</strong> → predicting <code>${esc(target)}</code></p>
+  const task=S.discovery?.objective?.task||S.discovery?.discovery?.task||'';
+  const metric=S.best?.metric_name||S.discovery?.objective?.metric||'';
+  const metricVal=S.best?.metric_val;
+  const metricStr=metricVal!=null?` · ${metric}=${typeof metricVal==='number'?metricVal.toFixed(4):metricVal}`:'';
+  // Input columns = all training cols except target
+  const inputCols=(S.cols||[]).filter(c=>c!==target);
+  const isClassif=/classif|BinaryClassif|MultiClass/i.test(task);
+  const isRegress=/regress/i.test(task);
+  const isTS=/timeseries|forecast/i.test(task);
+  const outputDesc=isClassif?'0 or 1 (binary class label)':isRegress?'continuous numeric value':isTS?'forecasted values':'predicted value';
+  // ID column detection
+  const idCol=inputCols.find(c=>c.toLowerCase().match(/^(id|passengerid|customer_id|customerid|userid|user_id|rowid|index)$/));
+  const featCols=idCol?inputCols.filter(c=>c!==idCol):inputCols;
+  const csvHeader=[idCol||'id',target].join(',');
 
-<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
-  <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text-1)">Bulk CSV prediction</div>
-  <p style="font-size:11px;color:var(--text-3);margin:0 0 10px">Upload test.csv — model predicts every row and returns a downloadable submission.csv</p>
+  el.innerHTML=`<div class="predict-panel">
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">
+    <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Model</div>
+    <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:#f0f0f0">${esc(model)}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-top:2px">${esc(task||'ML model')}${metricStr}</div>
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">
+    <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Output</div>
+    <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:#818cf8">${esc(target)}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-top:2px">${outputDesc}</div>
+  </div>
+</div>
+
+<div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;margin-bottom:16px">
+  <div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Expected input schema</div>
+  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+    ${idCol?`<span style="background:#161b22;border:1px solid #30363d;border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);color:#e6edf3">${esc(idCol)} <span style="color:#7d8590">(id)</span></span>`:''}
+    ${featCols.slice(0,20).map(c=>`<span style="background:#161b22;border:1px solid #30363d;border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);color:#e6edf3">${esc(c)}</span>`).join('')}
+    ${featCols.length>20?`<span style="font-size:10px;color:#7d8590">+${featCols.length-20} more</span>`:''}
+  </div>
+  <div style="font-size:10px;color:#7d8590">Output columns: <span style="font-family:var(--mono);color:#a5b4fc">${esc(csvHeader)}</span></div>
+</div>
+
+<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px">
+  <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text-1)">Bulk CSV Prediction</div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">Drop your test set — returns a ready-to-submit <code>${esc(csvHeader)}</code> CSV</div>
   <input type="file" id="predict-file-input" accept=".csv" style="display:none" onchange="uploadAndPredict()">
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="abtn p" onclick="document.getElementById('predict-file-input').click()">Upload CSV file</button>
+    <button class="abtn p" onclick="document.getElementById('predict-file-input').click()">Upload test CSV</button>
     <span id="predict-file-status" style="font-size:11px;color:var(--text-3)"></span>
   </div>
 </div>
 
 <div style="border:1px solid var(--border);border-radius:8px;padding:16px">
-  <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text-1)">Single / small batch</div>
-  <textarea class="predict-textarea" id="predict-input" placeholder="col1,col2,col3&#10;1.0,category_a,5&#10;2.5,category_b,8&#10;&#10;OR paste JSON:&#10;[{&quot;col1&quot;: 1.0, &quot;col2&quot;: &quot;category_a&quot;}]"></textarea>
-  <div class="predict-actions"><button class="abtn p" onclick="runPrediction()">Predict</button><button class="abtn" onclick="loadSampleForPredict()">Load sample</button><span id="predict-status" style="font-size:11px;color:var(--text-3)"></span></div>
+  <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text-1)">Single row / paste</div>
+  <textarea class="predict-textarea" id="predict-input" placeholder="${inputCols.slice(0,5).join(',')}&#10;(paste values here — CSV or JSON)"></textarea>
+  <div class="predict-actions">
+    <button class="abtn p" onclick="runPrediction()">Predict</button>
+    <button class="abtn" onclick="loadSampleForPredict()">Load sample row</button>
+    <span id="predict-status" style="font-size:11px;color:var(--text-3)"></span>
+  </div>
   <div class="predict-result" id="predict-result"></div>
 </div>
+
 </div>`;
 }
 

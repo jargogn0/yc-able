@@ -1355,13 +1355,10 @@ id_col = next((c for c in df.columns if c.lower() in ('id','customerid','custome
 id_vals = df[id_col].tolist() if id_col else list(range(len(df)))
 
 # Load training CSV to get exact OHE column list used during training
-_train_feat_cols = None
-if train_csv_path:
-    try:
-        _tdf = pd.read_csv(train_csv_path)
-        _tdf = _tdf.drop(columns=[c for c in [target] if c and c in _tdf.columns])
-        _train_feat_cols = list(pd.get_dummies(_tdf.fillna(0)).columns)
-    except Exception: pass
+# NOTE: we do NOT use this as ground-truth anymore — the LLM may have dropped
+# many columns (PassengerId, Name, Ticket, Cabin etc.) before get_dummies.
+# feature_cols.pkl (saved by guardrail) is the only reliable source.
+_train_feat_cols = None  # kept as last-resort fallback only
 
 def encode(f):
     from sklearn.preprocessing import LabelEncoder
@@ -1412,10 +1409,19 @@ def align_features(f, model):
         return encode(f)
 
 def safe_predict(model, f):
-    # Try multiple feature representations until one works.
-    for prep in [lambda x: x, encode, lambda x: align_features(x, model)]:
+    # Try alignment first (feature_cols.pkl → model.feature_names_in_ → fallbacks).
+    # Raw features last — only works if test set happens to have exact same columns.
+    for prep in [lambda x: align_features(x, model), encode, lambda x: x]:
         try:
             result = model.predict(prep(f))
+            # Cast binary classification floats to integers (0.0→0, 1.0→1)
+            # Kaggle submissions and most enterprise use cases expect clean integers
+            import numpy as _np
+            if hasattr(result, '__len__') and len(result):
+                _r = _np.array(result)
+                _uniq = set(_np.unique(_r.round(0)))
+                if _uniq <= {{0.0, 1.0}} and _r.dtype.kind == 'f':
+                    result = _r.astype(int)
             return result
         except Exception:
             continue
