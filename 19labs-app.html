@@ -3324,9 +3324,13 @@ async function handleMultipleFiles(fileList){
                  `Generate predictions for ${testFile.name} (no target column — unlabelled holdout).`];
     if(subFile){
       const sub=_extraDatasets.find(d=>d.name===subFile.name);
-      const subCols=sub?.csv.split('\n')[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
-      if(subCols?.length){
-        parts.push(`Output must match ${subFile.name} format: columns=${JSON.stringify(subCols)}. The last column is the target to predict. Save final predictions as submission.csv.`);
+      const subCols=sub?.csv.split('\n')[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''))||[];
+      if(subCols.length){
+        // Separate ID-like columns (identifiers) from actual prediction targets
+        const _idLike=subCols.filter(c=>/^id$/i.test(c)||/_id$/i.test(c)||/^row_?id$/i.test(c));
+        const _predCols=subCols.filter(c=>!_idLike.includes(c));
+        const _colDesc=_predCols.length?`Columns to predict (non-ID): ${JSON.stringify(_predCols)}.`:`Prediction columns: ${JSON.stringify(subCols)}.`;
+        parts.push(`Output must match ${subFile.name} format: all columns=${JSON.stringify(subCols)}. ${_colDesc} IMPORTANT: '${_idLike[0]||'ID'}' is a row/station identifier — NEVER use it as the training target. Find the corresponding measurement column in ${trainFile.name} (e.g. radiation, price, value, target). Save as submission.csv.`);
       }
     }
     S.kaggleContext='[COMPETITION CONTEXT: '+parts.join(' ')+']';
