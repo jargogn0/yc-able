@@ -653,10 +653,10 @@ def profile_dataset(csv_path):
             return True
         return False
 
-    # Categorical columns that look like identifiers/grouping keys, not targets
-    _IDENTIFIER_SUFFIXES = ("_name", "_code", "_key", "_type", "_id", "_num", "_no", "_number")
-    _IDENTIFIER_EXACT = {"name", "id", "code", "station", "country", "region", "city", "state",
-                         "location", "site", "source", "category_id", "type_id", "group_id"}
+    # Categorical columns with structural identifier suffixes are grouping keys, not targets.
+    # We only block structural patterns — not domain-specific names — to stay general.
+    _IDENTIFIER_SUFFIXES = ("_name", "_code", "_key", "_id", "_num", "_no", "_number")
+    _IDENTIFIER_EXACT = {"name", "id", "code", "key", "uuid", "uid", "rowid", "row_id", "index"}
 
     def _is_categorical_identifier(c):
         name_lo = c["name"].lower()
@@ -1361,33 +1361,51 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
             raw=json.dumps(_da_dict),
         )
 
-    resp = ask(
-        "You are 19Labs. Given a deep expert domain analysis, produce precise ML objective parameters. "
-        "When the user gives an instruction, interpret it in context of the current plan to find their true intent.",
-        f"""{_override_block}Based on the expert domain analysis below, extract the exact ML objective parameters.
-{_hint_block}
-EXPERT DOMAIN ANALYSIS:
-{_domain_analysis_text(domain_analysis) or "(not available — reason from profile)"}
+    # Build rich column metadata for the LLM — same level of detail as analyze_domain
+    _col_lines = []
+    _da_id_cols = set((domain_analysis.get("id_cols", []) if isinstance(domain_analysis, dict) else []))
+    for _c in profile["columns"]:
+        _tag = " ← IDENTIFIER (skip as target)" if _c["name"] in _da_id_cols else ""
+        _ln = f"  {_c['name']} [{_c['type']}] unique={_c['unique']} nulls={_c.get('null_pct',0)}%"
+        if _c["type"] == "numeric":
+            _ln += f" | mean={_c.get('mean')} range=[{_c.get('min')},{_c.get('max')}]"
+        elif _c["type"] in ("categorical","high_cardinality"):
+            _ln += f" | top={_c.get('top_values','?')}"
+        _ln += _tag
+        _col_lines.append(_ln)
+    _col_detail = "\n".join(_col_lines)
 
-DATASET SUMMARY:
-- Rows: {profile['rows']:,} | Cols: {profile['cols']}
-- Columns: {', '.join(profile['headers'])}
-- Signals: {'; '.join(profile.get('signals', []))}
-- Target candidates: {', '.join(profile['target_candidates'])}
+    resp = ask(
+        "You are a senior ML engineer. When the user gives an instruction, it overrides everything else. "
+        "Reason from data statistics to identify measurement/outcome columns. "
+        "Identifier columns (IDs, row numbers, keys) are NEVER prediction targets.",
+        f"""{_override_block}{_hint_block}
+DOMAIN ANALYSIS:
+{_domain_analysis_text(domain_analysis) or "(not available — reason from column stats below)"}
+
+DATASET: {profile['rows']:,} rows × {profile['cols']} cols
+ALL COLUMNS (with statistics):
+{_col_detail}
+
+Rules for choosing TARGET:
+- Pick the outcome/measurement/KPI the business cares about predicting
+- Identifiers (sequential IDs, unique keys, row numbers, name/code columns) are NEVER targets
+- If user corrected you, find whichever column BEST MATCHES their description — by meaning, not just spelling
+- If a column was flagged as IDENTIFIER above, do not use it as target
 
 Reply ONLY in this exact format (no extra text):
 DOMAIN: <specific domain>
-TASK: <exact task — e.g. BinaryClassification, TimeSeriesForecasting, SentimentAnalysis, Clustering>
-TARGET: <exact column name, or "unsupervised">
-METRIC: <primary metric — e.g. auc, f1, rmse, mape, accuracy, rouge, silhouette>
+TASK: <BinaryClassification|MultiClassClassification|Regression|TimeSeriesForecasting|Clustering|AnomalyDetection>
+TARGET: <exact column name from the dataset, or "unsupervised">
+METRIC: <auc|f1|rmse|mape|mae|accuracy|logloss|r2|silhouette>
 DIRECTION: <lower_is_better|higher_is_better>
 CONFIDENCE: <0.0-1.0>
-REASONING: <1-2 sentences from the domain analysis>
-GOOD_ENOUGH: <concrete threshold e.g. "AUC > 0.85", "RMSE < 5000">
+REASONING: <1-2 sentences>
+GOOD_ENOUGH: <concrete threshold e.g. "AUC > 0.85">
 HYPOTHESES:
-1. <Specific model> — <specific reason from domain analysis>
-2. <Specific model> — <specific reason from domain analysis>
-3. <Specific model> — <specific reason from domain analysis>""", 700)
+1. <model> — <reason>
+2. <model> — <reason>
+3. <model> — <reason>""", 700)
 
     def g(k):
         m = re.search(rf"^{k}\s*:\s*(.+)", resp, re.MULTILINE | re.IGNORECASE)
@@ -1419,18 +1437,21 @@ HYPOTHESES:
 
     tc = profile["target_candidates"]
     _llm_target = g("TARGET")
-    # If LLM returns "ID" or similar identifier as target, override with best candidate
-    _ID_GUARD = {"id", "row_id", "rowid", "index", "record_id", "uid", "uuid",
-                 "station", "station_id", "station_name", "sample_id",
-                 "name", "code", "country", "region", "city", "site", "location"}
-    def _is_guarded(col_name):
+    # Only block structurally-obvious identifiers (sequential IDs, surrogate keys).
+    # Don't hardcode domain-specific names — the LLM handles semantic reasoning above.
+    _STRUCTURAL_ID = {"id", "row_id", "rowid", "index", "record_id", "uid", "uuid", "sample_id"}
+    def _is_structural_id(col_name):
         lo = col_name.lower()
-        return lo in _ID_GUARD or lo.endswith("_id") or lo.endswith("_name") or lo.endswith("_code")
+        return lo in _STRUCTURAL_ID or lo.endswith("_id") or lo.endswith("_name") or lo.endswith("_code")
+    # Also check if domain analysis flagged this column as an identifier
+    _da_id_set = set((domain_analysis.get("id_cols", []) if isinstance(domain_analysis, dict) else []))
+    def _is_guarded(col_name):
+        return _is_structural_id(col_name) or col_name in _da_id_set
     if _llm_target and _is_guarded(_llm_target):
         _safe_tc = [c for c in tc if not _is_guarded(c)]
         _llm_target = _safe_tc[0] if _safe_tc else (tc[0] if tc else _llm_target)
     _final_target = _forced_target or _llm_target or (tc[0] if tc else profile["headers"][-1])
-    # Final safety: never allow a pure identifier column as target
+    # Final safety
     if _final_target and _is_guarded(_final_target):
         _safe_tc2 = [c for c in tc if not _is_guarded(c)]
         if _safe_tc2:
