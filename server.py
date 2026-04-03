@@ -745,6 +745,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 RUNS: dict[str, dict] = {}
 _shared_results: dict[str, dict] = {}
+# Async prediction jobs — keyed by job_id, status: pending|done|error
+PREDICT_JOBS: dict[str, dict] = {}
 # In-memory store for pre-uploaded media datasets (images / audio / zip)
 _MEDIA_DATASETS: dict[str, dict] = {}
 APP_HTML = Path(__file__).parent / "19labs-app.html"
@@ -3976,19 +3978,24 @@ async def predict_csv(run_id: str, request: Request):
     return await predict(run_id, req, request)
 
 
-def _prediction_json_response(sub: "pd.DataFrame", run_id: str) -> JSONResponse:
-    """Return predictions as JSON with an inline preview + base64-encoded full CSV."""
-    import base64 as _b64, pandas as _pd
+def _prediction_json_dict(sub: "pd.DataFrame", run_id: str) -> dict:
+    """Return predictions as a plain dict (used for async job storage)."""
+    import base64 as _b64
     cols = list(sub.columns)
     preview = sub.head(10).astype(object).where(sub.head(10).notna(), None).values.tolist()
     csv_bytes = sub.to_csv(index=False).encode()
-    return JSONResponse({
+    return {
         "columns": cols,
         "preview": preview,
         "total_rows": len(sub),
         "filename": f"submission_{run_id[:8]}.csv",
         "csv_b64": _b64.b64encode(csv_bytes).decode(),
-    })
+    }
+
+
+def _prediction_json_response(sub: "pd.DataFrame", run_id: str) -> JSONResponse:
+    """Return predictions as JSON with an inline preview + base64-encoded full CSV."""
+    return JSONResponse(_prediction_json_dict(sub, run_id))
 
 
 @app.get("/api/debug/env")
@@ -4085,15 +4092,26 @@ async def debug_model(run_id: str, request: Request):
     return info
 
 
-@app.post("/api/run/{run_id}/predict-file")
-async def predict_file(run_id: str, request: Request, file: UploadFile = File(...)):
-    """Accept a CSV file upload, run predictions with the stored model, return submission.csv."""
+async def _predict_file_core(run_id: str, contents: bytes, run: dict) -> dict:
+    """Core prediction logic — runs in background, returns prediction dict."""
     import joblib, pandas as pd, numpy as np, io as _io
-    run = _get_run_or_404(run_id)
-    _assert_run_owner(run, request)
-    result = run.get("result")
-    if not result:
-        # Result metadata lost (large model stripped from DB) — check if model file still exists
+    result = run.get("result") or {}
+    if not result.get("objective"):
+        # Result metadata thin or missing — try richer DB record for objective/target
+        try:
+            _conn2 = DBConn()
+            _row2  = _conn2.execute(
+                "SELECT result_json, best_metric_name FROM runs WHERE id=?", (run_id,)
+            ).fetchone()
+            _conn2.close()
+            if _row2 and _row2["result_json"]:
+                _db_res = json.loads(_row2["result_json"])
+                if _db_res:
+                    result = {**_db_res, **result}  # DB is base; in-memory overlays it
+        except Exception:
+            pass
+    if not result and not run.get("result"):
+        # No metadata at all — verify model file exists at minimum
         _rescue_path = _find_model_path(run_id, {"result": {}})
         if not _rescue_path:
             raise HTTPException(400, "Run not finished yet — no model found")
@@ -4101,7 +4119,6 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
 
     # Try AutoGluon first (most reliable — handles feature types automatically)
     _ag_path = _find_autogluon_path(run_id, run)
-    contents = await file.read()
     try:
         df = pd.read_csv(_io.BytesIO(contents))
     except Exception as e:
@@ -4120,7 +4137,7 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
             id_vals = df[id_col] if id_col else pd.RangeIndex(len(df))
             sub_target = target or "prediction"
             sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
-            return _prediction_json_response(sub, run_id)
+            return _prediction_json_dict(sub, run_id)
         except Exception as _age:
             print(f"[predict-file] AutoGluon predict failed: {_age} — falling back to pkl", flush=True)
 
@@ -4197,7 +4214,7 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
             (id_col_s or "id"): id_vals_s,
             sub_target_s: preds_s,
         })
-        return _prediction_json_response(_sub_df, run_id)
+        return _prediction_json_dict(_sub_df, run_id)
     except Exception as _sub_err:
         print(f"[predict-file] subprocess predict failed: {_sub_err} — trying in-process", flush=True)
 
@@ -4216,7 +4233,7 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
                 id_col2 = next((c for c in df.columns if c.lower() in ("id","customerid","customer_id","passengerid")), None)
                 id_vals2 = df[id_col2] if id_col2 else pd.RangeIndex(len(df))
                 sub2 = pd.DataFrame({id_col2 or "id": id_vals2, target or "prediction": preds2})
-                return _prediction_json_response(sub2, run_id)
+                return _prediction_json_dict(sub2, run_id)
         model = _loaded
     except Exception as _e1:
         load_err = _e1
@@ -4421,7 +4438,7 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
         # String predictions — skip numeric transforms
         sub_target = target or "prediction"
         sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
-        return _prediction_json_response(sub, run_id)
+        return _prediction_json_dict(sub, run_id)
 
     preds = _np.asarray(preds, dtype=float).flatten()
     _should_expm1 = False
@@ -4458,7 +4475,39 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
     # Build submission dataframe
     sub_target = target or "prediction"
     sub = pd.DataFrame({id_col or "id": id_vals, sub_target: preds})
-    return _prediction_json_response(sub, run_id)
+    return _prediction_json_dict(sub, run_id)
+
+
+@app.post("/api/run/{run_id}/predict-file")
+async def predict_file(run_id: str, request: Request, file: UploadFile = File(...)):
+    """Accept a CSV file upload, start async prediction job, return job_id immediately.
+    Poll GET /api/predict-job/{job_id} for status/result. Fixes Railway 30s timeout."""
+    run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
+    contents = await file.read()
+    job_id = _new_id()
+    PREDICT_JOBS[job_id] = {"status": "pending", "run_id": run_id}
+
+    async def _bg():
+        try:
+            result_dict = await _predict_file_core(run_id, contents, run)
+            PREDICT_JOBS[job_id] = {"status": "done", "result": result_dict}
+        except HTTPException as _he:
+            PREDICT_JOBS[job_id] = {"status": "error", "error": _he.detail}
+        except Exception as _e:
+            PREDICT_JOBS[job_id] = {"status": "error", "error": str(_e)}
+
+    asyncio.create_task(_bg())
+    return JSONResponse({"job_id": job_id, "status": "pending"})
+
+
+@app.get("/api/predict-job/{job_id}")
+async def get_predict_job(job_id: str, request: Request):
+    """Poll prediction job status. Returns {status: pending|done|error, result?, error?}."""
+    job = PREDICT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Prediction job not found")
+    return JSONResponse(job)
 
 
 @app.post("/api/serve/{run_id}/predict")
