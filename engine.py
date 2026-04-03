@@ -57,6 +57,25 @@ MODULE_TO_PIP = {
     "shap": "shap",
     "statsmodels": "statsmodels",
     "scipy": "scipy",
+    # Deep learning — tabular
+    "pytorch_tabular": "pytorch-tabular",
+    "tab_transformer": "tab-transformer-pytorch",
+    # Deep learning — time series
+    "neuralforecast": "neuralforecast",
+    "mlforecast": "mlforecast",
+    "utilsforecast": "utilsforecast",
+    "pytorch_forecasting": "pytorch-forecasting",
+    # xLSTM / modern sequence models
+    "xlstm": "xlstm",
+    # Other useful
+    "lightgbm": "lightgbm",
+    "xgboost": "xgboost",
+    "torchvision": "torchvision",
+    "torchaudio": "torchaudio",
+    "timm": "timm",
+    "librosa": "librosa",
+    "peft": "peft",
+    "accelerate": "accelerate",
 }
 
 _installed_session: set = set()
@@ -73,6 +92,13 @@ _PACKAGE_REDIRECTS = {
     "bs4":                    "beautifulsoup4",
     "yaml":                   "pyyaml",
     "dotenv":                 "python-dotenv",
+    "pytorch_tabular":        "pytorch-tabular",
+    "pytorch_forecasting":    "pytorch-forecasting",
+    "neuralforecast":         "neuralforecast",
+    "mlforecast":             "mlforecast",
+    "timm":                   "timm",
+    "peft":                   "peft",
+    "accelerate":             "accelerate",
 }
 
 _INSTALL_TIMEOUT = 480  # 8 minutes — enough for any package including torch/tensorflow
@@ -716,7 +742,7 @@ Return this EXACT JSON structure (all fields required):
   "critical_warnings": ["<warning 1 — what will break if ignored>"],
   "baseline_approach": "<exp 1: specific model + key params, e.g. LightGBM classifier, scale_pos_weight=8, 200 trees, no tuning>",
   "better_approach": "<exp 2: upgrade, e.g. Optuna-tuned XGBoost, stratified 5-fold CV, SMOTE for imbalance>",
-  "advanced_approach": "<exp 3+: best possible, e.g. Stacking: LGBM+CatBoost+XGB, LR meta-learner, Platt calibration>",
+  "advanced_approach": "<exp 3+: best possible — consider deep learning where it wins: TabNet/FT-Transformer (pytorch-tabular) for complex tabular; NeuralForecast (NBEATS/TFT/xLSTM/PatchTST) for time series; HuggingFace fine-tuning for NLP/audio; torchvision/timm for images. Or stacking ensemble if DL isn't warranted.>",
   "feature_engineering": ["<concrete FE idea 1>", "<concrete FE idea 2>"],
   "expected_performance": "<realistic range e.g. AUC 0.78-0.88; >0.93 suggests leakage>"
 }}""",
@@ -1018,13 +1044,14 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         fixed = "import json\n" + fixed
         notes.append("added_missing_json_import")
 
-    # ── Model persistence guarantee ────────────────────────────────────────────
-    # Appended to EVERY generated script. Runs after training code completes.
-    # If no model.pkl / best_model.pkl was written, we scan common variable names
-    # and force-save the first object that has a .predict method.
-    # This catches: crashes before joblib.dump, custom filenames, native-only saves.
+    # ── Model persistence + feature schema guarantee ──────────────────────────
+    # Appended to EVERY generated script. Two things guaranteed:
+    # 1. model.pkl saved (scan common variable names for a .predict object)
+    # 2. feature_cols.pkl saved — exact column list of X after preprocessing
+    #    This is the key to making prediction work: at inference time we load
+    #    feature_cols.pkl and reindex the test DataFrame to match exactly.
     _SAVE_TAIL = (
-        "\n\n# ── 19Labs: guaranteed model save (appended by guardrails) ──\n"
+        "\n\n# ── 19Labs: guaranteed model + feature schema save ──\n"
         "import pathlib as _19pl, joblib as _19jl\n"
         "_19_saved = _19pl.Path('model.pkl').exists() or _19pl.Path('best_model.pkl').exists()\n"
         "if not _19_saved:\n"
@@ -1040,6 +1067,30 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         "            break\n"
         "    else:\n"
         "        print('[19Labs] WARNING: no model object found — training may not have produced a model')\n"
+        "# Save feature column schema for prediction alignment\n"
+        "if not _19pl.Path('feature_cols.pkl').exists():\n"
+        "    _19_feat = None\n"
+        "    for _19_fn in ['X_train','X_tr','X','features','train_features','X_encoded','X_processed']:\n"
+        "        _19_fv = globals().get(_19_fn)\n"
+        "        if _19_fv is not None and hasattr(_19_fv, 'columns'):\n"
+        "            _19_feat = list(_19_fv.columns)\n"
+        "            break\n"
+        "    if _19_feat is None:\n"
+        "        # Try loading model and reading feature_names_in_\n"
+        "        try:\n"
+        "            _19_mp = 'model.pkl' if _19pl.Path('model.pkl').exists() else 'best_model.pkl'\n"
+        "            _19_mo = _19jl.load(_19_mp)\n"
+        "            if hasattr(_19_mo, 'feature_names_in_'): _19_feat = list(_19_mo.feature_names_in_)\n"
+        "            elif hasattr(_19_mo, 'get_booster'):\n"
+        "                _fn = _19_mo.get_booster().feature_names\n"
+        "                if _fn: _19_feat = list(_fn)\n"
+        "        except Exception: pass\n"
+        "    if _19_feat:\n"
+        "        try:\n"
+        "            _19jl.dump(_19_feat, 'feature_cols.pkl')\n"
+        "            print(f'[19Labs] Saved {len(_19_feat)} feature columns → feature_cols.pkl')\n"
+        "        except Exception as _19e:\n"
+        "            print(f'[19Labs] WARNING: feature cols save failed: {_19e}')\n"
     )
     # Only append if not already an autogluon script (those manage their own saves)
     if "TabularPredictor" not in fixed and "autogluon" not in fixed.lower():
@@ -2043,18 +2094,70 @@ KAGGLE COMPETITION MODE — MANDATORY RULES:
     if _warnings:  _struct_block += "\nCRITICAL WARNINGS:\n" + "\n".join(f"  ⚠ {w}" for w in _warnings)
     if _tier_approach: _struct_block += f"\nTHIS EXPERIMENT APPROACH ({_tier}): {_tier_approach}"
 
-    # Data-type specific routing hint
-    _dtype_routing = {
-        "tabular_classification": "Tabular classification: gradient boosting (LightGBM/XGBoost/CatBoost), handle categoricals, encode properly.",
-        "tabular_regression":     "Tabular regression: gradient boosting or ensemble, log-transform skewed targets, handle outliers.",
-        "timeseries_forecasting": "Time series: NEVER random split — use walk-forward/time-based split. Use lag features, rolling stats, time components. Consider LightGBM+lags or Prophet.",
-        "nlp_text":               "NLP: TF-IDF + LogReg baseline, then sentence-transformers or HuggingFace BERT for advanced. Preprocess text (lowercase, strip HTML).",
-        "image_classification":   "Images: torchvision pretrained ResNet/EfficientNet transfer learning. Data augmentation (flip, crop, color jitter).",
-        "audio_classification":   "Audio: librosa MFCC features + gradient boosting, or wav2vec2 embeddings.",
-        "survival":               "Survival analysis: lifelines CoxPH or scikit-survival. Time-to-event with censoring.",
-        "clustering":             "Clustering: KMeans + silhouette for k selection, UMAP for viz, DBSCAN for density.",
-        "anomaly_detection":      "Anomaly detection: IsolationForest + DBSCAN + AutoEncoder. Use only normal class for training.",
-    }.get(_da_type, "")
+    # Data-type specific routing hint — tiered by experiment number
+    _dtype_routing_map = {
+        "tabular_classification": {
+            1: "Tabular classification exp-1 (BASELINE): LightGBM or XGBoost, handle categoricals, no Optuna yet. Fast and solid.",
+            2: "Tabular classification exp-2: Optuna-tuned XGBoost/CatBoost, stratified k-fold CV, SMOTE if imbalanced, feature engineering.",
+            3: ("Tabular classification exp-3+ (ADVANCED): push accuracy hard. Options: "
+                "stacking ensemble (LGBM+CatBoost+XGB, LR meta), "
+                "TabNet (pytorch-tabular — handles interactions natively), "
+                "FT-Transformer (pytorch-tabular — best for high-dimensional tabular), "
+                "or deep feature synthesis. Pick whatever fits the data."),
+        },
+        "tabular_regression": {
+            1: "Tabular regression exp-1 (BASELINE): LightGBM or XGBoost, log-transform skewed target, handle outliers. No tuning.",
+            2: "Tabular regression exp-2: Optuna-tuned CatBoost, feature engineering (interactions, ratios), k-fold CV.",
+            3: ("Tabular regression exp-3+ (ADVANCED): "
+                "TabNet (pytorch-tabular) for complex feature interactions, "
+                "FT-Transformer or SAINT for tabular DL, "
+                "or stacking ensemble LGBM+CatBoost+XGB. "
+                "Neural networks via pytorch-tabular are production-ready for tabular regression."),
+        },
+        "timeseries_forecasting": {
+            1: "Time series exp-1 (BASELINE): NEVER random split — walk-forward/time-based split only. LightGBM with lag features, rolling stats, time components (hour/day/month/weekday).",
+            2: "Time series exp-2: Prophet with custom seasonalities + regressors, or ARIMA/SARIMAX via statsmodels. Add more lag features, Fourier terms.",
+            3: ("Time series exp-3+ (ADVANCED — deep learning): "
+                "neuralforecast (pip install neuralforecast) — provides NBEATS, NHITS, PatchTST, TimesNet, iTransformer, xLSTM, TFT (Temporal Fusion Transformer). "
+                "Use NeuralForecast for multi-step, long-horizon, or complex pattern forecasting. "
+                "mlforecast for fast feature-based + DL hybrid. "
+                "pytorch-forecasting for TFT with covariates."),
+        },
+        "nlp_text": {
+            1: "NLP exp-1 (BASELINE): TF-IDF + LogisticRegression. Preprocess text: lowercase, strip HTML, remove punctuation.",
+            2: "NLP exp-2: sentence-transformers (all-MiniLM-L6-v2) embeddings + XGBoost/LightGBM. Fast, high quality.",
+            3: ("NLP exp-3+ (ADVANCED): HuggingFace transformers fine-tuning — distilbert-base or roberta-base via Trainer API. "
+                "Use PEFT/LoRA (pip install peft) for memory-efficient fine-tuning. "
+                "accelerate for multi-GPU if available."),
+        },
+        "image_classification": {
+            1: "Images exp-1: torchvision pretrained ResNet18 transfer learning (freeze backbone, train head). Basic augmentation.",
+            2: "Images exp-2: EfficientNet-B3 or ConvNeXt, full fine-tuning with lower LR, stronger augmentation (cutmix, mixup).",
+            3: "Images exp-3+: timm (pip install timm) — EVA, ViT-L, or SwinV2. Label smoothing, cosine LR schedule, TTA at inference.",
+        },
+        "audio_classification": {
+            1: "Audio exp-1: librosa MFCC/mel-spectrogram features + gradient boosting. Simple and fast.",
+            2: "Audio exp-2: wav2vec2 or Whisper embeddings (HuggingFace) + classifier head.",
+            3: "Audio exp-3+: fine-tune wav2vec2-base end-to-end via HuggingFace Trainer.",
+        },
+        "survival": {
+            1: "Survival exp-1: lifelines CoxPH baseline. Check proportional hazards assumption.",
+            2: "Survival exp-2: scikit-survival GradientBoostingSurvivalAnalysis. Feature engineering.",
+            3: "Survival exp-3+: DeepSurv or CoxTime via pycox (pip install pycox). Neural survival models.",
+        },
+        "clustering": {
+            1: "Clustering exp-1: KMeans + silhouette score for k selection. Standard preprocessing.",
+            2: "Clustering exp-2: DBSCAN + HDBSCAN (pip install hdbscan). UMAP (pip install umap-learn) for dim reduction.",
+            3: "Clustering exp-3+: Gaussian Mixture Models, Agglomerative, or deep clustering with autoencoder embeddings.",
+        },
+        "anomaly_detection": {
+            1: "Anomaly detection exp-1: IsolationForest + LOF. Train on normal class only.",
+            2: "Anomaly detection exp-2: DBSCAN + Autoencoder (pytorch reconstruction error).",
+            3: "Anomaly detection exp-3+: deep SVDD or LSTM-based anomaly detection for sequences.",
+        },
+    }
+    _tier_num = min(exp_num, 3)
+    _dtype_routing = _dtype_routing_map.get(_da_type, {}).get(_tier_num, _dtype_routing_map.get(_da_type, {}).get(1, ""))
 
     _uh_block_code = (
         "╔══════════════════════════════════════════════════════════════╗\n"

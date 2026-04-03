@@ -1373,8 +1373,13 @@ def encode(f):
 
 def align_features(f, model):
     # Align test features to match what the model was trained on.
-    # Priority: training CSV columns > model attribute names > label encode fallback
-    expected = _train_feat_cols  # from training CSV get_dummies (most reliable)
+    # Priority 1: feature_cols.pkl saved by guardrail during training (most reliable)
+    # Priority 2: training CSV get_dummies columns
+    # Priority 3: model.feature_names_in_
+    # Priority 4: label encode fallback
+    expected = _saved_feat_cols  # from feature_cols.pkl — exact post-preprocessing columns
+    if expected is None:
+        expected = _train_feat_cols  # from training CSV get_dummies
     if expected is None:
         if hasattr(model, 'feature_names_in_'):
             expected = list(model.feature_names_in_)
@@ -1383,13 +1388,18 @@ def align_features(f, model):
                 fn = model.get_booster().feature_names
                 if fn and not fn[0].startswith('f'): expected = list(fn)
             except Exception: pass
+        elif hasattr(model, 'named_steps'):
+            # sklearn Pipeline — last step may have feature names
+            try:
+                last = list(model.named_steps.values())[-1]
+                if hasattr(last, 'feature_names_in_'):
+                    expected = list(last.feature_names_in_)
+            except Exception: pass
     if expected is None:
-        # Heuristic: take first n_features_in_ OHE cols
-        # Test-only OHE categories typically sort to the end, so first N cols match training
         _n = getattr(model, 'n_features_in_', None)
         if _n:
             fe = pd.get_dummies(f.copy().fillna(0))
-            if 0 < _n < len(fe.columns):
+            if 0 < _n <= len(fe.columns):
                 return fe.iloc[:, :_n]
         return encode(f)
     fe = pd.get_dummies(f.copy().fillna(0))
@@ -1414,6 +1424,29 @@ def safe_predict(model, f):
 model_path = {_model_path_str!r}
 train_code = {train_code!r}
 preds = None
+
+# Load saved feature column list — most reliable alignment source.
+# Check multiple locations/formats: feature_cols.pkl (guardrail), feature_columns.json (LLM instruction)
+_mdir = os.path.dirname(model_path)
+_mbase = os.path.splitext(os.path.basename(model_path))[0]
+_saved_feat_cols = None
+for _fcp in [
+    os.path.join(_mdir, _mbase + '_feature_cols.pkl'),  # run_id_feature_cols.pkl
+    os.path.join(_mdir, 'feature_cols.pkl'),             # guardrail-saved
+    os.path.join(_mdir, _mbase + '_feature_columns.json'),
+    os.path.join(_mdir, 'feature_columns.json'),         # LLM-saved
+]:
+    if os.path.exists(_fcp):
+        try:
+            if _fcp.endswith('.pkl'):
+                import joblib as _jl2
+                _saved_feat_cols = _jl2.load(_fcp)
+            else:
+                import json as _jj
+                with open(_fcp) as _ff: _saved_feat_cols = _jj.load(_ff)
+            print(f'[predict] Loaded feature schema: {len(_saved_feat_cols)} cols from {_fcp}', flush=True)
+            break
+        except Exception: pass
 
 # Try joblib
 try:
@@ -2208,6 +2241,17 @@ async def start_run(req: RunRequest, request: Request):
                         shutil.copy2(_model_src, _dst)
                         result["stable_model_path"] = str(_dst)
                         print(f"[models] Copied model → {_dst}", flush=True)
+                        # Also copy feature schema — critical for prediction alignment
+                        for _fc_name, _fc_suffix in [("feature_cols.pkl", "_feature_cols.pkl"), ("feature_columns.json", "_feature_columns.json")]:
+                            _fc_src = ws / _fc_name
+                            if _fc_src.exists():
+                                _fc_dst = _MODELS_DIR / f"{run_id}{_fc_suffix}"
+                                try:
+                                    shutil.copy2(_fc_src, _fc_dst)
+                                    result["feature_cols_path"] = str(_fc_dst)
+                                    print(f"[models] Copied {_fc_name} → {_fc_dst}", flush=True)
+                                except Exception as _fce:
+                                    print(f"[models] feature schema copy failed: {_fce}", flush=True)
                     except Exception as _cpe:
                         print(f"[models] WARNING: filesystem copy failed: {_cpe}", flush=True)
                     # ── Persist to DB (survives redeploys — works with both SQLite and PostgreSQL) ──
