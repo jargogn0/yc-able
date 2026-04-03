@@ -1147,8 +1147,9 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         "        except Exception as _19e:\n"
         "            print(f'[19Labs] WARNING: feature cols save failed: {_19e}')\n"
     )
-    # Only append if not already an autogluon script (those manage their own saves)
-    if "TabularPredictor" not in fixed and "autogluon" not in fixed.lower():
+    # Only append if not already an autogluon script and not already appended
+    if ("TabularPredictor" not in fixed and "autogluon" not in fixed.lower()
+            and "19Labs: guaranteed model" not in fixed):
         fixed = fixed + _SAVE_TAIL
         notes.append("added_model_save_guarantee")
 
