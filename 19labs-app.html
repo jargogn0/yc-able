@@ -3542,11 +3542,11 @@ async function send(){
     const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does|explain|tell me)/i.test(lo);
     // If agent is running → send hint AND chat response
     if(S.running&&S.runId){
-      await chatWithAI(text);
       if(!isQuestion){
-        try{await fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})});
-        chat('sys','<span style="font-size:11px;opacity:.6">↳ Hint sent to agent</span>');}catch(_){}
+        fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
+        chat('sys','<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent as live guidance</span>');
       }
+      await chatWithAI(text);
       return;
     }
     // If plan exists and user confirms → execute
@@ -3557,7 +3557,7 @@ async function send(){
     if(isQuestion&&S.analyzed){
       await chatWithAI(text);return;
     }
-    // Otherwise analyze / re-analyze with new objective
+    // Any other message → treat as objective correction and re-analyze
     S.hint=text;
     await runDiscover(text);
     return;
@@ -4002,20 +4002,15 @@ async function runDiscover(hint){
     if(S.mode==='chat'){
       _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Ask me anything to validate — change the target, task type, or metric. Say <strong style="color:#a5b4fc">go</strong> when ready to launch the Agent.</div>`;
     } else if(S.mode==='plan'){
-      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Review, tweak anything, then hit <strong>Execute Plan</strong> — or say <strong style="color:#a5b4fc">go</strong> to start training.</div>`;
+      _html+=`<div style="margin-top:14px;padding-top:12px;border-top:1px solid #27272a;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button onclick="executePlan()" style="padding:7px 18px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">▶ Execute Plan</button><span style="font-size:11px;color:#52525b">or type corrections — I'll re-analyze. Say <strong style="color:#a5b4fc">go</strong> to launch.</span></div>`;
     } else {
       _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
-    }
-    _html+=`</div>`;
-
-    if(S.mode==='plan'){
-      _html+=`<div style="font-size:11px;color:#52525b;margin-top:6px">Review the plan above, tweak anything, then hit <strong>Execute Plan</strong> — or say <strong>go</strong>.</div>`;
     }
     _html+=`</div>`;
     chat('ai',_html);
     setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
-    toast('Plan ready','ok');
+    toast('Plan ready — review and hit Execute Plan','ok');
     // Show inline plan panel in plan mode
     if(S.mode==='plan'){
       _syncPlanPanel();
