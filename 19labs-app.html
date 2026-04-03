@@ -2955,7 +2955,7 @@ function _buildDataDashboardHTML(){
     const cw=(W-pl-pr)/BINS,ch=H-pt-pb;
     // Gridlines
     let grid='';
-    for(let i=1;i<=3;i++){const gy=pt+ch*(1-i/4);grid+=`<line x1="${pl}" y1="${gy.toFixed(1)}" x2="${W-pr}" y2="${gy.toFixed(1)}" stroke="#1a1a1d" stroke-width="1"/>`;}
+    for(let i=1;i<=3;i++){const gy=pt+ch*(1-i/4);grid+=`<line x1="${pl}" y1="${gy.toFixed(1)}" x2="${W-pr}" y2="${gy.toFixed(1)}" stroke="${svgGridColor}" stroke-width="1"/>`;}
     let bars=counts.map((c,i)=>{
       const x=pl+i*cw,bh=peak?(c/peak)*ch:0,y=pt+ch-bh;
       const alpha=0.3+0.7*(peak?c/peak:0);
@@ -2967,9 +2967,9 @@ function _buildDataDashboardHTML(){
       if(mx2>=pl&&mx2<=W-pr)
         bars+=`<line x1="${mx2.toFixed(1)}" y1="${pt}" x2="${mx2.toFixed(1)}" y2="${pt+ch}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,2" opacity=".9"/>`;
     }
-    bars+=`<text x="${pl}" y="${H-1}" font-size="8" fill="#3f3f46" font-family="monospace">${fmt(mn)}</text>`;
-    bars+=`<text x="${W/2}" y="${H-1}" font-size="8" fill="#3f3f46" text-anchor="middle" font-family="monospace">${fmt((mn+mx)/2)}</text>`;
-    bars+=`<text x="${W-pr}" y="${H-1}" font-size="8" fill="#3f3f46" text-anchor="end" font-family="monospace">${fmt(mx)}</text>`;
+    bars+=`<text x="${pl}" y="${H-1}" font-size="8" fill="${svgAxisColor}" font-family="monospace">${fmt(mn)}</text>`;
+    bars+=`<text x="${W/2}" y="${H-1}" font-size="8" fill="${svgAxisColor}" text-anchor="middle" font-family="monospace">${fmt((mn+mx)/2)}</text>`;
+    bars+=`<text x="${W-pr}" y="${H-1}" font-size="8" fill="${svgAxisColor}" text-anchor="end" font-family="monospace">${fmt(mx)}</text>`;
     return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${bars}</svg>`;
   }
 
@@ -2989,7 +2989,7 @@ function _buildDataDashboardHTML(){
       const label=val.length>12?val.slice(0,11)+'…':val;
       const color=CAT_COLORS[i%CAT_COLORS.length];
       return`<text x="${PL-5}" y="${y+RH-4}" font-size="9" fill="#71717a" text-anchor="end" font-family="sans-serif">${esc(label)}</text>`+
-        `<rect x="${PL}" y="${y+3}" width="${W-PL-PR}" height="${RH-7}" rx="2" fill="#1a1a1d"/>`+
+        `<rect x="${PL}" y="${y+3}" width="${W-PL-PR}" height="${RH-7}" rx="2" fill="${svgGridColor}"/>`+
         `<rect x="${PL}" y="${y+3}" width="${Math.max(2,bw).toFixed(1)}" height="${RH-7}" rx="2" fill="${color}" opacity="0.82"/>`+
         `<text x="${W-PR+5}" y="${y+RH-5}" font-size="8.5" fill="#71717a" font-family="monospace">${pct}%</text>`;
     }).join('');
@@ -5194,6 +5194,9 @@ function renderDashboard(){
   // ── Build SVG progress chart (Power BI-style) ──
   function buildProgressSVG(){
     if(progressLine.length<2)return`<div style="color:#52525b;font-size:12px;text-align:center;padding:40px 0;letter-spacing:.3px">Need ≥ 2 experiments to show progress</div>`;
+    const isLight=document.body.classList.contains('light');
+    const svgAxisColor=isLight?'#a1a1aa':'#3f3f46';
+    const svgGridColor=isLight?'#e9e8f0':'#1a1a1d';
     const W=520,H=160,PL=46,PR=16,PT=14,PB=28;
     const cW=W-PL-PR,cH=H-PT-PB;
     const xs=progressLine.map(p=>p.x);
@@ -5210,8 +5213,8 @@ function renderDashboard(){
     for(let i=0;i<=4;i++){
       const gy=PT+i*(cH/4);
       const gv=hi-(i/4)*(hi-lo);
-      grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="#1a1a1d" stroke-width="1"/>`;
-      yLabels+=`<text x="${PL-5}" y="${(gy+3).toFixed(1)}" font-size="8.5" fill="#3f3f46" text-anchor="end" font-family="monospace">${fmtV(gv)}</text>`;
+      grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${svgGridColor}" stroke-width="1"/>`;
+      yLabels+=`<text x="${PL-5}" y="${(gy+3).toFixed(1)}" font-size="8.5" fill="${svgAxisColor}" text-anchor="end" font-family="monospace">${fmtV(gv)}</text>`;
     }
     // Area fill path (best line)
     let areaPath='',bestPath='',eachDots='',xLabels='';
@@ -5220,10 +5223,10 @@ function renderDashboard(){
       bestPath+=(i===0?`M${x},${y}`:`L${x},${y}`);
       areaPath+=(i===0?`M${x},${PT+cH} L${x},${y}`:`L${x},${y}`);
       const ey=yScale(p.each).toFixed(1);
-      eachDots+=`<circle cx="${x}" cy="${ey}" r="3" fill="#4f46e5" opacity=".5" stroke="#111114" stroke-width="1"/>`;
+      eachDots+=`<circle cx="${x}" cy="${ey}" r="3" fill="#4f46e5" opacity=".5" stroke="${isLight?'#fff':'#111114'}" stroke-width="1"/>`;
       // X axis: show every 2nd label when crowded
       if(progressLine.length<=10||i%(Math.ceil(progressLine.length/8))===0){
-        xLabels+=`<text x="${x}" y="${H-2}" font-size="8.5" fill="#3f3f46" text-anchor="middle" font-family="monospace">#${p.x}</text>`;
+        xLabels+=`<text x="${x}" y="${H-2}" font-size="8.5" fill="${svgAxisColor}" text-anchor="middle" font-family="monospace">#${p.x}</text>`;
       }
     });
     areaPath+=`L${xScale(progressLine.length-1).toFixed(1)},${PT+cH} Z`;
@@ -5242,7 +5245,7 @@ function renderDashboard(){
       <path d="${areaPath}" fill="url(#${uniqueId}area)"/>
       ${eachDots}
       <path d="${bestPath}" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#${uniqueId}glow)"/>
-      <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="5" fill="#6366f1" stroke="#111114" stroke-width="2"/>
+      <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="5" fill="#6366f1" stroke="${isLight?'#fff':'#111114'}" stroke-width="2"/>
       <text x="${Math.min(lastX+8,W-PR-28)}" y="${Math.max(lastY-6,PT+10)}" font-size="9.5" fill="#818cf8" font-family="monospace" font-weight="700">${fmtV(lastP.best)}</text>
       ${xLabels}
     </svg>`;
