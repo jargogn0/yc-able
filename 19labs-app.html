@@ -1032,6 +1032,7 @@ input[type=file]{display:none}
 .best-hero-metric-bar-fill{height:100%;border-radius:2px;transition:width .8s ease}
 .best-hero-context{padding:0 20px 12px;font-size:11px;color:var(--text-3);font-family:var(--mono)}
 .best-hero-actions{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;background:rgba(0,0,0,.15)}
+#bh-predict-dz:hover,#bh-predict-dz.bh-dz-over{border-color:rgba(139,92,246,.7)!important;background:rgba(139,92,246,.1)!important}
 /* ── EXPERIMENT TABLE ── */
 .exp-table-hdr{display:grid;grid-template-columns:36px 1fr 160px 80px 60px;gap:0;padding:6px 16px;align-items:center;border-bottom:1px solid var(--border)}
 .exp-table-hdr span{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3)}
@@ -2716,8 +2717,18 @@ function updSide(){
       h+=`<div class="side-item${isActive?' act':''}" style="cursor:pointer" onclick="switchDatasetFile(${JSON.stringify(name)})"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isTrainFile?'var(--accent)':'#3f3f46'};font-size:9px">${label}</div></div>`;
     });
   } else {
+    // Primary file
     const kb=(S.file.size/1024).toFixed(1);
     h+=`<div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
+    // Extra uploaded files — shown below primary, each removable
+    _extraDatasets.forEach((d,i)=>{
+      const kb2=(d.size/1024).toFixed(1);
+      h+=`<div class="side-item" style="opacity:.85;cursor:default"><div class="si-icon" style="opacity:.6">${_ico.table}</div><div class="si-name">${esc(d.name)}</div><div class="si-meta" style="display:flex;align-items:center;gap:4px">${kb2}K<span onclick="event.stopPropagation();removeExtraDS(${i})" style="cursor:pointer;color:var(--text-3);font-size:10px;line-height:1" title="Remove">✕</span></div></div>`;
+    });
+    // Join button when extras exist
+    if(_extraDatasets.length>0){
+      h+=`<div style="padding:4px 14px 6px"><button onclick="joinDatasets()" style="width:100%;padding:5px 8px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25);border-radius:6px;color:#a5b4fc;font-size:11px;cursor:pointer;font-weight:500">⇄ Join All Datasets</button></div>`;
+    }
   }
   fl.innerHTML=h;
 }
@@ -3873,12 +3884,15 @@ async function runDiscover(hint){
       _html+=`<div style="margin-bottom:10px">${_notes.map(n=>`<div style="color:#f59e0b;margin-bottom:4px;font-size:12px">\u26A0 ${n}</div>`).join('')}</div>`;
     }
     _html+=`<div style="color:#a1a1aa;font-size:12px;margin-top:6px">${_plan}</div>`;
-    _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
-    _html+=`</div>`;
-
-    if(S.mode==='plan'){
-      _html+=`<div style="font-size:11px;color:#52525b;margin-top:6px">Review the plan above, tweak anything, then hit <strong>Execute Plan</strong> — or say <strong>go</strong>.</div>`;
+    // Mode-aware call-to-action
+    if(S.mode==='chat'){
+      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Ask me anything to validate — change the target, task type, or metric. When you're happy, say <strong style="color:#a5b4fc">go</strong> to launch the Agent.</div>`;
+    } else if(S.mode==='plan'){
+      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Review, tweak anything, then say <strong style="color:#a5b4fc">go</strong> — or hit <strong>Execute Plan</strong>.</div>`;
+    } else {
+      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
     }
+    _html+=`</div>`;
     chat('ai',_html);
     setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
@@ -4519,12 +4533,18 @@ function showBest(best,obj,runId){
     <button class="abtn" onclick="dlDeploy('${runId}')">Download Model</button>
     <button class="abtn" onclick="dlPack('${runId}')">Project Pack</button>
     <button class="abtn" onclick="genHandoff('${runId}')">Handoff</button>
-    <button class="abtn" style="background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:#a78bfa" onclick="document.getElementById('exp-predict-file-input').click()">&#8679; Predict on CSV</button>
-    <input type="file" id="exp-predict-file-input" accept=".csv" style="display:none" onchange="expUploadAndPredict('${runId}')">
     <button class="share-btn" onclick="shareResults('${runId}')">Share</button>
   </div>
-  <div id="exp-predict-status" style="font-size:11px;color:var(--text-3);margin-top:4px;padding:0 4px"></div>
-  <div id="share-url-container"></div>`;
+  <div id="share-url-container"></div>
+  <!-- Test data drop zone — drag CSV here to get predictions -->
+  <div id="bh-predict-dz" ondragover="event.preventDefault();this.classList.add('bh-dz-over')" ondragleave="this.classList.remove('bh-dz-over')" ondrop="event.preventDefault();this.classList.remove('bh-dz-over');const f=event.dataTransfer.files[0];if(f)_bhPredict(f,'${runId}')" onclick="document.getElementById('exp-predict-file-input').click()" style="margin-top:10px;border:1.5px dashed rgba(139,92,246,.4);border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(139,92,246,.04);transition:all .15s">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" style="width:20px;height:20px;flex-shrink:0;color:#a78bfa"><path d="M10 3v10M6 9l4-6 4 6"/><rect x="3" y="14" width="14" height="3" rx="1.5" fill="none"/></svg>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:12px;font-weight:600;color:#a78bfa">Drop test.csv to predict</div>
+      <div id="exp-predict-status" style="font-size:11px;color:var(--text-3);margin-top:1px">Drag &amp; drop or click — model is ready</div>
+    </div>
+    <input type="file" id="exp-predict-file-input" accept=".csv" style="display:none" onchange="expUploadAndPredict('${runId}')">
+  </div>`;
   c.insertBefore(e,c.firstChild);
 }
 function markdownToHtml(md){
@@ -6045,6 +6065,29 @@ async function uploadAndPredict(){
   inp.value='';
 }
 
+// Handle drop onto the in-Exp drop zone (accepts a File object directly)
+async function _bhPredict(file,runId){
+  const rid=runId||S.runId;
+  if(!rid){toast('No active run','err');return;}
+  const st=document.getElementById('exp-predict-status');
+  if(st)st.textContent=`Running predictions on ${file.name}…`;
+  const dz=document.getElementById('bh-predict-dz');
+  if(dz)dz.style.opacity='.6';
+  const fd=new FormData();fd.append('file',file);
+  try{
+    const r=await apiFetch(`${BASE}/api/run/${rid}/predict-file`,{method:'POST',body:fd});
+    if(!r.ok){const e=await r.text();throw new Error(e.includes('detail')?JSON.parse(e).detail:e);}
+    const j=await r.json();
+    if(st)st.textContent=`✓ ${j.total_rows} predictions ready`;
+    if(dz)dz.style.opacity='1';
+    chat('ai',_renderPredictPreview(j),true);
+    toast(`${j.total_rows} predictions ready`,'ok',4000);
+  }catch(e){
+    if(st)st.textContent=`Failed: ${e.message.slice(0,100)}`;
+    if(dz)dz.style.opacity='1';
+    toast(`Predict failed: ${e.message.slice(0,60)}`,'err');
+  }
+}
 async function expUploadAndPredict(runId){
   const inp=document.getElementById('exp-predict-file-input');
   const st=document.getElementById('exp-predict-status');
@@ -6673,17 +6716,9 @@ async function shareResults(runId){
 // ═══════════════════════════════════════════
 const _extraDatasets=[];// [{name, csv, size}]
 function updateMultiDSPanel(){
-  const el=document.getElementById('multi-ds-panel');
-  if(!_extraDatasets.length){el.innerHTML='';return}
-  let h=`<div class="multi-ds"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-bottom:6px">Additional datasets (${_extraDatasets.length})</div>`;
-  _extraDatasets.forEach((d,i)=>{
-    h+=`<div class="multi-ds-item"><span style="font-size:14px">📊</span><span class="multi-ds-name">${esc(d.name)}</span><span class="multi-ds-size">${(d.size/1024).toFixed(1)}K</span><span class="multi-ds-x" onclick="removeExtraDS(${i})">✕</span></div>`;
-  });
-  if(S.csv&&_extraDatasets.length>=1){
-    h+=`<div class="join-bar"><button class="join-btn" onclick="joinDatasets()">Join All Datasets</button><span style="font-size:10px;color:var(--text-3);padding:5px 0">AI will detect join keys automatically</span></div>`;
-  }
-  h+=`</div>`;
-  el.innerHTML=h;
+  // File list is now in updSide(); just clear the old panel
+  document.getElementById('multi-ds-panel').innerHTML='';
+  updSide();
 }
 function removeExtraDS(idx){
   _extraDatasets.splice(idx,1);
@@ -6802,7 +6837,7 @@ async function handleFile(f,preloadedText){
         toast(`Loaded ${info.num_files} files from ZIP`,'ok',3000);
         const fileList=info.all_files.map(n=>`<code>${esc(n)}</code>`).join(', ');
         chat('sys',`Loaded <strong>${info.num_files} files</strong> from ZIP: ${fileList}. Training on <strong>${esc(info.filename)}</strong>.`);
-        if(S.mode!=='chat')autoDiscover();
+        autoDiscover();
         return;
       }
 
@@ -6816,7 +6851,7 @@ async function handleFile(f,preloadedText){
       document.getElementById('p-data').style.display='';
       document.getElementById('ws-empty').style.display='none';
       stab('data');
-      if(S.mode!=='chat')autoDiscover();
+      autoDiscover();
     }catch(e){toast('Upload failed: '+e.message,'err');}
     return;
   }
@@ -6867,7 +6902,7 @@ async function handleFile(f,preloadedText){
 
   // On mobile: briefly show data preview then switch to chat for agent response
   if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),800);}
-  if(S.mode!=='chat')autoDiscover();
+  autoDiscover();
 }
 
 // ═══════════════════════════════════════════
