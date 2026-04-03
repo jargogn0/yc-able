@@ -1228,6 +1228,17 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
             _hint_words = re.findall(r'\w+', hint.lower())
             # First pass: exact column name mentioned anywhere in hint
             _mentioned = [_headers_lo[w] for w in _hint_words if w in _headers_lo]
+            # Second pass (fuzzy): if no exact match, try substring matching
+            # e.g. "radiation" matches column "Radiation (W/m2)" or "solar_radiation"
+            if not _mentioned:
+                for _hw in _hint_words:
+                    if len(_hw) < 4:
+                        continue
+                    _fuzzy = [orig for lo, orig in _headers_lo.items()
+                               if _hw in lo or lo in _hw]
+                    if _fuzzy:
+                        _mentioned = _fuzzy
+                        break
             if _mentioned:
                 # Prefer known target names, then columns after "predict/target" keywords
                 _known = [c for c in _mentioned if c.lower() in _TARGET_NAMES]
@@ -1362,7 +1373,18 @@ HYPOTHESES:
         metric = _smart_default_metric(task_inferred, hint)
 
     tc = profile["target_candidates"]
-    _final_target = _forced_target or g("TARGET") or (tc[0] if tc else profile["headers"][-1])
+    _llm_target = g("TARGET")
+    # If LLM returns "ID" or similar identifier as target, override with best candidate
+    _ID_GUARD = {"id", "row_id", "rowid", "index", "record_id", "uid", "uuid", "station", "station_id", "sample_id"}
+    if _llm_target and (_llm_target.lower() in _ID_GUARD or _llm_target.lower().endswith("_id") or _llm_target.lower() == "id"):
+        _safe_tc = [c for c in tc if c.lower() not in _ID_GUARD and not c.lower().endswith("_id")]
+        _llm_target = _safe_tc[0] if _safe_tc else (tc[0] if tc else _llm_target)
+    _final_target = _forced_target or _llm_target or (tc[0] if tc else profile["headers"][-1])
+    # Final safety: never allow a pure identifier column as target
+    if _final_target and (_final_target.lower() in _ID_GUARD or (_final_target.lower().endswith("_id") and _final_target.lower() != "id")):
+        _safe_tc2 = [c for c in tc if c.lower() not in _ID_GUARD and not c.lower().endswith("_id")]
+        if _safe_tc2:
+            _final_target = _safe_tc2[0]
 
     # Hard-validate task against target column profile — LLMs sometimes say Regression
     # for binary targets like Churn (Yes/No) or Survived (0/1).

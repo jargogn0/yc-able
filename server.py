@@ -2646,7 +2646,10 @@ async def discover(req: DiscoverRequest):
                         try:
                             import pandas as _pd
                             _samp_cols = list(_pd.read_csv(_samp_f, nrows=3).columns)
-                            _ctx_parts.append(f"Output must match {_samp_f.name} format: columns={_samp_cols}. The last column is the TARGET to predict.")
+                            _id_cols_sub = [c for c in _samp_cols if c.lower() in ("id","row_id","rowid","station","station_id") or c.lower().endswith("_id")]
+                            _pred_cols_sub = [c for c in _samp_cols if c not in _id_cols_sub]
+                            _col_desc = f"Non-identifier columns to predict: {_pred_cols_sub}." if _pred_cols_sub else f"Prediction columns: {_samp_cols}."
+                            _ctx_parts.append(f"Output must match {_samp_f.name} format: all columns={_samp_cols}. {_col_desc} IMPORTANT: identifier columns like {_id_cols_sub or ['ID']} are row/station identifiers — NEVER use them as the training target. Analyze {primary_p.name} to find the appropriate measurement/outcome column to predict.")
                             _ctx_parts.append(f"Save final predictions as submission.csv.")
                         except Exception:
                             _ctx_parts.append(f"Save final predictions as submission.csv matching {_samp_f.name}.")
@@ -2673,9 +2676,13 @@ async def discover(req: DiscoverRequest):
                 import pandas as _pd
                 _edf = _pd.read_csv(_ef_path, nrows=5)
                 _enrows = max(0, sum(1 for _ in open(_ef_path)) - 1)
+                _ef_name_lo = _ef_name.lower()
+                _ef_role = ("submission" if ("submission" in _ef_name_lo or "sample_submission" in _ef_name_lo or "sample" in _ef_name_lo)
+                            else "test" if ("test" in _ef_name_lo or "holdout" in _ef_name_lo or "predict" in _ef_name_lo)
+                            else "extra")
                 _companion_profiles[_ef_name] = {
                     "rows": _enrows, "cols": len(_edf.columns),
-                    "headers": list(_edf.columns), "role": "extra",
+                    "headers": list(_edf.columns), "role": _ef_role,
                 }
             except Exception:
                 pass
