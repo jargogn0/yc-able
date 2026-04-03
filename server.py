@@ -423,6 +423,11 @@ def _init_db():
         model_ext TEXT DEFAULT '.pkl',
         created REAL
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS shared_results (
+        share_id TEXT PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        created REAL
+    )""")
     conn.commit()
     conn.close()
 
@@ -1355,6 +1360,8 @@ def _get_run_or_404(run_id: str):
                 "csv": row.get("csv_path", "") or "",
                 "result": result,
                 "hint": row.get("hint", ""),
+                "owner_id": row.get("user_id"),   # needed by _assert_run_owner
+                "owner_ip": row.get("guest_ip"),  # needed by _assert_run_owner
             }
             return run
     except Exception:
@@ -1386,18 +1393,14 @@ def _load_autogluon_predictor(ag_path: str):
 
 
 def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
-    """Return the persistent AutoGluon model directory path if available."""
+    """Return the persistent AutoGluon model directory path if available.
+    Checks _MODELS_DIR first (persistent) before result metadata (may be stale workspace path)."""
     result_d = run.get("result") or {}
-    # Check result for stored ag_path
-    if result_d.get("model_ag_path"):
-        _p = Path(result_d["model_ag_path"])
-        if _p.exists() and any(_p.rglob("*")):
-            return str(_p)
-    # Check persistent model dir
+    # 1. Persistent storage — survives workspace cleanup and server restarts
     _stable = _MODELS_DIR / f"{run_id}_ag"
     if _stable.exists() and any(_stable.rglob("*")):
         return str(_stable)
-    # Check if model.pkl is an AG reference dict
+    # 2. model.pkl AG reference dict (also persistent)
     _pkl = _MODELS_DIR / f"{run_id}.pkl"
     if _pkl.exists():
         try:
@@ -1409,6 +1412,11 @@ def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
                     return _ap
         except Exception:
             pass
+    # 3. Path stored in result metadata (may point to workspace — check last)
+    if result_d.get("model_ag_path"):
+        _p = Path(result_d["model_ag_path"])
+        if _p.exists() and any(_p.rglob("*")):
+            return str(_p)
     return None
 
 
@@ -1744,6 +1752,24 @@ def _joblib_load_auto(path, train_code: str = ""):
         except Exception:
             raise
     raise RuntimeError("Model load failed after auto-install")
+
+
+def _friendly_predict_error(exc: Exception) -> str:
+    """Map raw prediction exceptions to user-readable messages."""
+    msg = str(exc)
+    exc_type = type(exc).__name__
+    if exc_type == "KeyError" or ("KeyError" in msg):
+        col = msg.strip("'\" ")
+        return f"Missing column {col!r} — your input file must have the same columns as the training data"
+    if "Feature shape mismatch" in msg or "shape" in msg.lower() and "mismatch" in msg.lower():
+        return f"Feature count mismatch — {msg}. Check that your input has the same columns as the training data"
+    if exc_type == "FileNotFoundError" or "No such file" in msg:
+        return "Model file not found — this run may have expired. Re-run training to create a fresh model"
+    if "n_features_in_" in msg or "expects" in msg and "features" in msg:
+        return f"Feature count mismatch — {msg}"
+    if "ValueError" in exc_type and "could not convert" in msg.lower():
+        return f"Data type error — {msg}. Check that numeric columns don't contain text"
+    return msg
 
 
 def _find_model_path(run_id: str, run: dict) -> "Path | None":
@@ -2257,6 +2283,7 @@ async def start_run(req: RunRequest, request: Request):
     _evict_old_runs()
 
     def background():
+      try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent))
         from engine import run_research
@@ -2445,6 +2472,17 @@ async def start_run(req: RunRequest, request: Request):
             RUNS[run_id]["error"] = msg
             cb("error", msg)
             _save_run_to_db(run_id, RUNS[run_id])
+      except Exception as _fatal:
+          # Outer safety net — catches import errors, cb setup failures, etc.
+          try:
+              RUNS[run_id]["status"] = "error"
+              RUNS[run_id]["error"] = f"Fatal thread error: {_fatal}"
+              RUNS[run_id]["logs"].append({
+                  "tag": "err", "msg": str(_fatal), "ts": time.strftime("%H:%M:%S")
+              })
+              _save_run_to_db(run_id, RUNS[run_id])
+          except Exception:
+              pass  # Last resort — at minimum the status is already "error"
 
     threading.Thread(target=background, daemon=True).start()
     return {"run_id": run_id}
@@ -2957,6 +2995,9 @@ async def stream_logs(run_id: str, request: Request):
         KEEPALIVE_INTERVAL = 15  # send ping every 15s of silence to prevent proxy timeout
 
         while True:
+            # Stop streaming if browser tab closed — prevents generator leak
+            if await request.is_disconnected():
+                break
             run = RUNS[run_id]
             logs = run["logs"]
             flushed = 0
@@ -2975,6 +3016,8 @@ async def stream_logs(run_id: str, request: Request):
                 # Process was killed — flush remaining logs then signal done within ~5s
                 for _ in range(10):
                     await asyncio.sleep(0.5)
+                    if await request.is_disconnected():
+                        return
                     while sent < len(run["logs"]):
                         entry = dict(run["logs"][sent])
                         entry["elapsed"] = round(time.time() - run_start, 1)
@@ -3601,8 +3644,24 @@ Return ONLY the JSON object, no markdown."""
         import re
         json_match = re.search(r'\{[\s\S]*\}', raw)
         if not json_match:
-            return {"ok": False, "error": "Could not parse chart spec"}
+            return {"ok": False, "error": "Could not parse chart spec from model response"}
         spec = json.loads(json_match.group())
+
+        # Validate required fields before returning to client
+        _missing = [f for f in ("chart_type", "x", "y") if f not in spec]
+        if _missing:
+            return {"ok": False, "error": f"Chart spec missing required fields: {_missing}"}
+        _x = spec.get("x") or {}
+        _y = spec.get("y") or {}
+        if not isinstance(_x, dict) or not _x.get("column"):
+            return {"ok": False, "error": "Chart spec has invalid 'x' field — missing column"}
+        if not isinstance(_y, dict) or not _y.get("column"):
+            return {"ok": False, "error": "Chart spec has invalid 'y' field — missing column"}
+        # Ensure referenced columns exist in data
+        for _axis, _field in [("x", _x), ("y", _y)]:
+            _col = _field.get("column")
+            if _col and _col not in df.columns:
+                return {"ok": False, "error": f"Chart spec references unknown column '{_col}' for {_axis}-axis"}
 
         # Now compute the actual data for the chart
         chart_data = _compute_chart_data(df, spec)
@@ -4133,7 +4192,7 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
         except Exception as _e3:
             print(f"[predict-file] catboost native load failed: {_e3}", flush=True)
     if model is None:
-        raise HTTPException(500, f"Failed to load model: {load_err}")
+        raise HTTPException(500, _friendly_predict_error(load_err) if load_err else "Failed to load model")
 
     # Keep ID column aside
     id_col = next((c for c in df.columns if c.lower() in ("id", "customerid", "customer_id", "passengerid")), None)
@@ -4414,7 +4473,7 @@ async def serve_predict(run_id: str, request: Request):
             )
             return {"ok": True, "predictions": _sub["preds"], "count": len(_sub["preds"]), "model": "pkl"}
         except Exception as _se:
-            raise HTTPException(500, f"Prediction failed: {_se}")
+            raise HTTPException(500, _friendly_predict_error(_se))
 
     raise HTTPException(404, "No model found for this run — it may have expired")
 
@@ -4541,6 +4600,8 @@ async def connect_datasource(req: ConnectRequest):
             raise ValueError(f"Invalid table name: {table!r}")
         return f'SELECT * FROM {table} LIMIT {limit}'
 
+    _QUERY_TIMEOUT = 30  # seconds — prevent hung queries from blocking the worker
+
     # ── PostgreSQL / Redshift ──────────────────────────────────
     if c in ("postgresql", "postgres", "redshift"):
         try:
@@ -4556,7 +4617,11 @@ async def connect_datasource(req: ConnectRequest):
             sql = query or build_sql(table, limit)
             if not sql:
                 return {"ok": False, "error": "Provide a SQL query or table name"}
-            df = pd.read_sql(sql, conn)
+            try:
+                df = await asyncio.wait_for(asyncio.to_thread(pd.read_sql, sql, conn), timeout=_QUERY_TIMEOUT)
+            except asyncio.TimeoutError:
+                conn.close()
+                return {"ok": False, "error": f"Query timed out after {_QUERY_TIMEOUT}s"}
             conn.close()
             return df_to_response(df, creds.get("database","data"))
         except ImportError:
@@ -4579,7 +4644,11 @@ async def connect_datasource(req: ConnectRequest):
             sql = query or build_sql(table, limit)
             if not sql:
                 return {"ok": False, "error": "Provide a SQL query or table name"}
-            df = pd.read_sql(sql, conn)
+            try:
+                df = await asyncio.wait_for(asyncio.to_thread(pd.read_sql, sql, conn), timeout=_QUERY_TIMEOUT)
+            except asyncio.TimeoutError:
+                conn.close()
+                return {"ok": False, "error": f"Query timed out after {_QUERY_TIMEOUT}s"}
             conn.close()
             return df_to_response(df, creds.get("database","data"))
         except ImportError:
@@ -4602,7 +4671,11 @@ async def connect_datasource(req: ConnectRequest):
             sql = query or build_sql(table, limit)
             if not sql:
                 return {"ok": False, "error": "Provide a SQL query or table name"}
-            df = pd.read_sql(sql, conn)
+            try:
+                df = await asyncio.wait_for(asyncio.to_thread(pd.read_sql, sql, conn), timeout=_QUERY_TIMEOUT)
+            except asyncio.TimeoutError:
+                conn.close()
+                return {"ok": False, "error": f"Query timed out after {_QUERY_TIMEOUT}s"}
             conn.close()
             return df_to_response(df, creds.get("database","data"))
         except ImportError:
@@ -4827,13 +4900,14 @@ async def transform_data(req: TransformRequest):
                 df[col] = pd.to_numeric(df[col], errors="coerce")
                 log.append(f"Converted '{col}' to numeric")
             elif action == "to_datetime":
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                _dt_parsed = pd.to_datetime(df[col], errors="coerce")
                 # Extract useful features
-                df[col + "_year"] = df[col].dt.year
-                df[col + "_month"] = df[col].dt.month
-                df[col + "_dayofweek"] = df[col].dt.dayofweek
-                df = df.drop(columns=[col])
-                log.append(f"Extracted date features from '{col}' (year, month, dayofweek)")
+                df[col + "_year"] = _dt_parsed.dt.year
+                df[col + "_month"] = _dt_parsed.dt.month
+                df[col + "_dayofweek"] = _dt_parsed.dt.dayofweek
+                # Preserve original as _raw instead of dropping it silently
+                df = df.rename(columns={col: col + "_raw"})
+                log.append(f"Extracted date features from '{col}' (year, month, dayofweek); original preserved as '{col}_raw'")
 
         csv_out = df.to_csv(index=False)
         return {"ok": True, "csv": csv_out, "log": log, "rows": len(df), "cols": len(df.columns)}
@@ -5060,7 +5134,7 @@ async def share_results(run_id: str, request: Request):
     diagnostics = result.get("diagnostics") or {}
     history = result.get("history") or []
 
-    _shared_results[share_id] = {
+    _share_data = {
         "share_id": share_id,
         "created": time.time(),
         "run_id": run_id,
@@ -5073,6 +5147,19 @@ async def share_results(run_id: str, request: Request):
         "executive_brief": result.get("executive_brief") or diagnostics.get("executive_brief", ""),
         "token_usage": result.get("token_usage", {}),
     }
+    _shared_results[share_id] = _share_data
+    # Persist to DB so share links survive server restarts
+    try:
+        _sdb = DBConn()
+        _sdb.execute(
+            "INSERT INTO shared_results (share_id, data_json, created) VALUES (?, ?, ?)"
+            " ON CONFLICT (share_id) DO UPDATE SET data_json=EXCLUDED.data_json, created=EXCLUDED.created",
+            (share_id, json.dumps(_share_data), _share_data["created"])
+        )
+        _sdb.commit()
+        _sdb.close()
+    except Exception as _sdbe:
+        print(f"[share] DB persist failed: {_sdbe}", flush=True)
 
     return {"ok": True, "share_id": share_id, "url": f"/shared/{share_id}"}
 
@@ -5080,11 +5167,21 @@ async def share_results(run_id: str, request: Request):
 @app.get("/shared/{share_id}")
 async def view_shared(share_id: str):
     """Render a shared results page."""
-    if share_id not in _shared_results:
-        return HTMLResponse("<h1>Not found</h1><p>This shared result has expired or does not exist.</p>", status_code=404)
-
     import html as _html
     _e = _html.escape  # shorthand — escape ALL user-controlled strings before HTML injection
+
+    if share_id not in _shared_results:
+        # Try loading from DB (survives server restarts)
+        try:
+            _sdb = DBConn()
+            _row = _sdb.execute("SELECT data_json FROM shared_results WHERE share_id=?", (share_id,)).fetchone()
+            _sdb.close()
+            if _row and _row[0]:
+                _shared_results[share_id] = json.loads(_row[0])
+        except Exception as _sdbe:
+            print(f"[share] DB load failed: {_sdbe}", flush=True)
+    if share_id not in _shared_results:
+        return HTMLResponse("<h1>Not found</h1><p>This shared result has expired or does not exist.</p>", status_code=404)
 
     data = _shared_results[share_id]
     best = data.get("best", {})
@@ -5215,14 +5312,26 @@ async def join_datasets(req: JoinRequest):
 
     # Perform sequential left join
     result = list(dfs.values())[0]
+    _orig_rows = len(result)
+    _join_warnings = []
     for i, (name, df) in enumerate(list(dfs.items())[1:]):
         # Rename overlapping columns (except join key)
         overlap = set(result.columns) & set(df.columns) - {join_key}
         if overlap:
             suffix = f"_{name.split('.')[0]}"
             df = df.rename(columns={c: c + suffix for c in overlap})
+        _before = len(result)
         result = result.merge(df, on=join_key, how="outer")
+        _after = len(result)
+        if _after > _before * 1.5:
+            _join_warnings.append(
+                f"Warning: joining '{name}' caused row count to grow from {_before} to {_after} "
+                f"(key '{join_key}' may not be unique — check for duplicates)"
+            )
 
+    _log = f"Joined {len(dfs)} datasets on '{join_key}' → {len(result)} rows, {len(result.columns)} columns."
+    if _join_warnings:
+        _log += " | " + " | ".join(_join_warnings)
     csv_out = result.to_csv(index=False)
     return {
         "ok": True,
@@ -5232,7 +5341,8 @@ async def join_datasets(req: JoinRequest):
         "join_candidates": join_candidates,
         "rows": len(result),
         "cols": len(result.columns),
-        "log": f"Joined {len(dfs)} datasets on '{join_key}' → {len(result)} rows, {len(result.columns)} columns."
+        "warnings": _join_warnings,
+        "log": _log,
     }
 
 

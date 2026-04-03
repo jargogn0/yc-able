@@ -2000,12 +2000,24 @@ async function _claimLocalRunsThenRestore(){
   if(_authToken && runHistory.length){
     const ids=runHistory.map(r=>r.id);
     try{
-      await apiFetch(`${BASE}/api/runs/claim`,{
+      const _cr=await apiFetch(`${BASE}/api/runs/claim`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({run_ids:ids})
       });
-    }catch(_){}
+      if(!_cr.ok){
+        // Retry once on failure
+        await new Promise(r=>setTimeout(r,1500));
+        const _cr2=await apiFetch(`${BASE}/api/runs/claim`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({run_ids:ids})
+        });
+        if(!_cr2.ok) toast('Could not link your previous runs to your account — they may not appear in history.','warn');
+      }
+    }catch(_){
+      toast('Could not reach server to link previous runs.','warn');
+    }
   }
   _restoreRunHistory();
 }
@@ -4493,6 +4505,7 @@ async function runPreview(){
 // MONACO EDITOR (read-only, shows train.py live)
 // ═══════════════════════════════════════════
 let monacoEditor=null;
+let _pendingMonacoCode=null; // queued if Monaco not yet initialized
 function initMonaco(){
   if(typeof require==='undefined'||!require.config){
     document.getElementById('monaco-wrap').innerHTML='<div style="padding:24px;color:var(--text-3);font-size:13px">Code viewer loading... If this persists, check your internet connection.</div>';
@@ -4521,6 +4534,11 @@ function initMonaco(){
       colors:{'editor.background':'#0a0a0b','editorGutter.background':'#111113'},
     });
     monaco.editor.setTheme('19dark');
+    // Apply any code that arrived before editor was ready
+    if(_pendingMonacoCode!==null){
+      monacoEditor.setValue(_pendingMonacoCode);
+      _pendingMonacoCode=null;
+    }
   });
 }
 async function pushCode(){
@@ -5170,9 +5188,10 @@ async function loadRunStatus(id){
     if(st.history)st.history.forEach(exp=>{if(!S.exps.find(e=>e.num===exp.num)){S.exps.push(exp);addExpCard(exp)}});
     if(st.artifacts){S.artifacts=st.artifacts;showArts(id,st.artifacts);updArtSide()}
     if(st.report){S.report=st.report;showRpt(st.report)}
-    // Restore code (train.py)
-    if(st.code&&monacoEditor){
-      monacoEditor.setValue(st.code);
+    // Restore code (train.py) — queue if Monaco not yet initialized
+    if(st.code){
+      if(monacoEditor)monacoEditor.setValue(st.code);
+      else _pendingMonacoCode=st.code;
       const t=document.querySelector('.tab[data-t="code"]');
       if(t&&!t.querySelector('.tab-badge'))t.innerHTML='Code <span class="tab-badge">!</span>';
     }
@@ -5973,7 +5992,7 @@ function showPlotModal(src){
 let _monacoStreamQueue=[];
 let _monacoStreaming=false;
 function streamToMonaco(code){
-  if(!monacoEditor)return;
+  if(!monacoEditor){_pendingMonacoCode=code;return;}
   _monacoStreamQueue=code.split('');
   if(_monacoStreaming)return;
   _monacoStreaming=true;
