@@ -1575,11 +1575,20 @@ def write_program_md(profile, obj, history, insights, domain_analysis=""):
     ) if history else "- (no experiments yet)"
     ins_txt = "\n".join(f"- {x}" for x in insights) if insights else "- (none yet)"
 
+    _uh = obj.get('user_hint', '')
+    _uh_block_prog = (
+        "╔══════════════════════════════════════════════════════════════╗\n"
+        "║  USER INSTRUCTION — OVERRIDES EVERYTHING BELOW               ║\n"
+        f'║  "{_uh}"\n'
+        "╚══════════════════════════════════════════════════════════════╝\n"
+        "Every section of this spec MUST honour the instruction above.\n\n"
+    ) if _uh else ""
+
     program = ask(
         "You are an autonomous ML research lead. Write high-signal research specs in markdown.",
         f"""Write a complete `program.md` for this project. Rewrite fully from scratch each time.
 
-ENVIRONMENT:
+{_uh_block_prog}ENVIRONMENT:
 - Auto-install is available. Any pip-installable package can be imported.
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
 - Any missing package is auto-installed on demand via pip. Use whatever you need.
@@ -1592,8 +1601,6 @@ KNOWN API BREAKAGES — avoid these exactly:
 
 EXPERT DOMAIN ANALYSIS (written by a senior data scientist — treat as ground truth):
 {_domain_analysis_text(domain_analysis) or "(not available)"}
-
-{('⚠️  USER EXPLICIT INSTRUCTION (HIGHEST PRIORITY — ALL experiments MUST follow this direction): "' + obj.get('user_hint','') + '"') if obj.get('user_hint') else ""}
 
 OBJECTIVE:
 - Task: {obj.get('task', 'Regression')}
@@ -1948,6 +1955,8 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
         for h in history
     ) if history else "- (none)"
 
+    _uh = obj.get('user_hint', '')
+
     # Pre-compute Kaggle competition block
     _is_kaggle = bool(obj.get('is_kaggle'))
     _kaggle_test = obj.get('kaggle_test_file') or ''
@@ -2047,15 +2056,20 @@ KAGGLE COMPETITION MODE — MANDATORY RULES:
         "anomaly_detection":      "Anomaly detection: IsolationForest + DBSCAN + AutoEncoder. Use only normal class for training.",
     }.get(_da_type, "")
 
+    _uh_block_code = (
+        "╔══════════════════════════════════════════════════════════════╗\n"
+        "║  USER INSTRUCTION — YOUR CODE MUST IMPLEMENT THIS            ║\n"
+        f'║  "{_uh}"\n'
+        "╚══════════════════════════════════════════════════════════════╝\n\n"
+    ) if _uh else ""
+
     code = ask(
         "You write complete production-grade Python training scripts. "
         "You are a senior ML engineer — you know exactly what approach fits each dataset type and domain. "
         "You never write generic code when expert-level code is possible.",
         f"""Write `train.py` — experiment {exp_num} ({_tier} tier) — for this specific domain and task.
 
-{('⚠️  USER EXPLICIT INSTRUCTION (HIGHEST PRIORITY — your code MUST implement this direction): "' + obj.get('user_hint','') + '"') if obj.get('user_hint') else ""}
-
-ENVIRONMENT:
+{_uh_block_code}ENVIRONMENT:
 - Auto-install available for any pip-installable package.
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
 - Any missing package is auto-installed on demand via pip. Use whatever you need.

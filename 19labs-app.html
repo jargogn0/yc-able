@@ -3159,14 +3159,12 @@ async function send(){
   if(S.running){
     const isStopCmd=/^(stop|cancel|pause|abort|halt|kill)$/i.test(lo.trim());
     if(isStopCmd){cancelRun();return}
-    // Inject as live hint immediately (no LLM round-trip while server is busy with run)
     const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does)/i.test(lo);
+    // Inject actionable instructions as live hints AND get AI acknowledgment
     if(!isQuestion&&S.runId){
       fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
-      chat('sys','<span style="font-size:11px;opacity:.65">↳ Sent to agent — will apply on next experiment</span>');
-    } else {
-      await chatWithAI(text);
     }
+    await chatWithAI(text);
     return;
   }
 
@@ -3201,7 +3199,10 @@ async function send(){
     // Check if this sounds like a correction to target/task/metric → re-analyze
     const isCorrection=/\b(target|predict|classif|regress|metric|column|feature|use|churn|price|revenue|fraud|sales|auc|rmse|mae|f1|accuracy|instead|not|change|wrong|different)\b/i.test(lo);
     if(isCorrection){S.hint=text;await runDiscover(text);return}
-    // Otherwise answer conversationally
+    // Otherwise answer conversationally — but also accumulate as a hint
+    // so any instruction typed before "go" is preserved and sent to the engine
+    const isQ=/\?$|^\s*(what|how|why|when|where|who|is|are|can|does|do|did|will|would|could|should|explain|tell me)\b/i.test(text);
+    if(!isQ){S.hint=(S.hint?S.hint+'; '+text:text);}
     await chatWithAI(text);return;
   }
   if(S.confirmed&&!S.running){if(isGo||isYes){await launchRun();return}S.hint=text;S.confirmed=false;S.analyzed=false;await runDiscover(text);return}
