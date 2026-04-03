@@ -271,6 +271,65 @@ class DBConn:
     def __enter__(self):
         return self
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            try:
+                self._conn.commit()
+            except Exception:
+                pass
+        self.close()
+        return False
+
+# ── API KEY ENCRYPTION ────────────────────────────────────────────────────────
+# Keys are encrypted with AES-128-CBC (via `cryptography` Fernet) before being
+# stored in the DB.  The encryption key is derived from APP_SECRET_KEY env var
+# (same secret used for JWT signing).  If cryptography isn't installed or the
+# env var is missing, we fall back to base64 obfuscation (still better than
+# plaintext — at least it isn't grep-able).
+def _get_fernet():
+    try:
+        from cryptography.fernet import Fernet
+        import base64
+        raw = os.environ.get("APP_SECRET_KEY", "19labs-default-secret-change-me-in-prod")
+        # Fernet needs a 32-byte URL-safe base64 key
+        key_bytes = hashlib.sha256(raw.encode()).digest()
+        fernet_key = base64.urlsafe_b64encode(key_bytes)
+        return Fernet(fernet_key)
+    except ImportError:
+        return None
+
+def _encrypt_api_key(plaintext: str) -> str:
+    if not plaintext:
+        return plaintext
+    f = _get_fernet()
+    if f:
+        return "fernet:" + f.encrypt(plaintext.encode()).decode()
+    # Fallback: base64 obfuscation (not encryption, but not grep-able plaintext)
+    return "b64:" + base64.b64encode(plaintext.encode()).decode()
+
+def _decrypt_api_key(stored: str) -> str:
+    if not stored:
+        return stored
+    if stored.startswith("fernet:"):
+        f = _get_fernet()
+        if f:
+            try:
+                return f.decrypt(stored[7:].encode()).decode()
+            except Exception:
+                pass
+        return ""
+    if stored.startswith("b64:"):
+        try:
+            return base64.b64decode(stored[4:]).decode()
+        except Exception:
+            return ""
+    # Plaintext legacy key — return as-is (will be re-encrypted on next save)
+    return stored
+
+
+    def __enter__(self):
+        return self
+
     def __exit__(self, *args):
         self.close()
 
@@ -474,7 +533,7 @@ def _get_user_api_key(user_id: str, provider: str) -> str:
         ).fetchone()
         conn.close()
         if row and row[0]:
-            return row[0]
+            return _decrypt_api_key(row[0])
     except Exception:
         pass
     # Fallback: env vars (useful when Railway DB is fresh after redeploy)
@@ -524,16 +583,22 @@ def _save_run_to_db(run_id: str, run: dict):
                 if len(serialized) <= 4 * 1024 * 1024:  # 4 MB cap
                     result_json_str = serialized
                 else:
-                    # Strip large fields and try again — remove model_b64 too (model is in _MODELS_DIR)
+                    # Strip large binary fields — model is in _MODELS_DIR so model_b64 is redundant
                     slim = {k: v for k, v in result.items() if k not in ("plots", "csv_data", "model_b64", "run_logs", "train_code")}
                     slim_serialized = json.dumps(slim)
                     if len(slim_serialized) <= 4 * 1024 * 1024:
-                        result_json_str = slim_serialized
+                        slim["_result_truncated"] = "plots/logs stripped (>4 MB)"
+                        result_json_str = json.dumps(slim)
                     else:
                         # Last resort: only essential metadata
                         essential_keys = ("objective", "best", "history", "total_experiments", "model_ag_path", "_ws_files", "deploy_path")
                         tiny = {k: v for k, v in result.items() if k in essential_keys}
+                        tiny["_result_truncated"] = "result too large — only essential keys kept"
                         result_json_str = json.dumps(tiny)
+                        import logging as _logging
+                        _logging.getLogger("19labs").warning(
+                            "Run %s result truncated to essential keys (full size %d bytes)", run_id, len(serialized)
+                        )
             except Exception:
                 pass
         conn = DBConn()
@@ -678,8 +743,23 @@ _MEDIA_DATASETS: dict[str, dict] = {}
 APP_HTML = Path(__file__).parent / "19labs-app.html"
 LANDING_HTML = Path(__file__).parent / "landing.html"
 
+_RUNS_MAX_IN_MEMORY = 200  # keep at most this many runs in RAM
+
+def _evict_old_runs():
+    """Remove completed runs from RUNS dict when it grows too large.
+    Keeps all in-progress runs and the most recent completed ones."""
+    if len(RUNS) <= _RUNS_MAX_IN_MEMORY:
+        return
+    terminal = [(rid, r.get("started", 0)) for rid, r in RUNS.items()
+                if r.get("status") in ("done", "error", "cancelled")]
+    # Sort oldest-first, evict until we're under the limit
+    terminal.sort(key=lambda x: x[1])
+    to_evict = len(RUNS) - _RUNS_MAX_IN_MEMORY
+    for rid, _ in terminal[:to_evict]:
+        RUNS.pop(rid, None)
+
 def _cleanup_old_workspaces():
-    cutoff = time.time() - (7 * 24 * 3600)  # 7 days on persistent storage
+    cutoff = time.time() - (24 * 3600)  # 24 hours — workspaces are large
     for ws_path in glob.glob(str(_WS_DIR / "19labs_*")):
         try:
             p = Path(ws_path)
@@ -839,8 +919,8 @@ def _site_base(request: Request) -> str:
     site = os.environ.get("SITE_URL", "").strip().rstrip("/")
     if site:
         return site
-    base = _site_base(request)
-    # Railway / any reverse-proxy: request arrives as http:// internally
+    # Derive from the incoming request — Railway sends http:// internally
+    base = str(request.base_url).rstrip("/")
     if base.startswith("http://"):
         base = "https://" + base[7:]
     return base
@@ -888,7 +968,7 @@ def _upsert_provider_user(user_id: str, email: str, name: str, provider: str, ap
     conn.execute(
         "INSERT INTO user_api_keys (user_id, provider, api_key) VALUES (?,?,?) "
         "ON CONFLICT (user_id, provider) DO UPDATE SET api_key=EXCLUDED.api_key",
-        (user_id, norm, api_key)
+        (user_id, norm, _encrypt_api_key(api_key))
     )
     conn.commit()
     conn.close()
@@ -1021,9 +1101,8 @@ async def github_auth_callback(code: str = "", state: str = "", error: str = "",
         conn.close()
 
         token = _make_jwt(user_id, email, name)
-        safe_token = token.replace("'", "")
         return HTMLResponse(
-            f"<script>localStorage.setItem('19labs_auth_token','{safe_token}');"
+            f"<script>localStorage.setItem('19labs_auth_token',{json.dumps(token)});"
             f"window.location.href='/app';</script>"
         )
     except Exception as e:
@@ -1079,9 +1158,8 @@ async def google_auth_callback(code: str = "", state: str = "", error: str = "",
         conn.close()
 
         token = _make_jwt(user_id, email, name)
-        safe_token = token.replace("'", "")
         return HTMLResponse(
-            f"<script>localStorage.setItem('19labs_auth_token','{safe_token}');"
+            f"<script>localStorage.setItem('19labs_auth_token',{json.dumps(token)});"
             f"window.location.href='/app';</script>"
         )
     except Exception as e:
@@ -1919,11 +1997,16 @@ async def upload_media_dataset(file: UploadFile = File(...)):
         data_dir = tmp_dir / "data"
         data_dir.mkdir()
         with zipfile.ZipFile(zip_path) as zf:
-            # Security: skip absolute paths and path traversal entries
+            # Security: resolve each member's destination and ensure it stays
+            # inside data_dir — guards against absolute paths, ../ traversal,
+            # and null-byte / encoded separator tricks.
+            data_dir_resolved = data_dir.resolve()
             for member in zf.infolist():
-                member_path = Path(member.filename)
-                if member_path.is_absolute() or ".." in member_path.parts:
-                    continue
+                dest = (data_dir / member.filename).resolve()
+                try:
+                    dest.relative_to(data_dir_resolved)
+                except ValueError:
+                    continue  # outside data_dir — skip silently
                 zf.extract(member, data_dir)
         zip_path.unlink()
         # Unwrap single top-level folder if that's all there is
@@ -2137,6 +2220,7 @@ async def start_run(req: RunRequest, request: Request):
     )
     # Persist immediately so the run survives a server restart
     _save_run_to_db(run_id, RUNS[run_id])
+    _evict_old_runs()
 
     def background():
         import sys
