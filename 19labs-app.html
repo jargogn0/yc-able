@@ -2629,15 +2629,19 @@ function _buildDataDashboardHTML(){
     return S.rows.map(r=>String(r[idx]||'').trim()).filter(v=>v&&v!==''&&v.toLowerCase()!=='nan'&&v.toLowerCase()!=='null'&&v!=='NA');
   }
 
-  // ── numeric stats
+  // ── numeric stats + skewness
   function colStats(vals){
-    if(!vals.length)return{min:0,max:0,mean:0,median:0,std:0};
+    if(!vals.length)return{min:0,max:0,mean:0,median:0,std:0,skew:0};
     const s=[...vals].sort((a,b)=>a-b);
-    const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+    const n=vals.length;
+    const mean=vals.reduce((a,b)=>a+b,0)/n;
     const mid=Math.floor(s.length/2);
     const median=s.length%2?s[mid]:(s[mid-1]+s[mid])/2;
-    const std=Math.sqrt(vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length);
-    return{min:s[0],max:s[s.length-1],mean,median,std};
+    const variance=vals.reduce((a,b)=>a+(b-mean)**2,0)/n;
+    const std=Math.sqrt(variance);
+    // Pearson's moment skewness
+    const skew=std>0?vals.reduce((a,b)=>a+((b-mean)/std)**3,0)/n:0;
+    return{min:s[0],max:s[s.length-1],mean,median,std,skew};
   }
 
   // ── value counts for categorical
@@ -2658,49 +2662,54 @@ function _buildDataDashboardHTML(){
     return v%1===0?String(v):(a<0.01?v.toExponential(1):v.toFixed(a<1?3:2));
   }
 
-  // ── histogram SVG (numeric)
-  function histogram(vals){
+  // ── histogram SVG (numeric) — taller, with mean line + skew label
+  function histogram(vals,mean){
     if(!vals.length)return`<div style="padding:16px;text-align:center;font-size:10px;color:var(--text-3)">no data</div>`;
-    const {min,max}=colStats(vals);
-    if(min===max)return`<div style="padding:8px;font-size:10px;color:var(--text-3);text-align:center">constant: ${fmt(min)}</div>`;
-    const BINS=Math.min(18,Math.max(5,Math.ceil(Math.sqrt(vals.length))));
-    const bw=(max-min)/BINS;
+    const mn=Math.min(...vals),mx=Math.max(...vals);
+    if(mn===mx)return`<div style="padding:8px;font-size:10px;color:var(--text-3);text-align:center">constant: ${fmt(mn)}</div>`;
+    const BINS=Math.min(20,Math.max(6,Math.ceil(Math.sqrt(vals.length))));
+    const bw=(mx-mn)/BINS;
     const counts=new Array(BINS).fill(0);
-    vals.forEach(v=>{let b=Math.min(BINS-1,Math.floor((v-min)/bw));counts[b]++});
+    vals.forEach(v=>{let b=Math.min(BINS-1,Math.floor((v-mn)/bw));counts[b]++});
     const peak=Math.max(...counts);
-    const W=220,H=64,pl=2,pr=2,pt=4,pb=14;
+    const W=230,H=82,pl=2,pr=2,pt=4,pb=14;
     const cw=(W-pl-pr)/BINS,ch=H-pt-pb;
     let bars=counts.map((c,i)=>{
       const x=pl+i*cw,bh=peak?(c/peak)*ch:0,y=pt+ch-bh;
-      // color by density: lighter = more
-      const op=0.45+0.55*(peak?c/peak:0);
-      return`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,cw-0.8).toFixed(1)}" height="${bh.toFixed(1)}" fill="#3b82f6" opacity="${op.toFixed(2)}" rx="1"/>`;
+      const op=0.35+0.65*(peak?c/peak:0);
+      return`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,cw-1).toFixed(1)}" height="${bh.toFixed(1)}" fill="#3b82f6" opacity="${op.toFixed(2)}" rx="1.5"/>`;
     }).join('');
-    const lx=pl,mx=W/2,rx=W-pr;
-    bars+=`<text x="${lx}" y="${H}" font-size="8" fill="#52525b" font-family="monospace">${fmt(min)}</text>`;
-    bars+=`<text x="${mx}" y="${H}" font-size="8" fill="#52525b" text-anchor="middle" font-family="monospace">${fmt((min+max)/2)}</text>`;
-    bars+=`<text x="${rx}" y="${H}" font-size="8" fill="#52525b" text-anchor="end" font-family="monospace">${fmt(max)}</text>`;
+    // mean line
+    if(mean!==undefined){
+      const mx2=pl+(mean-mn)/(mx-mn)*(W-pl-pr);
+      if(mx2>=pl&&mx2<=W-pr){
+        bars+=`<line x1="${mx2.toFixed(1)}" y1="${pt}" x2="${mx2.toFixed(1)}" y2="${pt+ch}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.9"/>`;
+      }
+    }
+    bars+=`<text x="${pl}" y="${H}" font-size="8" fill="#52525b" font-family="monospace">${fmt(mn)}</text>`;
+    bars+=`<text x="${W/2}" y="${H}" font-size="8" fill="#52525b" text-anchor="middle" font-family="monospace">${fmt((mn+mx)/2)}</text>`;
+    bars+=`<text x="${W-pr}" y="${H}" font-size="8" fill="#52525b" text-anchor="end" font-family="monospace">${fmt(mx)}</text>`;
     return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${bars}</svg>`;
   }
 
-  // ── horizontal bar chart SVG (categorical)
+  // ── horizontal bar chart SVG (categorical) — multi-color palette
+  const CAT_COLORS=['#818cf8','#34d399','#f472b6','#fb923c','#38bdf8','#a78bfa','#4ade80','#fbbf24'];
   function barChart(vc){
     const top=vc.slice(0,8);
     if(!top.length)return`<div style="padding:8px;font-size:10px;color:var(--text-3)">no values</div>`;
     const maxC=top[0][1];
     const total=S.rows.length||1;
-    const RH=13,PL=72,PR=36,W=240,PAD=4;
+    const RH=15,PL=76,PR=40,W=240,PAD=4;
     const H=top.length*RH+PAD*2;
     let rects=top.map(([val,cnt],i)=>{
       const y=PAD+i*RH;
       const bw=maxC?(cnt/maxC)*(W-PL-PR):0;
       const pct=Math.round(cnt/total*100);
-      const label=val.length>10?val.slice(0,9)+'…':val;
-      const tc=i===0?'#a78bfa':'#7c6ead';
-      const op=0.5+0.5*(maxC?cnt/maxC:0);
-      return`<text x="${PL-5}" y="${y+RH-3}" font-size="8.5" fill="#71717a" text-anchor="end" font-family="sans-serif">${esc(label)}</text>`+
-        `<rect x="${PL}" y="${y+1}" width="${bw.toFixed(1)}" height="${RH-3}" rx="2" fill="${tc}" opacity="${op.toFixed(2)}"/>`+
-        `<text x="${PL+bw+4}" y="${y+RH-3}" font-size="8" fill="#52525b" font-family="monospace">${cnt>999?fmt(cnt):cnt} (${pct}%)</text>`;
+      const label=val.length>11?val.slice(0,10)+'…':val;
+      const color=CAT_COLORS[i%CAT_COLORS.length];
+      return`<text x="${PL-5}" y="${y+RH-3}" font-size="8.5" fill="#a1a1aa" text-anchor="end" font-family="sans-serif">${esc(label)}</text>`+
+        `<rect x="${PL}" y="${y+2}" width="${Math.max(1,bw).toFixed(1)}" height="${RH-5}" rx="2" fill="${color}" opacity="0.75"/>`+
+        `<text x="${PL+bw+5}" y="${y+RH-4}" font-size="8" fill="#71717a" font-family="monospace">${cnt>9999?fmt(cnt):cnt} <tspan fill="#52525b">(${pct}%)</tspan></text>`;
     }).join('');
     return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${rects}</svg>`;
   }
@@ -2727,43 +2736,141 @@ function _buildDataDashboardHTML(){
   const totalMissing=S.cols.reduce((a,c)=>a+(S.colNulls[c]||0),0);
   const totalCells=(S.rows.length||1)*S.cols.length;
   const completeness=Math.round((1-totalMissing/totalCells)*100);
+  const targetCol=S.discovery?.objective?.target||S.discovery?.discovery?.target||null;
 
-  // ── KPI row
+  // ── KPI hero row
   let h=`<div class="db-kpi-row">
     <div class="db-kpi"><div class="db-kpi-v">${S.totalRows.toLocaleString()}</div><div class="db-kpi-l">Rows</div></div>
     <div class="db-kpi"><div class="db-kpi-v">${S.cols.length}</div><div class="db-kpi-l">Columns</div></div>
     <div class="db-kpi"><div class="db-kpi-v">${numList.length}</div><div class="db-kpi-l">Numeric</div></div>
     <div class="db-kpi"><div class="db-kpi-v">${catList.length}</div><div class="db-kpi-l">Categorical</div></div>
-    <div class="db-kpi"><div class="db-kpi-v" style="color:${completeness>=95?'#4ade80':completeness>=80?'#f59e0b':'#ef4444'}">${completeness}%</div><div class="db-kpi-l">Complete</div></div>
-    ${totalMissing>0?`<div class="db-kpi"><div class="db-kpi-v" style="color:var(--amber)">${totalMissing.toLocaleString()}</div><div class="db-kpi-l">Missing</div></div>`:''}
+    <div class="db-kpi"><div class="db-kpi-v" style="color:${completeness>=95?'#4ade80':completeness>=80?'#f59e0b':'#ef4444'}">${completeness}%</div><div class="db-kpi-l">Completeness</div></div>
+    ${totalMissing>0?`<div class="db-kpi"><div class="db-kpi-v" style="color:var(--amber)">${totalMissing.toLocaleString()}</div><div class="db-kpi-l">Missing Cells</div></div>`:''}
   </div>`;
 
-  // ── column distributions
+  // ── target variable spotlight
+  if(targetCol&&S.cols.includes(targetCol)){
+    const type=S.colTypes[targetCol];
+    const task=S.discovery?.objective?.task||S.discovery?.discovery?.task||'';
+    let spotContent='';
+    if(type==='numeric'){
+      const vals=numVals(targetCol);
+      const st=colStats(vals);
+      const skewLabel=Math.abs(st.skew)<0.5?'symmetric':(st.skew>0?'right-skewed':'left-skewed');
+      spotContent=`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px">
+        ${[['min',fmt(st.min)],['mean',fmt(st.mean)],['median',fmt(st.median)],['max',fmt(st.max)],['skew',skewLabel]].map(([l,v])=>`<div style="text-align:center"><div style="font-size:14px;font-weight:700;font-family:var(--mono);color:#f0f0f0">${v}</div><div style="font-size:9px;color:#71717a;text-transform:uppercase;margin-top:2px">${l}</div></div>`).join('')}
+      </div>${histogram(vals,st.mean)}`;
+    } else {
+      const vc=valCounts(targetCol);
+      const classes=vc.length;
+      // class imbalance check
+      const topPct=vc[0]?Math.round(vc[0][1]/(S.rows.length||1)*100):0;
+      const imbalanceWarn=classes>=2&&topPct>75?`<span style="background:#7c2d12;color:#fca5a5;padding:2px 7px;border-radius:9px;font-size:9px;font-weight:600;margin-left:8px">⚠ imbalanced (${topPct}% ${esc(vc[0][0])})</span>`:'';
+      spotContent=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:20px;font-weight:800;font-family:var(--mono)">${classes}</span><span style="font-size:11px;color:#a1a1aa">classes${imbalanceWarn}</span></div>${barChart(vc)}`;
+    }
+    h+=`<div style="background:linear-gradient(135deg,#1e1b4b 0%,#1c1c27 100%);border:1px solid #4338ca44;border-radius:10px;padding:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#818cf8">Target Variable</span>
+        <span style="background:#312e81;color:#a5b4fc;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700;font-family:var(--mono)">${esc(targetCol)}</span>
+        ${task?`<span style="font-size:10px;color:#6366f1;margin-left:auto">${esc(task)}</span>`:''}
+      </div>
+      ${spotContent}
+    </div>`;
+  }
+
+  // ── auto-insights
+  const insights=[];
+  // missing data alerts
+  S.cols.forEach(col=>{
+    const pct=S.rows.length?Math.round((S.colNulls[col]||0)/S.rows.length*100):0;
+    if(pct>=30)insights.push({level:'warn',msg:`<b>${esc(col)}</b> is ${pct}% missing — consider imputation or dropping`});
+    else if(pct>=10)insights.push({level:'info',msg:`<b>${esc(col)}</b> has ${pct}% missing values`});
+  });
+  // skewness alerts for numeric
+  numList.forEach(col=>{
+    if(col===targetCol)return;
+    const vals=numVals(col);
+    if(vals.length<10)return;
+    const {skew}=colStats(vals);
+    if(Math.abs(skew)>2)insights.push({level:'info',msg:`<b>${esc(col)}</b> is highly ${skew>0?'right':'left'}-skewed (skew=${skew.toFixed(1)}) — log transform may help`});
+  });
+  // high-cardinality categoricals
+  catList.forEach(col=>{
+    if(col===targetCol)return;
+    const vc=valCounts(col);
+    const ratio=vc.length/(S.rows.length||1);
+    if(vc.length>100&&ratio>0.5)insights.push({level:'warn',msg:`<b>${esc(col)}</b> has ${vc.length.toLocaleString()} unique values (${Math.round(ratio*100)}% cardinality) — may need encoding`});
+  });
+  // constant columns
+  S.cols.forEach(col=>{
+    const type=S.colTypes[col];
+    if(type==='categorical'){const vc=valCounts(col);if(vc.length===1)insights.push({level:'warn',msg:`<b>${esc(col)}</b> is constant — zero predictive value, consider dropping`});}
+    else{const vals=numVals(col);if(vals.length&&Math.min(...vals)===Math.max(...vals))insights.push({level:'warn',msg:`<b>${esc(col)}</b> is constant — zero predictive value`});}
+  });
+  if(insights.length){
+    h+=`<div><div class="db-section-title">Auto Insights</div><div style="display:flex;flex-direction:column;gap:6px">`;
+    insights.slice(0,8).forEach(({level,msg})=>{
+      const bg=level==='warn'?'#2c1a0e':' #0f1c2e';
+      const bd=level==='warn'?'#78350f44':'#1e3a5f44';
+      const ic=level==='warn'?'⚠':'ℹ';
+      const tc=level==='warn'?'#fbbf24':'#60a5fa';
+      h+=`<div style="background:${bg};border:1px solid ${bd};border-radius:7px;padding:8px 12px;display:flex;align-items:flex-start;gap:8px;font-size:11px;color:#d4d4d8"><span style="color:${tc};flex-shrink:0">${ic}</span><span>${msg}</span></div>`;
+    });
+    h+=`</div></div>`;
+  }
+
+  // ── missing data heatmap (columns with any missing, sorted by severity)
+  const colsWithMissing=S.cols.filter(c=>(S.colNulls[c]||0)>0).sort((a,b)=>(S.colNulls[b]||0)-(S.colNulls[a]||0));
+  if(colsWithMissing.length){
+    h+=`<div><div class="db-section-title">Missing Data <span style="font-size:10px;color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">${colsWithMissing.length} affected column${colsWithMissing.length>1?'s':''}</span></div>
+    <div style="display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">`;
+    colsWithMissing.slice(0,15).forEach(col=>{
+      const pct=S.rows.length?Math.round((S.colNulls[col]||0)/S.rows.length*100):0;
+      const barColor=pct>=50?'#ef4444':pct>=20?'#f59e0b':'#3b82f6';
+      h+=`<div style="display:grid;grid-template-columns:140px 1fr 36px;align-items:center;gap:8px;font-size:10px">
+        <span style="color:#a1a1aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono)" title="${esc(col)}">${esc(col)}</span>
+        <div style="background:#27272a;border-radius:3px;height:6px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;transition:width .3s"></div></div>
+        <span style="color:${barColor};font-weight:700;text-align:right">${pct}%</span>
+      </div>`;
+    });
+    h+=`</div></div>`;
+  }
+
+  // ── column profiles (numeric + categorical)
   h+=`<div><div class="db-section-title">Column Profiles</div><div class="db-grid">`;
   S.cols.forEach(col=>{
     const type=S.colTypes[col];
     const nullCnt=S.colNulls[col]||0;
     const nullPct=S.rows.length?Math.round(nullCnt/S.rows.length*100):0;
-    h+=`<div class="db-card">`;
-    h+=`<div class="db-card-hd"><span class="db-col-name" title="${esc(col)}">${esc(col)}</span><span class="db-type-badge ${type==='numeric'?'num':'cat'}">${type==='numeric'?'NUM':'CAT'}</span>${nullPct?`<span class="db-null-badge">${nullPct}% null</span>`:''}</div>`;
+    const isTarget=col===targetCol;
+    const cardBorder=isTarget?'border:1px solid #4338ca88':'border:1px solid var(--border)';
+    h+=`<div class="db-card" style="${cardBorder}">`;
+    h+=`<div class="db-card-hd"><span class="db-col-name" title="${esc(col)}">${esc(col)}</span>
+      <span class="db-type-badge ${type==='numeric'?'num':'cat'}">${type==='numeric'?'NUM':'CAT'}</span>
+      ${isTarget?`<span style="background:#312e81;color:#a5b4fc;font-size:8px;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:2px">TARGET</span>`:''}
+      ${nullPct?`<span class="db-null-badge">${nullPct}% null</span>`:''}</div>`;
     if(type==='numeric'){
       const vals=numVals(col);
       const st=colStats(vals);
+      const skewLabel=Math.abs(st.skew)<0.5?'':(Math.abs(st.skew)<1?`${st.skew>0?'▶':'◀'} mild skew`:(st.skew>0?'▶▶ right-skewed':'◀◀ left-skewed'));
       h+=`<div class="db-stat-row">
         <div class="db-mini-stat"><span class="db-ms-l">min</span><span class="db-ms-v">${fmt(st.min)}</span></div>
-        <div class="db-mini-stat"><span class="db-ms-l">mean</span><span class="db-ms-v">${fmt(st.mean)}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">mean</span><span class="db-ms-v" style="color:#f59e0b">${fmt(st.mean)}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">median</span><span class="db-ms-v">${fmt(st.median)}</span></div>
         <div class="db-mini-stat"><span class="db-ms-l">max</span><span class="db-ms-v">${fmt(st.max)}</span></div>
-        <div class="db-mini-stat"><span class="db-ms-l">std</span><span class="db-ms-v">${fmt(st.std)}</span></div>
       </div>`;
-      h+=`<div class="db-chart">${histogram(vals)}</div>`;
+      if(skewLabel)h+=`<div style="font-size:9px;color:#6b7280;padding:0 2px">${skewLabel} · std ${fmt(st.std)}</div>`;
+      h+=`<div class="db-chart">${histogram(vals,st.mean)}</div>`;
+      h+=`<div style="font-size:8px;color:#52525b;text-align:right;margin-top:-4px">— mean</div>`;
     } else {
       const vc=valCounts(col);
       const unique=vc.length;
       const topFreq=vc[0]?Math.round(vc[0][1]/S.rows.length*100):0;
+      const highCard=unique>50&&unique/(S.rows.length||1)>0.3;
       h+=`<div class="db-stat-row">
-        <div class="db-mini-stat"><span class="db-ms-l">unique</span><span class="db-ms-v">${unique.toLocaleString()}</span></div>
-        <div class="db-mini-stat"><span class="db-ms-l">top value</span><span class="db-ms-v" title="${esc(vc[0]?.[0]||'')}">${esc((vc[0]?.[0]||'—').slice(0,12))}</span></div>
-        <div class="db-mini-stat"><span class="db-ms-l">top freq</span><span class="db-ms-v">${topFreq}%</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">unique</span><span class="db-ms-v" style="${highCard?'color:#f59e0b':''}">${unique.toLocaleString()}${highCard?' ⚠':''}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">top</span><span class="db-ms-v" title="${esc(vc[0]?.[0]||'')}">${esc((vc[0]?.[0]||'—').slice(0,12))}</span></div>
+        <div class="db-mini-stat"><span class="db-ms-l">freq</span><span class="db-ms-v">${topFreq}%</span></div>
       </div>`;
       h+=`<div class="db-chart">${barChart(vc)}</div>`;
     }
@@ -2775,7 +2882,6 @@ function _buildDataDashboardHTML(){
   if(numList.length>=2){
     const N=Math.min(numList.length,12);
     const cols=numList.slice(0,N);
-    // build aligned value arrays (rows where all are valid)
     const colVals={};
     cols.forEach(c=>{colVals[c]=[]});
     S.rows.forEach(r=>{
@@ -2784,32 +2890,34 @@ function _buildDataDashboardHTML(){
       }
     });
     const n=colVals[cols[0]].length;
-    const CELL=Math.max(22,Math.min(36,Math.floor(320/N)));
-    const LW=80,LH=56,W=LW+N*CELL,H=LH+N*CELL;
+    const CELL=Math.max(24,Math.min(38,Math.floor(340/N)));
+    const LW=88,LH=60,W=LW+N*CELL,H=LH+N*CELL;
     let cells='',rowLabels='',colLabels='';
     cols.forEach((col,i)=>{
-      const lbl=col.length>10?col.slice(0,9)+'…':col;
+      const lbl=col.length>11?col.slice(0,10)+'…':col;
       const x=LW+i*CELL+CELL/2,y=LH+i*CELL+CELL/2+3;
-      colLabels+=`<text x="${x}" y="${LH-3}" font-size="8.5" fill="#71717a" text-anchor="end" transform="rotate(-40,${x},${LH-3})" font-family="sans-serif">${esc(lbl)}</text>`;
-      rowLabels+=`<text x="${LW-4}" y="${y}" font-size="8.5" fill="#71717a" text-anchor="end" font-family="sans-serif">${esc(lbl)}</text>`;
+      const isT=col===targetCol;
+      colLabels+=`<text x="${x}" y="${LH-4}" font-size="8.5" fill="${isT?'#818cf8':'#71717a'}" text-anchor="end" transform="rotate(-40,${x},${LH-4})" font-family="sans-serif" font-weight="${isT?700:400}">${esc(lbl)}</text>`;
+      rowLabels+=`<text x="${LW-5}" y="${y}" font-size="8.5" fill="${isT?'#818cf8':'#71717a'}" text-anchor="end" font-family="sans-serif" font-weight="${isT?700:400}">${esc(lbl)}</text>`;
       for(let j=0;j<N;j++){
         const x2=LW+j*CELL,y2=LH+i*CELL;
         const r=i===j?1:pearson(colVals[cols[i]],colVals[cols[j]]);
-        cells+=`<rect x="${x2}" y="${y2}" width="${CELL}" height="${CELL}" fill="${corrColor(r)}" rx="1.5"/>`;
-        if(N<=8){
-          const tc=Math.abs(r)>0.45?'#fff':'#52525b';
+        const isHighlight=(cols[i]===targetCol||cols[j]===targetCol)&&i!==j;
+        cells+=`<rect x="${x2}" y="${y2}" width="${CELL}" height="${CELL}" fill="${corrColor(r)}" rx="2" stroke="${isHighlight?'#818cf8':'none'}" stroke-width="${isHighlight?1.5:0}"/>`;
+        if(N<=9){
+          const tc=Math.abs(r)>0.5?'#fff':'#a1a1aa';
           cells+=`<text x="${(x2+CELL/2).toFixed(0)}" y="${(y2+CELL/2+3).toFixed(0)}" font-size="7.5" fill="${tc}" text-anchor="middle" font-family="monospace">${r.toFixed(2)}</text>`;
         }
       }
     });
-    h+=`<div><div class="db-section-title">Correlation Matrix <span style="font-size:10px;color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">${n} rows · ${N} numeric cols</span></div>
-    <div class="db-corr"><div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:${Math.min(W,560)}px;display:block">${colLabels}${rowLabels}${cells}</svg></div>
+    h+=`<div><div class="db-section-title">Correlation Matrix <span style="font-size:10px;color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">${n.toLocaleString()} rows · ${N} numeric cols${targetCol?` · <span style="color:#818cf8">purple = target</span>`:''}</span></div>
+    <div class="db-corr"><div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:${Math.min(W,580)}px;display:block">${colLabels}${rowLabels}${cells}</svg></div>
     <div class="db-corr-legend"><div class="db-corr-grad"></div><span>Negative (red) → No correlation → Positive (blue)</span></div></div></div>`;
   }
 
   // ── data preview table (collapsed by default)
   let tbl='<table class="dp"><thead><tr>';
-  S.cols.forEach(c=>{tbl+=`<th>${esc(c)}</th>`});
+  S.cols.forEach(c=>{tbl+=`<th${c===targetCol?' style="color:#818cf8"':''}>${esc(c)}</th>`});
   tbl+='</tr></thead><tbody>';
   S.rows.slice(0,20).forEach(r=>{tbl+='<tr>';r.forEach(v=>{tbl+=`<td>${esc(v)}</td>`});tbl+='</tr>'});
   tbl+='</tbody></table>';
