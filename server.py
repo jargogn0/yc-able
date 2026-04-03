@@ -686,21 +686,24 @@ def _trial_ip(request: Request) -> str:
 
 def _trial_check_and_increment(ip: str) -> tuple[bool, int]:
     """Returns (allowed, total_runs_used). Increments guest_runs counter if allowed.
-    Guests get exactly GUEST_MAX_RUNS runs total (not per-day)."""
+    Atomic: uses a single SQL statement so concurrent requests can't race past the limit."""
     try:
         conn = DBConn()
-        row = conn.execute("SELECT count FROM guest_runs WHERE ip=?", (ip,)).fetchone()
-        used = row[0] if row else 0
-        if used >= GUEST_MAX_RUNS:
-            conn.close()
-            return False, used
+        # Atomically insert/increment ONLY when count < GUEST_MAX_RUNS.
+        # If the row doesn't exist yet, INSERT sets count=1 (always ≤ max if max≥1).
+        # If it exists and count < max, increment. Otherwise do nothing (no update).
         conn.execute(
-            "INSERT INTO guest_runs (ip, count) VALUES (?,1) ON CONFLICT(ip) DO UPDATE SET count=count+1",
-            (ip,)
+            "INSERT INTO guest_runs (ip, count) VALUES (?,1) "
+            "ON CONFLICT(ip) DO UPDATE SET count=count+1 WHERE count < ?",
+            (ip, GUEST_MAX_RUNS)
         )
         conn.commit()
+        row = conn.execute("SELECT count FROM guest_runs WHERE ip=?", (ip,)).fetchone()
+        used = row[0] if row else 0
         conn.close()
-        return True, used + 1
+        # If count didn't change (still at limit), the update was a no-op
+        allowed = used <= GUEST_MAX_RUNS
+        return allowed, used
     except Exception:
         return True, 0  # fail open — don't block on DB error
 
@@ -763,8 +766,20 @@ def _cleanup_old_workspaces():
     for ws_path in glob.glob(str(_WS_DIR / "19labs_*")):
         try:
             p = Path(ws_path)
-            if p.is_dir() and p.stat().st_mtime < cutoff:
-                shutil.rmtree(p, ignore_errors=True)
+            if not (p.is_dir() and p.stat().st_mtime < cutoff):
+                continue
+            # Extract run_id from workspace folder name (format: 19labs_{run_id})
+            folder_name = p.name
+            rid = folder_name[len("19labs_"):] if folder_name.startswith("19labs_") else None
+            if rid:
+                # Only delete workspace if the model has been safely copied to _MODELS_DIR
+                model_persisted = (
+                    (_MODELS_DIR / f"{rid}.pkl").exists() or
+                    (_MODELS_DIR / f"{rid}_ag").is_dir()
+                )
+                if not model_persisted:
+                    continue  # Keep workspace — model not yet persisted
+            shutil.rmtree(p, ignore_errors=True)
         except Exception:
             pass
 
@@ -1209,10 +1224,8 @@ async def auth_login(request: Request):
     conn = DBConn()
     row = conn.execute("SELECT id, email, name, password_hash FROM users WHERE id=?", (user_id,)).fetchone()
     conn.close()
-    if not row:
-        raise HTTPException(401, "No account found with this email. If you had an account before, the server may have reset — please create a new account (your API keys are saved in your browser).")
-    if not _verify_pw(password, row[3]):
-        raise HTTPException(401, "Incorrect password. Please check and try again.")
+    if not row or not _verify_pw(password, row[3] if row else ""):
+        raise HTTPException(401, "Invalid email or password.")
     token = _make_jwt(row[0], row[1], row[2])
     return {"token": token, "user": {"id": row[0], "email": row[1], "name": row[2]}}
 
@@ -1979,6 +1992,8 @@ async def get_config():
     }
 
 _ALLOWED_UPLOAD_EXTS = {".csv", ".tsv", ".zip", ".parquet", ".xlsx", ".xls", ".json", ".txt"}
+_MAX_UPLOAD_BYTES = 500 * 1024 * 1024       # 500 MB raw upload
+_MAX_ZIP_UNCOMPRESSED_BYTES = 2 * 1024 ** 3 # 2 GB total uncompressed
 
 @app.post("/api/upload-dataset")
 async def upload_media_dataset(file: UploadFile = File(...)):
@@ -1990,6 +2005,8 @@ async def upload_media_dataset(file: UploadFile = File(...)):
     if ext not in _ALLOWED_UPLOAD_EXTS:
         raise HTTPException(400, f"File type '{ext}' not supported. Please upload a CSV, ZIP, or supported tabular format.")
     content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"File too large. Maximum upload size is 500 MB.")
 
     if ext == ".zip":
         zip_path = tmp_dir / filename
@@ -1997,6 +2014,10 @@ async def upload_media_dataset(file: UploadFile = File(...)):
         data_dir = tmp_dir / "data"
         data_dir.mkdir()
         with zipfile.ZipFile(zip_path) as zf:
+            # ZIP bomb guard: reject if total uncompressed size is absurd
+            total_uncompressed = sum(m.file_size for m in zf.infolist())
+            if total_uncompressed > _MAX_ZIP_UNCOMPRESSED_BYTES:
+                raise HTTPException(413, "ZIP contents too large (max 2 GB uncompressed).")
             # Security: resolve each member's destination and ensure it stays
             # inside data_dir — guards against absolute paths, ../ traversal,
             # and null-byte / encoded separator tricks.
@@ -2543,10 +2564,20 @@ class PushCodeRequest(BaseModel):
     code: str
 
 @app.post("/api/run/{run_id}/push-code")
-async def push_code(run_id: str, req: PushCodeRequest):
+async def push_code(run_id: str, req: PushCodeRequest, request: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
+    # Ownership check — same pattern as /hint
+    caller_token = _token_from_request(request)
+    caller_user = _get_user(caller_token)
+    caller_ip = _trial_ip(request)
+    run_owner_id = run.get("owner_id")
+    run_owner_ip = run.get("owner_ip")
+    if run_owner_id and (not caller_user or caller_user["id"] != run_owner_id):
+        raise HTTPException(403, "Not your run")
+    if not run_owner_id and run_owner_ip and caller_ip != run_owner_ip:
+        raise HTTPException(403, "Not your run")
     ws = Path(run.get("ws", ""))
     if not ws.exists():
         raise HTTPException(404, "Workspace not found")
@@ -2556,9 +2587,19 @@ async def push_code(run_id: str, req: PushCodeRequest):
 
 # ── AI BUSINESS INSIGHT ────────────────────────────────────────
 @app.get("/api/run/{run_id}/interpret")
-async def interpret_run(run_id: str):
+async def interpret_run(run_id: str, request: Request):
     """Stream a short AI-generated business interpretation of training results."""
     run = _get_run_or_404(run_id)
+    # Ownership check
+    caller_token = _token_from_request(request)
+    caller_user = _get_user(caller_token)
+    caller_ip = _trial_ip(request)
+    run_owner_id = run.get("owner_id")
+    run_owner_ip = run.get("owner_ip")
+    if run_owner_id and (not caller_user or caller_user["id"] != run_owner_id):
+        raise HTTPException(403, "Not your run")
+    if not run_owner_id and run_owner_ip and caller_ip != run_owner_ip:
+        raise HTTPException(403, "Not your run")
     result = run.get("result") or {}
     best = result.get("best") or {}
     obj = result.get("objective") or {}
@@ -3137,9 +3178,20 @@ def get_project_handoff(run_id: str):
 
 # ── DOWNLOAD MODEL ZIP (clean: model.pkl + train.py + requirements) ──
 @app.get("/api/run/{run_id}/deploy")
-def download_deploy(run_id: str):
+def download_deploy(run_id: str, request: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
+    run_meta = RUNS[run_id]
+    # Ownership check
+    caller_token = _token_from_request(request)
+    caller_user = _get_user(caller_token)
+    caller_ip = _trial_ip(request)
+    run_owner_id = run_meta.get("owner_id")
+    run_owner_ip = run_meta.get("owner_ip")
+    if run_owner_id and (not caller_user or caller_user["id"] != run_owner_id):
+        raise HTTPException(403, "Not your run")
+    if not run_owner_id and run_owner_ip and caller_ip != run_owner_ip:
+        raise HTTPException(403, "Not your run")
     result = RUNS[run_id].get("result")
     if not result:
         raise HTTPException(404, "Run not finished yet")
