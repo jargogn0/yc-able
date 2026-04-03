@@ -3504,19 +3504,25 @@ async function send(){
 
   // ── CHAT MODE ──────────────────────────────
   if(S.mode==='chat'){
-    // While agent is running: relay instructions as hints + chat response
+    // While agent is running: relay as hint + chat response (never block)
     if(S.running){
       const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does)/i.test(lo);
       if(!isQuestion&&S.runId){
         fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
+        chat('sys','<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent as live guidance</span>');
       }
       await chatWithAI(text);return;
     }
-    // "go" in chat mode — switch to agent and launch
+    // "go" in chat mode — always re-analyze with chat context so conversation is respected
     const isRunCmd=/^(go|run|start|launch|execute|do it|let'?s go|train|yolo|ship it)$/i.test(lo.trim());
     if(isRunCmd&&S.file){
+      // Capture user messages from conversation as discovery hint so the agent learns from the chat
+      const _ctxParts=S._chatHistory.filter(m=>m.role==='user').slice(-5).map(m=>m.content).filter(m=>m.length>15);
+      if(_ctxParts.length){S.hint=(_ctxParts.join(' | ')+(S.hint?' | '+S.hint:'')).slice(0,800);}
       setMode('agent');
-      if(!S.analyzed){await autoDiscover();}
+      S.analyzed=false; // Force fresh analysis — don't use stale pre-chat discovery
+      chat('sys','Re-analyzing with your conversation context…');
+      await autoDiscover();
       if(S.analyzed){S.confirmed=true;await launchRun();}
       return;
     }
@@ -3741,12 +3747,20 @@ function modifyPlan(){
   setTimeout(()=>{if(S.analyzed)showPlanCard()},2000);
 }
 function executePlan(){
+  if(!S.analyzed||!S.discovery){
+    chat('ai','No plan yet — let me analyze your dataset first.');
+    runDiscover(S.hint||'');
+    return;
+  }
+  const _obj=S.discovery.objective||S.discovery.discovery||{};
+  const _target=_obj.target||'?';
+  const _task=_obj.task||'?';
+  const _metric=(_obj.metric||'').toUpperCase()||'?';
+  const _dir=_obj.direction||'';
   hidePlanCard();
-  S.confirmed=true;
-  // Stay in plan mode — panel updates to show running state
-  // Also switch to agent mode for full experiment view
   setMode('agent');
-  chat('ai',"Plan confirmed. Launching experiments — I'll keep you updated here.");
+  S.confirmed=true;
+  chat('ai',`<strong>Plan locked in</strong><br><table style="font-size:11px;border-collapse:collapse;margin-top:6px"><tr><td style="color:var(--text-3);padding:2px 10px 2px 0">Target</td><td style="color:var(--text);font-weight:600">${esc(_target)}</td></tr><tr><td style="color:var(--text-3);padding:2px 10px 2px 0">Task</td><td style="color:var(--text)">${esc(_task)}</td></tr><tr><td style="color:var(--text-3);padding:2px 10px 2px 0">Metric</td><td style="color:var(--text)">${esc(_metric)}${_dir?' ('+esc(_dir.replace('_is_better',''))+'↑↓'.charAt(_dir.startsWith('lower')?1:0)+')':''}</td></tr></table><br>Training starts now.`);
   launchRun();
 }
 
@@ -4078,6 +4092,11 @@ function gkmSubmit(){
 async function launchRun(){
   if(S.running||!S.file)return;
   if(!S.analyzed){chat('ai','Let me analyze first...');await runDiscover(S.hint||'');return}
+  // Log what was understood so user can catch mistakes before the run goes deep
+  const _lobj=S.discovery?.objective||S.discovery?.discovery||{};
+  if(_lobj.target){
+    chat('sys',`<span style="font-size:11px;color:var(--text-3)">Training: <strong>${esc(_lobj.target)}</strong> · ${esc(_lobj.task||'')} · ${esc((_lobj.metric||'').toUpperCase())} — type <strong>stop</strong> to cancel</span>`);
+  }
   if(C.demo){await runPreview();return}
   // Auth gate — require login or own API key
   if(!_authUser){
