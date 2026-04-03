@@ -1949,7 +1949,12 @@ function apiFetch(url,options={}){
     return r;
   });
 }
-function sseUrl(path){return ACCESS_TOKEN?`${path}?token=${encodeURIComponent(ACCESS_TOKEN)}`:path;}
+function sseUrl(path){
+  // EventSource doesn't support custom headers — pass auth token as query param.
+  // Prefer _authToken (JWT, modern auth) over ACCESS_TOKEN (legacy settings token).
+  const tok=_authToken||ACCESS_TOKEN;
+  return tok?`${path}?token=${encodeURIComponent(tok)}`:path;
+}
 
 // ═══════════════════════════════════════════
 // AUTH
