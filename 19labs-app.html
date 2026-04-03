@@ -1032,7 +1032,8 @@ input[type=file]{display:none}
 .best-hero-metric-bar-fill{height:100%;border-radius:2px;transition:width .8s ease}
 .best-hero-context{padding:0 20px 12px;font-size:11px;color:var(--text-3);font-family:var(--mono)}
 .best-hero-actions{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;background:rgba(0,0,0,.15)}
-#bh-predict-dz:hover,#bh-predict-dz.bh-dz-over{border-color:rgba(139,92,246,.7)!important;background:rgba(139,92,246,.1)!important}
+#exp-predict-dz{margin:0 20px 16px}
+#exp-predict-dz:hover,#exp-predict-dz.bh-dz-over{border-color:rgba(139,92,246,.7)!important;background:rgba(139,92,246,.08)!important}
 /* ── EXPERIMENT TABLE ── */
 .exp-table-hdr{display:grid;grid-template-columns:36px 1fr 160px 80px 60px;gap:0;padding:6px 16px;align-items:center;border-bottom:1px solid var(--border)}
 .exp-table-hdr span{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3)}
@@ -2659,7 +2660,7 @@ function safeHtml(s){
     return DOMPurify.sanitize(String(s),{
       ALLOWED_TAGS:_SAFE_TAGS,
       ALLOWED_ATTR:_SAFE_ATTR,
-      ALLOW_DATA_ATTR:false,
+      ALLOW_DATA_ATTR:true,
     }).replace(/\n/g,'<br>');
   }
   // Fallback: plain text only (no HTML at all)
@@ -2720,17 +2721,24 @@ function updSide(){
     // Primary file
     const kb=(S.file.size/1024).toFixed(1);
     h+=`<div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
-    // Extra uploaded files — shown below primary, each removable
+    // Extra uploaded datasets
     _extraDatasets.forEach((d,i)=>{
       const kb2=(d.size/1024).toFixed(1);
-      h+=`<div class="side-item" style="opacity:.85;cursor:default"><div class="si-icon" style="opacity:.6">${_ico.table}</div><div class="si-name">${esc(d.name)}</div><div class="si-meta" style="display:flex;align-items:center;gap:4px">${kb2}K<span onclick="event.stopPropagation();removeExtraDS(${i})" style="cursor:pointer;color:var(--text-3);font-size:10px;line-height:1" title="Remove">✕</span></div></div>`;
+      h+=`<div class="side-item" style="cursor:pointer" onclick="previewExtraDS(${i})"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(d.name)}</div><div class="si-meta" style="display:flex;align-items:center;gap:4px">${kb2}K<span onclick="event.stopPropagation();removeExtraDS(${i})" style="cursor:pointer;opacity:.5;font-size:10px;margin-left:2px">✕</span></div></div>`;
     });
-    // Join button when extras exist
     if(_extraDatasets.length>0){
-      h+=`<div style="padding:4px 14px 6px"><button onclick="joinDatasets()" style="width:100%;padding:5px 8px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25);border-radius:6px;color:#a5b4fc;font-size:11px;cursor:pointer;font-weight:500">⇄ Join All Datasets</button></div>`;
+      h+=`<div style="padding:4px 14px 6px"><button class="join-btn" onclick="joinDatasets()" style="width:100%;font-size:11px">⇄ Join All Datasets</button></div>`;
     }
   }
   fl.innerHTML=h;
+}
+function previewExtraDS(idx){
+  const d=_extraDatasets[idx];
+  if(!d)return;
+  const parsed=parseCSV(d.csv);
+  S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+  showDataPreview();stab('data');
+  toast(`Previewing ${d.name}`,'ok',2000);
 }
 async function switchDatasetFile(name){
   if(!S.dataset_id||!name)return;
@@ -3822,9 +3830,10 @@ async function runDiscover(hint){
     // → means "no [to that], I want revenue forecast" not "don't forecast revenue"
     const _prevObj = S.discovery?.objective || null;
     const _effectiveHint=((hint||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
+    const _extraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:d.csv})):undefined;
     const _discoverBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
-      :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
+      :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     S._discoverActive=false;
     const dj=await dr.json();typing(false);
@@ -3884,13 +3893,17 @@ async function runDiscover(hint){
       _html+=`<div style="margin-bottom:10px">${_notes.map(n=>`<div style="color:#f59e0b;margin-bottom:4px;font-size:12px">\u26A0 ${n}</div>`).join('')}</div>`;
     }
     _html+=`<div style="color:#a1a1aa;font-size:12px;margin-top:6px">${_plan}</div>`;
-    // Mode-aware call-to-action
     if(S.mode==='chat'){
-      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Ask me anything to validate — change the target, task type, or metric. When you're happy, say <strong style="color:#a5b4fc">go</strong> to launch the Agent.</div>`;
+      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Ask me anything to validate — change the target, task type, or metric. Say <strong style="color:#a5b4fc">go</strong> when ready to launch the Agent.</div>`;
     } else if(S.mode==='plan'){
-      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Review, tweak anything, then say <strong style="color:#a5b4fc">go</strong> — or hit <strong>Execute Plan</strong>.</div>`;
+      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Review, tweak anything, then hit <strong>Execute Plan</strong> — or say <strong style="color:#a5b4fc">go</strong> to start training.</div>`;
     } else {
       _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
+    }
+    _html+=`</div>`;
+
+    if(S.mode==='plan'){
+      _html+=`<div style="font-size:11px;color:#52525b;margin-top:6px">Review the plan above, tweak anything, then hit <strong>Execute Plan</strong> — or say <strong>go</strong>.</div>`;
     }
     _html+=`</div>`;
     chat('ai',_html);
@@ -4009,9 +4022,10 @@ async function launchRun(){
   const effectiveBudget=isGuest?Math.min(S.budget,_serverConfig.guest_max_budget||4):S.budget;
   try{
     const _runHint=((obj||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
+    const _runExtraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:d.csv})):undefined;
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();
@@ -4315,6 +4329,16 @@ function procMsg(d){
         updStatus();
       }
     }
+    // CRASH result — "Exp N: CRASH − reason" — still add a failure card so Exp panel is never blank
+    if(msg.includes('CRASH')){
+      const cm=msg.match(/Exp\s+(\d+):\s*CRASH\s*[-−–]\s*(.*)/i);
+      const num=cm?parseInt(cm[1]):(S.exps.length+1);
+      const reason=cm?cm[2].trim().slice(0,120):'crash';
+      if(!S.exps.find(e=>e.num===num)){
+        const exp={num,model:'',metric_name:'',metric_val:null,success:false,is_best:false,status:'discard',failure_reason:reason,error:reason,all_metrics:{}};
+        S.exps.push(exp);addExpCard(exp);S.m.fail++;updStatus();
+      }
+    }
     if(msg.includes('recovery succeeded')){}// silent — agent narrates this
   }
   if(tag==='error'){S.m.fail++;updStatus()}
@@ -4535,16 +4559,14 @@ function showBest(best,obj,runId){
     <button class="abtn" onclick="genHandoff('${runId}')">Handoff</button>
     <button class="share-btn" onclick="shareResults('${runId}')">Share</button>
   </div>
-  <div id="share-url-container"></div>
-  <!-- Test data drop zone — drag CSV here to get predictions -->
-  <div id="bh-predict-dz" ondragover="event.preventDefault();this.classList.add('bh-dz-over')" ondragleave="this.classList.remove('bh-dz-over')" ondrop="event.preventDefault();this.classList.remove('bh-dz-over');const f=event.dataTransfer.files[0];if(f)_bhPredict(f,'${runId}')" onclick="document.getElementById('exp-predict-file-input').click()" style="margin-top:10px;border:1.5px dashed rgba(139,92,246,.4);border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(139,92,246,.04);transition:all .15s">
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" style="width:20px;height:20px;flex-shrink:0;color:#a78bfa"><path d="M10 3v10M6 9l4-6 4 6"/><rect x="3" y="14" width="14" height="3" rx="1.5" fill="none"/></svg>
-    <div style="flex:1;min-width:0">
-      <div style="font-size:12px;font-weight:600;color:#a78bfa">Drop test.csv to predict</div>
-      <div id="exp-predict-status" style="font-size:11px;color:var(--text-3);margin-top:1px">Drag &amp; drop or click — model is ready</div>
+  <div id="exp-predict-dz" ondragover="event.preventDefault();this.classList.add('bh-dz-over')" ondragleave="this.classList.remove('bh-dz-over')" ondrop="event.preventDefault();this.classList.remove('bh-dz-over');const f=event.dataTransfer.files[0];if(f){const inp=document.getElementById('exp-predict-file-input');const dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;expUploadAndPredict('${runId}')}" onclick="document.getElementById('exp-predict-file-input').click()" style="margin-top:8px;border:1.5px dashed rgba(139,92,246,.35);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .15s;background:rgba(139,92,246,.03)">
+    <svg viewBox="0 0 16 16" fill="none" stroke="#a78bfa" stroke-width="1.5" width="18" height="18" style="flex-shrink:0"><path d="M8 10V3m0 0L5.5 5.5M8 3l2.5 2.5"/><rect x="2" y="11" width="12" height="3" rx="1" stroke-width="1" fill="none"/></svg>
+    <div>
+      <div style="font-size:12px;color:#a78bfa;font-weight:500">Drop test.csv to predict</div>
+      <div id="exp-predict-status" style="font-size:10px;color:var(--text-3)">Drag & drop or click — model is ready</div>
     </div>
-    <input type="file" id="exp-predict-file-input" accept=".csv" style="display:none" onchange="expUploadAndPredict('${runId}')">
-  </div>`;
+  </div>
+  <div id="share-url-container"></div>`;
   c.insertBefore(e,c.firstChild);
 }
 function markdownToHtml(md){
@@ -6722,7 +6744,7 @@ function updateMultiDSPanel(){
 }
 function removeExtraDS(idx){
   _extraDatasets.splice(idx,1);
-  updateMultiDSPanel();
+  updateMultiDSPanel();updSide();
 }
 async function joinDatasets(){
   if(!S.csv||!_extraDatasets.length){toast('Need primary + at least 1 extra dataset','warn');return}
@@ -6758,7 +6780,7 @@ async function handleFile(f,preloadedText){
   if(S.csv&&S.file&&S.file.name!==f.name){
     const extraText=preloadedText||await readF(f);
     _extraDatasets.push({name:f.name,csv:extraText,size:f.size||extraText.length});
-    updateMultiDSPanel();
+    updateMultiDSPanel();updSide();
     toast(`Added ${f.name} as extra dataset — click "Join" to merge`,'ok',4000);
     chat('sys',`Added <strong>${esc(f.name)}</strong> as additional dataset. Click <strong>Join All Datasets</strong> in the sidebar to merge them.`);
     return;

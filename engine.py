@@ -1461,6 +1461,9 @@ def discover_user_need(csv_path, user_hint="", previous_objective=None, api_key=
             if _fp["role"] == "test":
                 _fl.append(f"- {_fname}: {_fp['rows']:,} rows, {_fp['cols']} cols,"
                            f" headers: {_fp['headers']} → TEST FILE (no target column, needs predictions)")
+            elif _fp["role"] == "extra":
+                _fl.append(f"- {_fname}: {_fp['rows']:,} rows, {_fp['cols']} cols,"
+                           f" headers: {_fp['headers']} → EXTRA DATASET (available for joining/feature engineering)")
             else:
                 _fl.append(f"- {_fname}: {_fp['rows']:,} rows, {_fp['cols']} cols,"
                            f" headers: {_fp['headers']} → SUBMISSION FORMAT (required output columns)")
