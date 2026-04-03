@@ -2744,10 +2744,11 @@ async def inject_hint(run_id: str, req: Request):
 
 # ── CANCEL RUN ─────────────────────────────────────────────────
 @app.post("/api/run/{run_id}/cancel")
-async def cancel_run(run_id: str):
+async def cancel_run(run_id: str, request: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
+    _assert_run_owner(run, request)
     if run["status"] != "running":
         return {"ok": True, "msg": "Run already finished"}
     cancel_ev = run.get("cancel_event")
@@ -2944,9 +2945,10 @@ def get_stats():
 
 # ── SSE STREAM ─────────────────────────────────────────────────
 @app.get("/api/run/{run_id}/stream")
-async def stream_logs(run_id: str):
+async def stream_logs(run_id: str, request: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
+    _assert_run_owner(RUNS[run_id], request)
 
     async def generate():
         sent = 0
@@ -3258,10 +3260,11 @@ def download_deploy(run_id: str, request: Request):
 
 
 @app.get("/api/run/{run_id}/project-pack")
-def download_project_pack(run_id: str):
+def download_project_pack(run_id: str, request: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
+    _assert_run_owner(run, request)
     result = run.get("result") or {}
     ws = Path(run.get("ws", ""))
     if not ws.exists():
@@ -3672,6 +3675,7 @@ async def create_api_server(run_id: str, request: Request):
     api_key = body.get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
     provider = body.get("provider", "claude")
     run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
     result = run.get("result")
     if not result:
         raise HTTPException(400, "Run not finished yet")
@@ -3755,8 +3759,9 @@ async def create_api_server(run_id: str, request: Request):
 
 # ── BATCH PREDICTION ───────────────────────────────────────────
 @app.post("/api/run/{run_id}/predict")
-async def predict(run_id: str, req: PredictRequest):
+async def predict(run_id: str, req: PredictRequest, request: Request):
     run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
     result = run.get("result") or {}
 
     model_path = _find_model_path(run_id, run)
@@ -3866,7 +3871,7 @@ async def predict_csv(run_id: str, request: Request):
     body = await request.body()
     csv_text = body.decode("utf-8")
     req = PredictRequest(csv_text=csv_text)
-    return await predict(run_id, req)
+    return await predict(run_id, req, request)
 
 
 def _prediction_json_response(sub: "pd.DataFrame", run_id: str) -> JSONResponse:
@@ -3973,10 +3978,11 @@ async def debug_model(run_id: str, request: Request):
 
 
 @app.post("/api/run/{run_id}/predict-file")
-async def predict_file(run_id: str, file: UploadFile = File(...)):
+async def predict_file(run_id: str, request: Request, file: UploadFile = File(...)):
     """Accept a CSV file upload, run predictions with the stored model, return submission.csv."""
     import joblib, pandas as pd, numpy as np, io as _io
     run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
     result = run.get("result")
     if not result:
         # Result metadata lost (large model stripped from DB) — check if model file still exists
@@ -5032,11 +5038,12 @@ async def explain_model(run_id: str, request: Request):
 # ── TIER 2: Share Results ─────────────────────────────────────
 
 @app.post("/api/run/{run_id}/share")
-async def share_results(run_id: str):
+async def share_results(run_id: str, request: Request):
     """Generate a shareable snapshot of run results."""
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
+    _assert_run_owner(run, request)
     result = run.get("result")
     if not result:
         raise HTTPException(400, "Run not finished yet")
