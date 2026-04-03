@@ -352,12 +352,12 @@ input[type=file]{display:none}
 .dp-col-null{font-size:10px;color:var(--text-3)}
 .dp-cols{display:flex;flex-direction:column;gap:4px;margin-top:12px}
 
-/* ── DASHBOARD ── */
-.db-wrap{padding:16px;display:flex;flex-direction:column;gap:20px}
-.db-kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
-.db-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px}
-.db-kpi-v{font-size:20px;font-weight:800;font-family:var(--mono);letter-spacing:-.5px;line-height:1}
-.db-kpi-l{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+/* ── DATA DASHBOARD (db-*) ── */
+.db-wrap{padding:20px 20px 32px;display:flex;flex-direction:column;gap:18px;background:#0b0b0d;min-height:100%;box-sizing:border-box}
+.db-kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.db-kpi{background:#111114;border:1px solid #1f1f24;border-radius:12px;padding:14px 16px}
+.db-kpi-v{font-size:22px;font-weight:800;font-family:var(--mono);letter-spacing:-.5px;line-height:1;color:#f4f4f5}
+.db-kpi-l{font-size:9px;color:#52525b;text-transform:uppercase;letter-spacing:1px;margin-top:5px;font-weight:700}
 .db-section-title{font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 .db-section-title::after{content:'';flex:1;height:1px;background:var(--border)}
 .db-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
@@ -540,54 +540,82 @@ input[type=file]{display:none}
 .conn-btn:hover{border-color:var(--border-2);background:var(--surface-3);color:var(--text)}
 .conn-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;flex-shrink:0;opacity:.6}
 
-/* ── DASHBOARD ── */
-.dash{padding:20px 24px 32px;min-height:100%;background:var(--bg);box-sizing:border-box}
-.dash-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-3);gap:14px}
-.dash-empty-icon{font-size:52px;opacity:.6}
-.dash-empty-msg{font-size:13px;color:var(--text-3)}
-.dash-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+/* ── DASHBOARD (Power BI-style) ── */
+.dash{padding:20px 24px 40px;min-height:100%;background:#0b0b0d;box-sizing:border-box}
+.dash-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #1a1a1d}
+.dash-hdr-title{font-size:14px;font-weight:700;color:#e4e4e7;letter-spacing:-.1px}
+.dash-hdr-sub{font-size:11px;color:#52525b;margin-top:2px}
+.dash-hdr-badge{display:flex;align-items:center;gap:6px}
+.dash-grade-badge{font-size:13px;font-weight:900;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.dash-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-3);gap:14px;background:#0b0b0d}
+.dash-empty-icon{font-size:52px;opacity:.5}
+.dash-empty-msg{font-size:13px;color:#52525b}
+/* KPI row */
+.dash-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
 @media(max-width:900px){.dash-kpis{grid-template-columns:repeat(2,1fr)}}
-.dash-kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden;transition:transform 120ms,box-shadow 120ms}
-.dash-kpi:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.4)}
-.dash-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:12px 12px 0 0}
-.dash-kpi.accent::before{background:linear-gradient(90deg,var(--accent),#818cf8)}
-.dash-kpi.green::before{background:linear-gradient(90deg,#34d399,#10b981)}
-.dash-kpi.blue::before{background:linear-gradient(90deg,#60a5fa,#3b82f6)}
-.dash-kpi.amber::before{background:linear-gradient(90deg,#fbbf24,#f59e0b)}
-.dash-kpi.red::before{background:linear-gradient(90deg,#f87171,#ef4444)}
-.dash-kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);margin-bottom:8px}
-.dash-kpi-val{font-size:26px;font-weight:700;color:var(--text);line-height:1;font-family:var(--mono);letter-spacing:-0.5px}
-.dash-kpi-sub{font-size:11px;color:var(--text-3);margin-top:5px}
-.dash-kpi-badge{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;font-size:15px;font-weight:800;position:absolute;top:14px;right:14px}
-.dash-row{display:grid;gap:14px;margin-bottom:14px}
+.dash-kpi{background:#111114;border:1px solid #1f1f24;border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;transition:transform 140ms,box-shadow 140ms;cursor:default}
+.dash-kpi:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.55)}
+/* Color top strip */
+.dash-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0}
+.dash-kpi.accent::before{background:linear-gradient(90deg,#6366f1,#a78bfa)}
+.dash-kpi.green::before{background:linear-gradient(90deg,#10b981,#34d399)}
+.dash-kpi.blue::before{background:linear-gradient(90deg,#3b82f6,#60a5fa)}
+.dash-kpi.amber::before{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.dash-kpi.red::before{background:linear-gradient(90deg,#ef4444,#f87171)}
+/* Subtle glow tint */
+.dash-kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:70px;border-radius:14px 14px 0 0;pointer-events:none}
+.dash-kpi.accent::after{background:linear-gradient(180deg,rgba(99,102,241,.06),transparent)}
+.dash-kpi.green::after{background:linear-gradient(180deg,rgba(16,185,129,.07),transparent)}
+.dash-kpi.blue::after{background:linear-gradient(180deg,rgba(59,130,246,.07),transparent)}
+.dash-kpi.amber::after{background:linear-gradient(180deg,rgba(245,158,11,.07),transparent)}
+.dash-kpi.red::after{background:linear-gradient(180deg,rgba(239,68,68,.07),transparent)}
+.dash-kpi-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.3px;color:#52525b;margin-bottom:10px}
+.dash-kpi-val{font-size:30px;font-weight:800;color:#f4f4f5;line-height:1;font-family:var(--mono);letter-spacing:-1px;animation:dashIn .4s ease both}
+.dash-kpi-sub{font-size:10px;color:#52525b;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-kpi-badge{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;font-size:16px;position:absolute;top:16px;right:16px}
+/* Cards */
+.dash-row{display:grid;gap:12px;margin-bottom:12px}
 .dash-row.cols-2{grid-template-columns:1fr 1fr}
-.dash-row.cols-3{grid-template-columns:2fr 1fr}
+.dash-row.cols-3{grid-template-columns:3fr 2fr}
 @media(max-width:1100px){.dash-row.cols-2,.dash-row.cols-3{grid-template-columns:1fr}}
-.dash-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
-.dash-card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);margin-bottom:14px;display:flex;align-items:center;gap:6px}
-.dash-card-title span{flex:1}
-.dash-card-title small{font-size:10px;font-weight:500;text-transform:none;letter-spacing:0;color:#3f3f46;background:#1c1c1f;padding:2px 8px;border-radius:20px}
-.dash-lb-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #1a1a1d}
+.dash-card{background:#111114;border:1px solid #1f1f24;border-radius:14px;padding:18px 20px;animation:dashIn .35s ease both}
+.dash-card-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px;color:#52525b;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.dash-card-title span{flex:1;color:#a1a1aa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px}
+.dash-card-title small{font-size:10px;font-weight:500;text-transform:none;letter-spacing:0;color:#3f3f46;background:#18181b;padding:2px 9px;border-radius:20px;border:1px solid #27272a}
+/* Leaderboard */
+.dash-lb-row{display:grid;grid-template-columns:24px 1fr 100px 64px 20px;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #161619}
 .dash-lb-row:last-child{border-bottom:none}
-.dash-lb-rank{font-size:11px;font-weight:700;color:#3f3f46;width:18px;text-align:center;flex-shrink:0}
-.dash-lb-name{font-size:12px;font-weight:600;color:var(--text-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dash-lb-bar-wrap{width:80px;height:5px;background:#1c1c1f;border-radius:3px;flex-shrink:0;overflow:hidden}
-.dash-lb-bar{height:100%;border-radius:3px;transition:width .6s ease}
-.dash-lb-val{font-size:11px;font-family:var(--mono);color:var(--text-2);width:70px;text-align:right;flex-shrink:0}
-.dash-lb-grade{font-size:10px;font-weight:800;width:20px;text-align:center;flex-shrink:0}
-.dash-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.dash-meta-item{background:#0d0d0f;border-radius:8px;padding:10px 12px}
-.dash-meta-key{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:#3f3f46;margin-bottom:4px}
-.dash-meta-val{font-size:12px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dash-gap-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1a1a1d}
+.dash-lb-rank{font-size:12px;font-weight:800;color:#3f3f46;text-align:center}
+.dash-lb-name{font-size:12px;font-weight:600;color:#d4d4d8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-lb-bar-wrap{height:6px;background:#1a1a1d;border-radius:3px;overflow:hidden}
+.dash-lb-bar{height:100%;border-radius:3px;transition:width .9s cubic-bezier(.16,1,.3,1)}
+.dash-lb-val{font-size:11px;font-family:var(--mono);color:#a1a1aa;text-align:right;font-weight:600}
+.dash-lb-grade{font-size:10px;font-weight:800;text-align:center}
+/* Gap analysis */
+.dash-gap-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #161619}
 .dash-gap-row:last-child{border-bottom:none}
-.dash-gap-name{font-size:11px;color:var(--text-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dash-gap-pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;flex-shrink:0}
-.dash-gap-pill.ok{background:rgba(52,211,153,.12);color:#34d399}
-.dash-gap-pill.warn{background:rgba(251,191,36,.12);color:#fbbf24}
-.dash-gap-pill.bad{background:rgba(248,113,113,.12);color:#f87171}
-@keyframes dashCountUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.dash-kpi-val{animation:dashCountUp .4s ease both}
+.dash-gap-name{font-size:11px;color:#d4d4d8;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-gap-val{font-size:11px;font-family:var(--mono);color:#a1a1aa;width:64px;text-align:right;flex-shrink:0;font-weight:600}
+.dash-gap-pill{font-size:9px;font-weight:700;padding:3px 9px;border-radius:20px;flex-shrink:0;letter-spacing:.3px}
+.dash-gap-pill.ok{background:rgba(16,185,129,.1);color:#34d399;border:1px solid rgba(52,211,153,.2)}
+.dash-gap-pill.warn{background:rgba(245,158,11,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.2)}
+.dash-gap-pill.bad{background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(248,113,113,.2)}
+/* Meta info */
+.dash-meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dash-meta-item{background:#0d0d0f;border:1px solid #1a1a1d;border-radius:8px;padding:10px 12px}
+.dash-meta-key{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3f3f46;margin-bottom:5px}
+.dash-meta-val{font-size:12px;font-weight:600;color:#d4d4d8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Metric bar */
+.dash-metric-row{margin-bottom:12px}
+.dash-metric-row:last-child{margin-bottom:0}
+.dash-metric-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.dash-metric-name{font-size:10px;font-weight:700;color:#a1a1aa;text-transform:uppercase;letter-spacing:.6px}
+.dash-metric-right{display:flex;align-items:center;gap:7px}
+.dash-metric-val{font-size:12px;font-family:var(--mono);font-weight:700;color:#e4e4e7}
+.dash-metric-grade{font-size:10px;font-weight:800}
+.dash-metric-track{height:6px;background:#18181b;border-radius:3px;overflow:hidden}
+.dash-metric-fill{height:100%;border-radius:3px;transition:width .8s cubic-bezier(.16,1,.3,1)}
+@keyframes dashIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
 /* ── CHAT ── */
 .chat{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);min-height:0;overflow:hidden;height:100%}
@@ -2703,54 +2731,57 @@ function _buildDataDashboardHTML(){
     return v%1===0?String(v):(a<0.01?v.toExponential(1):v.toFixed(a<1?3:2));
   }
 
-  // ── histogram SVG (numeric) — taller, with mean line + skew label
+  // ── histogram SVG (numeric) — power-bi style with area fill + gridlines
   function histogram(vals,mean){
-    if(!vals.length)return`<div style="padding:16px;text-align:center;font-size:10px;color:var(--text-3)">no data</div>`;
+    if(!vals.length)return`<div style="padding:16px;text-align:center;font-size:10px;color:#52525b">no data</div>`;
     const mn=Math.min(...vals),mx=Math.max(...vals);
-    if(mn===mx)return`<div style="padding:8px;font-size:10px;color:var(--text-3);text-align:center">constant: ${fmt(mn)}</div>`;
-    const BINS=Math.min(20,Math.max(6,Math.ceil(Math.sqrt(vals.length))));
+    if(mn===mx)return`<div style="padding:8px;font-size:10px;color:#52525b;text-align:center">constant: ${fmt(mn)}</div>`;
+    const BINS=Math.min(24,Math.max(8,Math.ceil(Math.sqrt(vals.length))));
     const bw=(mx-mn)/BINS;
     const counts=new Array(BINS).fill(0);
     vals.forEach(v=>{let b=Math.min(BINS-1,Math.floor((v-mn)/bw));counts[b]++});
     const peak=Math.max(...counts);
-    const W=230,H=82,pl=2,pr=2,pt=4,pb=14;
+    const W=280,H=96,pl=4,pr=4,pt=6,pb=16;
     const cw=(W-pl-pr)/BINS,ch=H-pt-pb;
+    // Gridlines
+    let grid='';
+    for(let i=1;i<=3;i++){const gy=pt+ch*(1-i/4);grid+=`<line x1="${pl}" y1="${gy.toFixed(1)}" x2="${W-pr}" y2="${gy.toFixed(1)}" stroke="#1a1a1d" stroke-width="1"/>`;}
     let bars=counts.map((c,i)=>{
       const x=pl+i*cw,bh=peak?(c/peak)*ch:0,y=pt+ch-bh;
-      const op=0.35+0.65*(peak?c/peak:0);
-      return`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,cw-1).toFixed(1)}" height="${bh.toFixed(1)}" fill="#3b82f6" opacity="${op.toFixed(2)}" rx="1.5"/>`;
+      const alpha=0.3+0.7*(peak?c/peak:0);
+      return`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,cw-1.5).toFixed(1)}" height="${bh.toFixed(1)}" fill="#6366f1" opacity="${alpha.toFixed(2)}" rx="2"/>`;
     }).join('');
     // mean line
     if(mean!==undefined){
       const mx2=pl+(mean-mn)/(mx-mn)*(W-pl-pr);
-      if(mx2>=pl&&mx2<=W-pr){
-        bars+=`<line x1="${mx2.toFixed(1)}" y1="${pt}" x2="${mx2.toFixed(1)}" y2="${pt+ch}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.9"/>`;
-      }
+      if(mx2>=pl&&mx2<=W-pr)
+        bars+=`<line x1="${mx2.toFixed(1)}" y1="${pt}" x2="${mx2.toFixed(1)}" y2="${pt+ch}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,2" opacity=".9"/>`;
     }
-    bars+=`<text x="${pl}" y="${H}" font-size="8" fill="#52525b" font-family="monospace">${fmt(mn)}</text>`;
-    bars+=`<text x="${W/2}" y="${H}" font-size="8" fill="#52525b" text-anchor="middle" font-family="monospace">${fmt((mn+mx)/2)}</text>`;
-    bars+=`<text x="${W-pr}" y="${H}" font-size="8" fill="#52525b" text-anchor="end" font-family="monospace">${fmt(mx)}</text>`;
-    return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${bars}</svg>`;
+    bars+=`<text x="${pl}" y="${H-1}" font-size="8" fill="#3f3f46" font-family="monospace">${fmt(mn)}</text>`;
+    bars+=`<text x="${W/2}" y="${H-1}" font-size="8" fill="#3f3f46" text-anchor="middle" font-family="monospace">${fmt((mn+mx)/2)}</text>`;
+    bars+=`<text x="${W-pr}" y="${H-1}" font-size="8" fill="#3f3f46" text-anchor="end" font-family="monospace">${fmt(mx)}</text>`;
+    return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${bars}</svg>`;
   }
 
-  // ── horizontal bar chart SVG (categorical) — multi-color palette
+  // ── horizontal bar chart SVG (categorical) — power-bi style
   const CAT_COLORS=['#818cf8','#34d399','#f472b6','#fb923c','#38bdf8','#a78bfa','#4ade80','#fbbf24'];
   function barChart(vc){
     const top=vc.slice(0,8);
-    if(!top.length)return`<div style="padding:8px;font-size:10px;color:var(--text-3)">no values</div>`;
+    if(!top.length)return`<div style="padding:8px;font-size:10px;color:#52525b">no values</div>`;
     const maxC=top[0][1];
     const total=S.rows.length||1;
-    const RH=15,PL=76,PR=40,W=240,PAD=4;
+    const RH=18,PL=82,PR=50,W=280,PAD=4;
     const H=top.length*RH+PAD*2;
     let rects=top.map(([val,cnt],i)=>{
       const y=PAD+i*RH;
       const bw=maxC?(cnt/maxC)*(W-PL-PR):0;
       const pct=Math.round(cnt/total*100);
-      const label=val.length>11?val.slice(0,10)+'…':val;
+      const label=val.length>12?val.slice(0,11)+'…':val;
       const color=CAT_COLORS[i%CAT_COLORS.length];
-      return`<text x="${PL-5}" y="${y+RH-3}" font-size="8.5" fill="#a1a1aa" text-anchor="end" font-family="sans-serif">${esc(label)}</text>`+
-        `<rect x="${PL}" y="${y+2}" width="${Math.max(1,bw).toFixed(1)}" height="${RH-5}" rx="2" fill="${color}" opacity="0.75"/>`+
-        `<text x="${PL+bw+5}" y="${y+RH-4}" font-size="8" fill="#71717a" font-family="monospace">${cnt>9999?fmt(cnt):cnt} <tspan fill="#52525b">(${pct}%)</tspan></text>`;
+      return`<text x="${PL-5}" y="${y+RH-4}" font-size="9" fill="#71717a" text-anchor="end" font-family="sans-serif">${esc(label)}</text>`+
+        `<rect x="${PL}" y="${y+3}" width="${W-PL-PR}" height="${RH-7}" rx="2" fill="#1a1a1d"/>`+
+        `<rect x="${PL}" y="${y+3}" width="${Math.max(2,bw).toFixed(1)}" height="${RH-7}" rx="2" fill="${color}" opacity="0.82"/>`+
+        `<text x="${W-PR+5}" y="${y+RH-5}" font-size="8.5" fill="#71717a" font-family="monospace">${pct}%</text>`;
     }).join('');
     return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${rects}</svg>`;
   }
@@ -4876,16 +4907,17 @@ function renderDashboard(){
     const lbHtml=leaders.slice(0,8).map((e,i)=>{
       const pct=isLower?(span>0?Math.round((1-Math.abs(e.metric_val-bestVal)/span)*100):100):(span>0?Math.round(Math.abs(e.metric_val-worstVal+span)/span*100):100);
       const g=grade(e.metric_name||best.metric_name,e.metric_val),gc=gradeCol(g);
-      const medals=['🥇','🥈','🥉'],rank=i<3?medals[i]:`${i+1}`;
-      return`<div class="dash-lb-row"><div class="dash-lb-rank">${rank}</div><div class="dash-lb-name">${esc(e.model)}</div><div class="dash-lb-bar-wrap"><div class="dash-lb-bar" style="width:${Math.max(4,pct)}%;background:${gc}"></div></div><div class="dash-lb-val">${fmtV(e.metric_val)}</div><div class="dash-lb-grade" style="color:${gc}">${g}</div></div>`;
+      const MEDAL=['🥇','🥈','🥉'],rank=i<3?MEDAL[i]:`<span style="font-size:11px;color:#52525b">${i+1}</span>`;
+      return`<div class="dash-lb-row"><div class="dash-lb-rank">${rank}</div><div class="dash-lb-name">${esc(e.model)}</div><div class="dash-lb-bar-wrap"><div class="dash-lb-bar" style="width:${Math.max(3,pct)}%;background:${gc}"></div></div><div class="dash-lb-val">${fmtV(e.metric_val)}</div><div class="dash-lb-grade" style="color:${gc}">${g}</div></div>`;
     }).join('');
-    panel.innerHTML=dataHtml+`<div class="db-wrap" style="padding-top:0"><div style="border-top:1px solid var(--border);margin-bottom:20px"></div>
-      <div class="db-section-title" style="margin-bottom:12px">ML Experiment Results</div>
-      <div class="dash-kpis">
-        <div class="dash-kpi ${kpiClass}"><div class="dash-kpi-label">Best Model</div><div class="dash-kpi-val" style="font-size:15px;margin-top:4px">${esc(best.model||'—')}</div><div class="dash-kpi-sub">${metricName}: ${fmtV(best.metric_val)}</div><div class="dash-kpi-badge" style="background:${topGradeCol}22;color:${topGradeCol}">${topGrade}</div></div>
-        <div class="dash-kpi blue"><div class="dash-kpi-label">Experiments</div><div class="dash-kpi-val">${exps.length}</div><div class="dash-kpi-sub">${kept} kept</div><div class="dash-kpi-badge" style="background:rgba(96,165,250,.15);color:#60a5fa">🧪</div></div>
+    panel.innerHTML=dataHtml+`<div class="db-wrap" style="padding-top:8px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.3px;color:#52525b;padding:8px 0 14px;border-top:1px solid #1a1a1d;display:flex;align-items:center;gap:8px">ML Results <span style="flex:1;height:1px;background:#1a1a1d;display:block"></span></div>
+      <div class="dash-kpis" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:12px">
+        <div class="dash-kpi ${kpiClass}"><div class="dash-kpi-label">Best Model</div><div class="dash-kpi-val" style="font-size:${(best.model||'').length>10?'14px':'20px'};letter-spacing:-.2px;margin-top:2px">${esc(best.model||'—')}</div><div class="dash-kpi-sub">${metricName} = ${fmtV(best.metric_val)}</div><div class="dash-kpi-badge" style="background:${topGradeCol}18;color:${topGradeCol};border:1px solid ${topGradeCol}25">🏆</div></div>
+        <div class="dash-kpi blue"><div class="dash-kpi-label">Experiments</div><div class="dash-kpi-val">${exps.length}</div><div class="dash-kpi-sub">${kept} kept</div><div class="dash-kpi-badge" style="background:rgba(59,130,246,.12);color:#60a5fa;border:1px solid rgba(59,130,246,.2)">🧪</div></div>
+        <div class="dash-kpi ${leaders.length>=3?'green':'amber'}"><div class="dash-kpi-label">Models</div><div class="dash-kpi-val">${leaders.length}</div><div class="dash-kpi-sub">unique architectures</div><div class="dash-kpi-badge" style="background:rgba(52,211,153,.12);color:#34d399;border:1px solid rgba(52,211,153,.2)">⚡</div></div>
       </div>
-      <div class="dash-card" style="margin-top:8px"><div class="dash-card-title"><span>Model Leaderboard</span><small>${leaders.length} models · ${metricName}</small></div>${lbHtml}</div>
+      <div class="dash-card"><div class="dash-card-title"><span>Model Leaderboard</span><small>${leaders.length} models · ${metricName}</small></div>${lbHtml}</div>
     </div>`;
     return;
   }
@@ -4949,56 +4981,75 @@ function renderDashboard(){
     return{model:e.model,val:e.metric_val,gap:gapPct,grade:grade(mn,test??e.metric_val)};
   });
 
-  // ── Build SVG progress chart ──
+  // ── Build SVG progress chart (Power BI-style) ──
   function buildProgressSVG(){
-    if(progressLine.length<2)return`<div style="color:var(--text-3);font-size:12px;text-align:center;padding:30px 0">Need more experiments</div>`;
-    const W=480,H=120,PL=10,PR=10,PT=10,PB=20;
+    if(progressLine.length<2)return`<div style="color:#52525b;font-size:12px;text-align:center;padding:40px 0;letter-spacing:.3px">Need ≥ 2 experiments to show progress</div>`;
+    const W=520,H=160,PL=46,PR=16,PT=14,PB=28;
     const cW=W-PL-PR,cH=H-PT-PB;
     const xs=progressLine.map(p=>p.x);
     const vals=[...progressLine.map(p=>p.each),...progressLine.map(p=>p.best)].filter(v=>v!=null);
     const minV=Math.min(...vals),maxV=Math.max(...vals);
     const yRange=maxV-minV||Math.abs(maxV)*0.1||1;
-    const padY=yRange*0.12;
-    const lo=minV-padY,hi=maxV+padY;
-    const xScale=i=>{const xmin=xs[0],xmax=xs[xs.length-1];return PL+(xs[i]-xmin)/Math.max(xmax-xmin,1)*cW};
+    const padY=yRange*0.18;
+    const lo=minV-padY,hi=maxV+padY*0.5;
+    const xmin=xs[0],xmax=xs[xs.length-1];
+    const xScale=i=>PL+(xs[i]-xmin)/Math.max(xmax-xmin,1)*cW;
     const yScale=v=>PT+cH-(v-lo)/(hi-lo)*cH;
-    // each-exp dots and best line
-    let bestPath='',eachDots='';
+    // Grid lines (5 horizontal)
+    let grid='',yLabels='';
+    for(let i=0;i<=4;i++){
+      const gy=PT+i*(cH/4);
+      const gv=hi-(i/4)*(hi-lo);
+      grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="#1a1a1d" stroke-width="1"/>`;
+      yLabels+=`<text x="${PL-5}" y="${(gy+3).toFixed(1)}" font-size="8.5" fill="#3f3f46" text-anchor="end" font-family="monospace">${fmtV(gv)}</text>`;
+    }
+    // Area fill path (best line)
+    let areaPath='',bestPath='',eachDots='',xLabels='';
     progressLine.forEach((p,i)=>{
-      const x=xScale(i),y=yScale(p.best);
+      const x=xScale(i).toFixed(1),y=yScale(p.best).toFixed(1);
       bestPath+=(i===0?`M${x},${y}`:`L${x},${y}`);
-      const ey=yScale(p.each);
-      eachDots+=`<circle cx="${x}" cy="${ey}" r="2.5" fill="#6366f1" opacity=".55"/>`;
+      areaPath+=(i===0?`M${x},${PT+cH} L${x},${y}`:`L${x},${y}`);
+      const ey=yScale(p.each).toFixed(1);
+      eachDots+=`<circle cx="${x}" cy="${ey}" r="3" fill="#4f46e5" opacity=".5" stroke="#111114" stroke-width="1"/>`;
+      // X axis: show every 2nd label when crowded
+      if(progressLine.length<=10||i%(Math.ceil(progressLine.length/8))===0){
+        xLabels+=`<text x="${x}" y="${H-2}" font-size="8.5" fill="#3f3f46" text-anchor="middle" font-family="monospace">#${p.x}</text>`;
+      }
     });
+    areaPath+=`L${xScale(progressLine.length-1).toFixed(1)},${PT+cH} Z`;
     const lastP=progressLine[progressLine.length-1];
     const lastX=xScale(progressLine.length-1),lastY=yScale(lastP.best);
+    const uniqueId=`dg${Date.now().toString(36)}`;
     return`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:auto">
       <defs>
-        <linearGradient id="dgLine" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#6366f1" stop-opacity=".25"/>
+        <linearGradient id="${uniqueId}area" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#6366f1" stop-opacity=".22"/>
           <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
         </linearGradient>
-        <filter id="glow"><feGaussianBlur stdDeviation="1.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="${uniqueId}glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
       </defs>
+      ${grid}${yLabels}
+      <path d="${areaPath}" fill="url(#${uniqueId}area)"/>
       ${eachDots}
-      <path d="${bestPath}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" filter="url(#glow)"/>
-      <circle cx="${lastX}" cy="${lastY}" r="4" fill="#6366f1"/>
-      <text x="${lastX+6}" y="${lastY+4}" font-size="9" fill="#6366f1" font-family="var(--mono)">${fmtV(lastP.best)}</text>
+      <path d="${bestPath}" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#${uniqueId}glow)"/>
+      <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="5" fill="#6366f1" stroke="#111114" stroke-width="2"/>
+      <text x="${Math.min(lastX+8,W-PR-28)}" y="${Math.max(lastY-6,PT+10)}" font-size="9.5" fill="#818cf8" font-family="monospace" font-weight="700">${fmtV(lastP.best)}</text>
+      ${xLabels}
     </svg>`;
   }
 
   // ── Build leaderboard HTML ──
   function buildLeaderboard(){
+    const MEDAL=['🥇','🥈','🥉'];
     return leaders.slice(0,8).map((e,i)=>{
       const pct=isLower?(span>0?Math.round((1-Math.abs(e.metric_val-bestVal)/span)*100):100):(span>0?Math.round(Math.abs(e.metric_val-worstVal+span)/span*100):100);
       const g=grade(e.metric_name||best.metric_name,e.metric_val);
       const gc=gradeCol(g);
-      const medals=['🥇','🥈','🥉'];
-      const rank=i<3?medals[i]:`${i+1}`;
+      const rank=i<3?MEDAL[i]:`<span style="font-size:11px;color:#52525b">${i+1}</span>`;
       return`<div class="dash-lb-row">
         <div class="dash-lb-rank">${rank}</div>
         <div class="dash-lb-name" title="${esc(e.model)}">${esc(e.model)}</div>
-        <div class="dash-lb-bar-wrap"><div class="dash-lb-bar" style="width:${Math.max(4,pct)}%;background:${gc}"></div></div>
+        <div class="dash-lb-bar-wrap"><div class="dash-lb-bar" style="width:${Math.max(3,pct)}%;background:${gc}"></div></div>
         <div class="dash-lb-val">${fmtV(e.metric_val)}</div>
         <div class="dash-lb-grade" style="color:${gc}">${g}</div>
       </div>`;
@@ -5008,37 +5059,39 @@ function renderDashboard(){
   // ── Build train/test gap ──
   function buildGaps(){
     return gapRows.map(r=>{
-      const gapLabel=r.gap==null?'—':`${r.gap.toFixed(1)}%`;
       const cls=r.gap==null?'ok':r.gap<10?'ok':r.gap<20?'warn':'bad';
+      const label=r.gap==null?'no data':r.gap<10?'✓ healthy':r.gap<20?'⚠ moderate':'✕ overfit';
+      const gapDisp=r.gap==null?'—':`${r.gap.toFixed(1)}%`;
       return`<div class="dash-gap-row">
         <div class="dash-gap-name" title="${esc(r.model)}">${esc(r.model)}</div>
-        <div style="font-size:11px;font-family:var(--mono);color:var(--text-2);width:70px;text-align:right;flex-shrink:0">${fmtV(r.val)}</div>
-        <div class="dash-gap-pill ${cls}">${r.gap==null?'n/a':r.gap<10?'✓ low':r.gap<20?'⚠ mid':'✕ high'} ${gapLabel}</div>
+        <div class="dash-gap-val">${fmtV(r.val)}</div>
+        <div class="dash-gap-pill ${cls}">${label}</div>
+        <div style="font-size:10px;font-family:var(--mono);color:#52525b;width:36px;text-align:right;flex-shrink:0">${gapDisp}</div>
       </div>`;
     }).join('');
   }
 
-  // ── Metrics multi-bar ──
+  // ── Metrics breakdown bars ──
   function buildMetrics(){
     const am=best.all_metrics||{};
-    const mkeys=['accuracy','auc','roc_auc','f1','r2','rmse','mae','mape','nse'].filter(k=>{
-      return am['test_'+k]!=null||am[k]!=null;
-    }).slice(0,6);
-    if(!mkeys.length)return`<div style="color:var(--text-3);font-size:12px;padding:10px 0">No metric breakdown available</div>`;
+    const mkeys=['accuracy','auc','roc_auc','f1','r2','rmse','mae','mape','nse'].filter(k=>am['test_'+k]!=null||am[k]!=null).slice(0,7);
+    if(!mkeys.length)return`<div style="color:#52525b;font-size:12px;padding:16px 0;text-align:center">No metric breakdown available</div>`;
+    const higher=['accuracy','auc','roc_auc','f1','r2','nse'];
     return mkeys.map(k=>{
       const v=am['test_'+k]??am[k];
-      const g=grade(k,v);
-      const gc=gradeCol(g);
-      const higher=['accuracy','auc','roc_auc','f1','r2','nse'];
+      const g=grade(k,v);const gc=gradeCol(g);
       const isH=higher.includes(k);
       const pct=isH?Math.min(100,Math.max(0,Math.round(v*100))):Math.min(100,Math.max(0,Math.round((1-Math.min(1,v/10))*100)));
-      return`<div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.5px">${k.toUpperCase()}</span>
-          <span style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-family:var(--mono);color:var(--text-2)">${fmtV(v)}</span><span style="font-size:10px;font-weight:800;color:${gc}">${g}</span></span>
+      return`<div class="dash-metric-row">
+        <div class="dash-metric-hd">
+          <span class="dash-metric-name">${k.toUpperCase()}</span>
+          <span class="dash-metric-right">
+            <span class="dash-metric-val">${fmtV(v)}</span>
+            <span class="dash-metric-grade" style="color:${gc}">${g}</span>
+          </span>
         </div>
-        <div style="height:4px;background:#1c1c1f;border-radius:2px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${gc};border-radius:2px;transition:width .6s ease"></div>
+        <div class="dash-metric-track">
+          <div class="dash-metric-fill" style="width:${pct}%;background:${gc};opacity:.9"></div>
         </div>
       </div>`;
     }).join('');
@@ -5056,61 +5109,70 @@ function renderDashboard(){
   const kpiClass={A:'green',B:'blue',C:'amber',D:'red',F:'red'}[topGrade]||'accent';
 
   panel.innerHTML=`<div class="dash">
-    <div class="dash-kpis">
-      <div class="dash-kpi ${kpiClass}">
-        <div class="dash-kpi-label">Best Model</div>
-        <div class="dash-kpi-val" style="font-size:16px;margin-top:4px">${esc(best.model||'—')}</div>
-        <div class="dash-kpi-sub">${metricName}: ${fmtV(best.metric_val)}</div>
-        <div class="dash-kpi-badge" style="background:${topGradeCol}22;color:${topGradeCol}">${topGrade}</div>
+    <div class="dash-hdr">
+      <div>
+        <div class="dash-hdr-title">${esc(S.file?.name||filename||'ML Dashboard')}</div>
+        <div class="dash-hdr-sub">${esc(task)} · target: <strong style="color:#a1a1aa">${esc(target)}</strong> · ${expCount} experiments</div>
       </div>
-      <div class="dash-kpi accent">
-        <div class="dash-kpi-label">Primary Metric</div>
-        <div class="dash-kpi-val">${fmtV(best.metric_val)}</div>
-        <div class="dash-kpi-sub">${metricName} · ${isLower?'lower is better':'higher is better'}</div>
-        <div class="dash-kpi-badge" style="background:rgba(99,102,241,.15);color:#818cf8">📐</div>
-      </div>
-      <div class="dash-kpi blue">
-        <div class="dash-kpi-label">Experiments</div>
-        <div class="dash-kpi-val">${expCount}</div>
-        <div class="dash-kpi-sub">${kept} kept · ${successRate}% success rate</div>
-        <div class="dash-kpi-badge" style="background:rgba(96,165,250,.15);color:#60a5fa">🧪</div>
-      </div>
-      <div class="dash-kpi ${successRate>=70?'green':'amber'}">
-        <div class="dash-kpi-label">Model Diversity</div>
-        <div class="dash-kpi-val">${leaders.length}</div>
-        <div class="dash-kpi-sub">unique models explored</div>
-        <div class="dash-kpi-badge" style="background:rgba(52,211,153,.15);color:#34d399">🏆</div>
+      <div class="dash-hdr-badge">
+        <div class="dash-grade-badge" style="background:${topGradeCol}18;color:${topGradeCol};border:1px solid ${topGradeCol}30;font-size:18px;font-weight:900">${topGrade}</div>
       </div>
     </div>
-    <div class="dash-row cols-3">
+    <div class="dash-kpis">
+      <div class="dash-kpi ${kpiClass}" style="animation-delay:0s">
+        <div class="dash-kpi-label">Best Model</div>
+        <div class="dash-kpi-val" style="font-size:${best.model&&best.model.length>12?'14px':best.model&&best.model.length>8?'17px':'22px'};letter-spacing:-.3px;margin-top:2px">${esc(best.model||'—')}</div>
+        <div class="dash-kpi-sub">${metricName} = ${fmtV(best.metric_val)}</div>
+        <div class="dash-kpi-badge" style="background:${topGradeCol}18;color:${topGradeCol};border:1px solid ${topGradeCol}25">🏆</div>
+      </div>
+      <div class="dash-kpi accent" style="animation-delay:.05s">
+        <div class="dash-kpi-label">${metricName}</div>
+        <div class="dash-kpi-val">${fmtV(best.metric_val)}</div>
+        <div class="dash-kpi-sub">${isLower?'↓ lower is better':'↑ higher is better'}</div>
+        <div class="dash-kpi-badge" style="background:rgba(99,102,241,.12);color:#818cf8;border:1px solid rgba(99,102,241,.2)">📐</div>
+      </div>
+      <div class="dash-kpi blue" style="animation-delay:.1s">
+        <div class="dash-kpi-label">Experiments</div>
+        <div class="dash-kpi-val">${expCount}</div>
+        <div class="dash-kpi-sub">${kept} kept · ${successRate}% success</div>
+        <div class="dash-kpi-badge" style="background:rgba(59,130,246,.12);color:#60a5fa;border:1px solid rgba(59,130,246,.2)">🧪</div>
+      </div>
+      <div class="dash-kpi ${leaders.length>=4?'green':'amber'}" style="animation-delay:.15s">
+        <div class="dash-kpi-label">Models Tried</div>
+        <div class="dash-kpi-val">${leaders.length}</div>
+        <div class="dash-kpi-sub">unique architectures</div>
+        <div class="dash-kpi-badge" style="background:rgba(52,211,153,.12);color:#34d399;border:1px solid rgba(52,211,153,.2)">⚡</div>
+      </div>
+    </div>
+    <div class="dash-row cols-3" style="animation-delay:.2s">
       <div class="dash-card">
-        <div class="dash-card-title"><span>Experiment Progress</span><small>${metricName} over ${expCount} runs</small></div>
+        <div class="dash-card-title"><span>Experiment Progress</span><small>${metricName} · ${expCount} runs</small></div>
         ${buildProgressSVG()}
       </div>
       <div class="dash-card">
-        <div class="dash-card-title"><span>Metrics Breakdown</span></div>
+        <div class="dash-card-title"><span>Metrics Breakdown</span><small>Best model</small></div>
         ${buildMetrics()}
       </div>
     </div>
-    <div class="dash-row cols-2">
+    <div class="dash-row cols-2" style="animation-delay:.28s">
       <div class="dash-card">
-        <div class="dash-card-title"><span>Model Leaderboard</span><small>${leaders.length} models</small></div>
+        <div class="dash-card-title"><span>Model Leaderboard</span><small>${leaders.length} models · ${metricName}</small></div>
         ${buildLeaderboard()}
       </div>
       <div class="dash-card">
-        <div class="dash-card-title"><span>Train / Test Gap</span><small>Overfitting detector</small></div>
-        ${gapRows.length?buildGaps():'<div style="color:var(--text-3);font-size:12px">No train/test split data available</div>'}
+        <div class="dash-card-title"><span>Overfitting Check</span><small>Train / test gap</small></div>
+        ${gapRows.length?buildGaps():`<div style="color:#52525b;font-size:12px;padding:16px 0;text-align:center">No train/test split data available</div>`}
       </div>
     </div>
-    <div class="dash-card" style="margin-top:0">
-      <div class="dash-card-title"><span>Run Intelligence</span></div>
+    <div class="dash-card" style="animation-delay:.34s">
+      <div class="dash-card-title"><span>Run Details</span></div>
       <div class="dash-meta-grid">
         <div class="dash-meta-item"><div class="dash-meta-key">Dataset</div><div class="dash-meta-val" title="${esc(filename)}">${esc(filename)}</div></div>
         <div class="dash-meta-item"><div class="dash-meta-key">Objective</div><div class="dash-meta-val" title="${esc(S.hint||task)}">${esc(S.hint||task||'—')}</div></div>
         <div class="dash-meta-item"><div class="dash-meta-key">Task Type</div><div class="dash-meta-val">${esc(task)}</div></div>
         <div class="dash-meta-item"><div class="dash-meta-key">Target Column</div><div class="dash-meta-val">${esc(target)}</div></div>
         <div class="dash-meta-item"><div class="dash-meta-key">Domain</div><div class="dash-meta-val">${esc(domain)}</div></div>
-        <div class="dash-meta-item"><div class="dash-meta-key">Provider</div><div class="dash-meta-val">${esc(provider)}</div></div>
+        <div class="dash-meta-item"><div class="dash-meta-key">AI Provider</div><div class="dash-meta-val">${esc(provider)}</div></div>
       </div>
     </div>
   </div>`;
