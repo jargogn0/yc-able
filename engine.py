@@ -1893,21 +1893,27 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
         )
         _kaggle_train_block = f"""
 KAGGLE COMPETITION MODE — MANDATORY RULES:
-1. DO NOT do a simple train_test_split for evaluation. Instead use StratifiedKFold (classification)
+1. DO NOT do a simple train_test_split for evaluation. Use StratifiedKFold (classification)
    or KFold (regression) cross-validation on the full train.csv to estimate performance.
 2. After CV, retrain the FINAL model on ALL of train.csv (no holdout withheld).
-3. Load {repr(_kaggle_test)} separately — this is the unlabelled test set, NEVER train on it.
+3. Load {repr(_kaggle_test)} separately — unlabelled test set. NEVER train on it.
 4. Apply the EXACT same preprocessing pipeline (fitted on train only) to the test set.
-5. Generate predictions for test set and save submission.csv:
+5. EVERY experiment MUST generate submission.csv — this is not optional, not deferred to future experiments.
+   Generate predictions on the test set in THIS experiment and save submission.csv NOW:
   import os
   test_path = os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_test)})
   test_df = pd.read_csv(test_path)
-  test_features = preprocessor.transform(test_df[feature_cols])
+  # Apply same feature engineering / preprocessing as for train (fitted on train, transform test)
+  test_features = <apply_same_pipeline_as_train>(test_df)
   test_preds = final_model.predict(test_features)
 {_sample_line}
-  submission = pd.DataFrame({{sample_sub.columns[0]: test_df[sample_sub.columns[0]], sample_sub.columns[-1]: test_preds}})
+  # Build submission using sample_submission column layout
+  id_col = sample_sub.columns[0]
+  pred_col = sample_sub.columns[-1]
+  submission = pd.DataFrame({{id_col: test_df[id_col], pred_col: test_preds}})
   submission.to_csv('submission.csv', index=False)
   print(f"submission.csv saved — {{len(submission)}} rows, columns: {{list(submission.columns)}}")
+DO NOT say "I will generate submission.csv in the next experiment". Generate it NOW.
 """
     else:
         _kaggle_train_block = ""
@@ -4459,6 +4465,58 @@ Output ONLY a complete ```python block.""", 4200)
         elif not continuous and stagnation_limit and no_improve_rounds >= stagnation_limit:
             log.engine(f"Stopping: stagnated for {no_improve_rounds} rounds (limit={stagnation_limit}).")
             break
+
+    # ── Kaggle safety net: generate submission.csv if still missing ──────────
+    if _is_kaggle and _kaggle_test_file and not (ws / "submission.csv").exists():
+        log.engine("Kaggle: submission.csv missing after all experiments — generating from best model...")
+        try:
+            _sub_script = f"""
+import os, sys, warnings
+warnings.filterwarnings('ignore')
+import pandas as pd
+import joblib
+
+data_dir = {str(ws)!r}
+test_path = os.path.join(data_dir, {_kaggle_test_file!r})
+model_path = os.path.join(data_dir, 'best_model.pkl')
+
+test_df = pd.read_csv(test_path)
+model = joblib.load(model_path)
+
+# Use model's known feature columns; fall back to numeric-only
+feat_cols = None
+if hasattr(model, 'feature_names_in_'):
+    feat_cols = list(model.feature_names_in_)
+elif hasattr(model, 'n_features_in_'):
+    num_cols = test_df.select_dtypes(include='number').columns.tolist()
+    feat_cols = num_cols[:model.n_features_in_]
+
+X = test_df[feat_cols] if feat_cols else test_df.select_dtypes(include='number')
+preds = model.predict(X)
+
+# Use sample submission layout if available
+sample_path = os.path.join(data_dir, {repr(_kaggle_sample_file or '')})
+if os.path.exists(sample_path):
+    sample = pd.read_csv(sample_path)
+    id_col = sample.columns[0]
+    pred_col = sample.columns[-1]
+else:
+    id_col = test_df.columns[0]
+    pred_col = {repr(obj.get('target','prediction'))}
+
+sub = pd.DataFrame({{id_col: test_df[id_col], pred_col: preds}})
+sub.to_csv(os.path.join(data_dir, 'submission.csv'), index=False)
+print(f"submission.csv saved — {{len(sub)}} rows, columns: {{list(sub.columns)}}")
+"""
+            import subprocess as _sp, sys as _sys
+            _res = _sp.run([_sys.executable, "-c", _sub_script],
+                           capture_output=True, text=True, timeout=120)
+            if _res.returncode == 0:
+                log.engine(_res.stdout.strip() or "submission.csv generated")
+            else:
+                log.engine(f"submission.csv generation failed: {_res.stderr[-300:]}")
+        except Exception as _se:
+            log.engine(f"submission.csv auto-generation error: {_se}")
 
     # ── REPORT + DEPLOY ──────────────────────────────────────────
     total_experiments = len(history)

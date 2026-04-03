@@ -1510,6 +1510,7 @@ id_vals = df[id_col].tolist() if id_col else list(range(len(df)))
 features = df.drop(columns=[c for c in ([target] + list(_drop_cols_all)) if c and c in df.columns])
 
 _train_feat_cols = None  # feature_cols.pkl is the authoritative source
+_saved_feat_cols = None  # loaded below from feature_cols.pkl / feature_columns.json if present
 
 def encode(f):
     from sklearn.preprocessing import LabelEncoder
