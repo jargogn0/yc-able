@@ -4269,7 +4269,11 @@ async function launchRun(){
       const dpk=S.best.metric_name||'';
       const dpv=bam2['test_'+dpk]!=null?bam2['test_'+dpk]:S.best.metric_val;
       const dDir=S.discovery?.objective?.direction||'lower_is_better';
-      const dInterp=dpk?interpretMetric(dpk,dpv??0,dDir):{grade:'B',color:'#60a5fa',business:'Model ready for deployment.'};
+      let dInterp=dpk?interpretMetric(dpk,dpv??0,dDir):{grade:'B',color:'#60a5fa',business:'Model ready for deployment.'};
+      if(['rmse','mae'].includes(dpk.replace(/^(train_|test_)/,''))&&['D','F'].includes(dInterp.grade)){
+        const _dr2=bam2['test_r2']!=null?bam2['test_r2']:bam2['r2'];
+        if(_dr2!=null){const _da=interpretMetric('r2',_dr2,'higher_is_better');if('ABCDF'.indexOf(_da.grade)<'ABCDF'.indexOf(dInterp.grade))dInterp={...dInterp,grade:_da.grade,color:_da.color,business:_da.business};}
+      }
       const dTask=S.discovery?.objective?.task||S.discovery?.discovery?.task||'ML model';
       const dExps=S.exps.filter(e=>e.success).length;
       card.innerHTML=`<div class="deploy-rich-header"><div class="deploy-rich-grade"><div class="grade-badge ${dInterp.grade}" style="width:42px;height:42px;font-size:16px">${dInterp.grade}</div></div><div class="deploy-rich-info"><div class="deploy-rich-title">Model ready to deploy</div><div class="deploy-rich-sub">${esc(dInterp.business)}</div></div></div><div class="deploy-rich-stats"><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Model</div><div class="deploy-rich-stat-v" style="font-size:11px">${esc(S.best.model)}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">${esc(dpk.toUpperCase())}</div><div class="deploy-rich-stat-v" style="color:${dInterp.color}">${dpv!=null?Number(dpv).toFixed(4):'—'}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Experiments</div><div class="deploy-rich-stat-v">${dExps}</div></div><div class="deploy-rich-stat"><div class="deploy-rich-stat-l">Task</div><div class="deploy-rich-stat-v" style="font-size:10px">${esc(dTask)}</div></div></div><div class="deploy-rich-btns"><button class="btn-deploy-api" onclick="deployAsAPI('${rid}')">Deploy as API</button><button class="abtn" onclick="dlDeploy('${rid}')">Download Model</button><button class="abtn" style="background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:#a78bfa" onclick="document.getElementById('exp-predict-file-input').click()">&#8679; Predict CSV</button><button class="abtn" onclick="S.confirmed=false;S.analyzed=false;S.best=null;S.exps=[];document.getElementById('p-exp').innerHTML='';chat('ai','Let\\'s iterate. What would you like to change?')">Run Again</button></div><div id="exp-predict-status" style="font-size:11px;color:#a78bfa;margin-top:6px"></div>`;
@@ -4608,7 +4612,20 @@ function showBest(best,obj,runId){
   const dir=S.discovery?.objective?.direction||'lower_is_better';
   const pv=am['test_'+pk]!=null?am['test_'+pk]:(am[pk]!=null?am[pk]:best.metric_val);
   const tv=am['train_'+pk];
-  const interp=interpretMetric(pk,pv!=null?pv:0,dir);
+  const _interpRaw=interpretMetric(pk,pv!=null?pv:0,dir);
+  // For scale-dependent metrics (rmse, mae), if grade is D/F, promote using R²/NSE when available
+  let interp=_interpRaw;
+  if(['rmse','mae'].includes(pk)&&['D','F'].includes(_interpRaw.grade)){
+    const _r2v=am['test_r2']!=null?am['test_r2']:am['r2'];
+    const _nsev=am['test_nse']!=null?am['test_nse']:am['nse'];
+    const _altK=_r2v!=null?'r2':_nsev!=null?'nse':null;
+    const _altV=_r2v!=null?_r2v:_nsev;
+    if(_altK!=null){
+      const _alt=interpretMetric(_altK,_altV,'higher_is_better');
+      if('ABCDF'.indexOf(_alt.grade)<'ABCDF'.indexOf(_interpRaw.grade))
+        interp={..._interpRaw,grade:_alt.grade,color:_alt.color,business:_alt.business};
+    }
+  }
   // Secondary metric tile
   const secKeys=['rmse','mape','mae','r2','nse','auc','roc_auc','f1','accuracy'].filter(k=>k!==pk&&(am['test_'+k]!=null||am[k]!=null));
   let secTile='';

@@ -4577,7 +4577,7 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
     run = _get_run_or_404(run_id)
     _assert_run_owner(run, request)
     contents = await file.read()
-    job_id = _new_id()
+    job_id = uuid.uuid4().hex
     PREDICT_JOBS[job_id] = {"status": "pending", "run_id": run_id}
 
     async def _bg():
