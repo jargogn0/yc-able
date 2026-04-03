@@ -3423,17 +3423,27 @@ async function send(){
 
   // ── CHAT MODE ──────────────────────────────
   if(S.mode==='chat'){
-    // Always allow chat while agent is running
-    if(S.running){await chatWithAI(text);return;}
-    // "go" / "run" / "start" in chat mode → guide to Agent mode
-    const isRunCmd=/^(go|run|start|launch|execute|do it|let'?s go|train|analyze)$/i.test(lo.trim());
-    if(isRunCmd){
-      chat('ai','To run experiments switch to <strong>Agent mode</strong> using the button above — Chat mode is for asking questions only.<br><br><button data-action="switch-agent" style="margin-top:6px;padding:6px 14px;border-radius:6px;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.12);color:#a5b4fc;font-size:12px;cursor:pointer">Switch to Agent mode →</button>');
+    // While agent is running: relay instructions as hints + chat response
+    if(S.running){
+      const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does)/i.test(lo);
+      if(!isQuestion&&S.runId){
+        fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
+      }
+      await chatWithAI(text);return;
+    }
+    // "go" in chat mode — switch to agent and launch
+    const isRunCmd=/^(go|run|start|launch|execute|do it|let'?s go|train|yolo|ship it)$/i.test(lo.trim());
+    if(isRunCmd&&S.file){
+      setMode('agent');
+      if(!S.analyzed){await autoDiscover();}
+      if(S.analyzed){S.confirmed=true;await launchRun();}
       return;
     }
     if(!S.file&&!lo.includes('setting')&&!lo.includes('key')){
       chat('ai',"Drop a CSV first so I have context — then ask me anything about your data.");return;
     }
+    // Normal questions → chatWithAI; also trigger analysis on first message if not yet done
+    if(S.file&&!S.analyzed&&!S._discoverActive)autoDiscover();
     await chatWithAI(text);return;
   }
 
@@ -3575,6 +3585,7 @@ async function chatWithAI(message){
   const ctx={
     filename:S.file?.name,
     all_files:S.allFiles,
+    extra_files:_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,rows:d.csv?.split('\n').length-1||0,headers:d.csv?.split('\n')[0]?.split(',').map(h=>h.trim())||[]})):undefined,
     kaggle_context:S.kaggleContext,
     profile:{
       n_rows:prof.rows||prof.n_rows,

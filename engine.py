@@ -4518,6 +4518,12 @@ def chat_with_data(message: str, context: dict, api_key: str, provider: str = "c
         report_snip = str(context["report"])[:600]
         ctx_lines.append(f"**Final report summary:** {report_snip}")
 
+    # Extra uploaded datasets (beyond primary)
+    extra_files = context.get("extra_files") or []
+    if extra_files:
+        ef_parts = [f"{ef['name']} ({ef.get('rows',0):,} rows, cols: {ef.get('headers',[])})" for ef in extra_files]
+        ctx_lines.append(f"**Also uploaded:** {'; '.join(ef_parts)} — available for joining or feature engineering")
+
     # ── System prompt ──────────────────────────────────────────────
     system = """You are 19, an expert AI data scientist inside 19Labs.
 
