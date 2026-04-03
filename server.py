@@ -686,23 +686,22 @@ def _trial_ip(request: Request) -> str:
 
 def _trial_check_and_increment(ip: str) -> tuple[bool, int]:
     """Returns (allowed, total_runs_used). Increments guest_runs counter if allowed.
-    Atomic: uses a single SQL statement so concurrent requests can't race past the limit."""
+    Uses cursor.rowcount to detect whether the upsert actually changed a row:
+    - rowcount > 0: INSERT or UPDATE succeeded → slot consumed, allow
+    - rowcount == 0: WHERE count < max was false → already at limit, block"""
     try:
         conn = DBConn()
-        # Atomically insert/increment ONLY when count < GUEST_MAX_RUNS.
-        # If the row doesn't exist yet, INSERT sets count=1 (always ≤ max if max≥1).
-        # If it exists and count < max, increment. Otherwise do nothing (no update).
         conn.execute(
             "INSERT INTO guest_runs (ip, count) VALUES (?,1) "
             "ON CONFLICT(ip) DO UPDATE SET count=count+1 WHERE count < ?",
             (ip, GUEST_MAX_RUNS)
         )
+        rows_changed = conn._cur.rowcount  # 1 = slot consumed, 0 = limit already reached
         conn.commit()
         row = conn.execute("SELECT count FROM guest_runs WHERE ip=?", (ip,)).fetchone()
         used = row[0] if row else 0
         conn.close()
-        # If count didn't change (still at limit), the update was a no-op
-        allowed = used <= GUEST_MAX_RUNS
+        allowed = rows_changed > 0
         return allowed, used
     except Exception:
         return True, 0  # fail open — don't block on DB error
@@ -1361,6 +1360,20 @@ def _get_run_or_404(run_id: str):
     except Exception:
         pass
     raise HTTPException(404, "Run not found")
+
+
+def _assert_run_owner(run: dict, request: Request):
+    """Raise HTTP 403 if the caller doesn't own this run.
+    Centralises the ownership check used by all run sub-endpoints."""
+    caller_token = _token_from_request(request)
+    caller_user = _get_user(caller_token)
+    caller_ip = _trial_ip(request)
+    run_owner_id = run.get("owner_id")
+    run_owner_ip = run.get("owner_ip")
+    if run_owner_id and (not caller_user or caller_user["id"] != run_owner_id):
+        raise HTTPException(403, "Not your run")
+    if not run_owner_id and run_owner_ip and caller_ip != run_owner_ip:
+        raise HTTPException(403, "Not your run")
 
 
 import functools
@@ -3162,10 +3175,11 @@ def _build_handoff_payload(run_id: str, result: dict):
 
 
 @app.get("/api/run/{run_id}/handoff")
-def get_handoff(run_id: str):
+def get_handoff(run_id: str, request: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
+    _assert_run_owner(run, request)
     if run.get("status") != "done":
         raise HTTPException(409, "Run is not completed yet")
     result = run.get("result") or {}
@@ -3173,8 +3187,8 @@ def get_handoff(run_id: str):
 
 
 @app.get("/api/run/{run_id}/project-handoff")
-def get_project_handoff(run_id: str):
-    return get_handoff(run_id)
+def get_project_handoff(run_id: str, request: Request):
+    return get_handoff(run_id, request)
 
 # ── DOWNLOAD MODEL ZIP (clean: model.pkl + train.py + requirements) ──
 @app.get("/api/run/{run_id}/deploy")
@@ -3419,8 +3433,10 @@ def download_artifact(run_id: str, artifact_name: str, request: Request):
 
 # ── PREDICTIONS CSV (actuals vs predicted table) ───────────────
 @app.get("/api/run/{run_id}/predictions")
-def get_predictions(run_id: str, limit: int = 500):
+def get_predictions(run_id: str, request: Request, limit: int = 500):
     """Return actuals vs predicted CSV as JSON rows for the forecast table."""
+    run_check = _get_run_or_404(run_id)
+    _assert_run_owner(run_check, request)
     ws_str = None
     if run_id in RUNS:
         ws_str = RUNS[run_id].get("ws")
@@ -3472,9 +3488,10 @@ def get_predictions(run_id: str, limit: int = 500):
 
 # ── TRAIN.PY CONTENT (text endpoint) ──────────────────────────
 @app.get("/api/run/{run_id}/train-py")
-def get_train_py(run_id: str):
+def get_train_py(run_id: str, request: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
+    _assert_run_owner(RUNS[run_id], request)
     ws = Path(RUNS[run_id].get("ws", ""))
     tp = ws / "train.py"
     if tp.exists():
@@ -3928,9 +3945,10 @@ async def debug_list_models():
 
 
 @app.get("/api/run/{run_id}/debug-model")
-async def debug_model(run_id: str):
+async def debug_model(run_id: str, request: Request):
     """Diagnose why model loading fails for a run — shows real error from joblib."""
     run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
     model_path = _find_model_path(run_id, run)
     if not model_path:
         return {"model_found": False, "error": "No model file found anywhere"}
@@ -4412,12 +4430,16 @@ def _is_ssrf_url(url: str) -> bool:
         if host.lower() in _BLOCKED_HOSTS:
             return True
         # Resolve and block private/loopback ranges
+        # DNS resolution failure is treated as blocked — prevents DNS-rebinding
+        # where an attacker's domain resolves to a private IP on second lookup
         try:
             addr = ipaddress.ip_address(socket.gethostbyname(host))
             if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
                 return True
+        except socket.gaierror:
+            return True  # unresolvable host — block it
         except Exception:
-            pass  # hostname resolution failed — let urlopen fail naturally
+            return True  # any other error — fail closed
     except Exception:
         return True  # unparseable URL — block it
     return False
@@ -4500,6 +4522,11 @@ async def connect_datasource(req: ConnectRequest):
     def build_sql(table, limit):
         if not table:
             return None
+        # Strict allowlist: only alphanumeric, underscores, dots (schema.table), hyphens
+        # Rejects any SQL injection attempt including semicolons, quotes, spaces, comments
+        import re as _re
+        if not _re.match(r'^[A-Za-z_][A-Za-z0-9_."-]*$', table):
+            raise ValueError(f"Invalid table name: {table!r}")
         return f'SELECT * FROM {table} LIMIT {limit}'
 
     # ── PostgreSQL / Redshift ──────────────────────────────────
@@ -4805,9 +4832,10 @@ async def transform_data(req: TransformRequest):
 # ── AutoGluon Leaderboard ─────────────────────────────────────
 
 @app.get("/api/run/{run_id}/leaderboard")
-async def get_leaderboard(run_id: str):
+async def get_leaderboard(run_id: str, request: Request):
     """Return AutoGluon internal model leaderboard (all candidates + scores)."""
     run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
     _ag_path = _find_autogluon_path(run_id, run)
     if not _ag_path:
         return {"ok": False, "error": "AutoGluon model not found for this run"}
@@ -4831,9 +4859,10 @@ async def get_leaderboard(run_id: str):
 # ── TIER 2: SHAP Explainability ──────────────────────────────
 
 @app.get("/api/run/{run_id}/explain")
-async def explain_model(run_id: str):
+async def explain_model(run_id: str, request: Request):
     """Generate model explainability data — AutoGluon feature importance or SHAP."""
     run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
     result = run.get("result")
     if not result:
         raise HTTPException(400, "Run not finished yet")
