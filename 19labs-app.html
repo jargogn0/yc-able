@@ -1784,9 +1784,11 @@ async function _refreshTokenSilently(){
 }
 
 function _isGuestLocked(){
-  // Guest is locked if they already have a run in history (used their 1 free run)
+  // Guest is locked if they have explicitly started a run in this browser
+  // Uses a dedicated flag, NOT runHistory.length — runHistory may contain other
+  // guests' synced runs, which would incorrectly block a new visitor
   if(_authUser)return false;
-  return runHistory.length>0;
+  return localStorage.getItem('19labs_guest_ran')==='1';
 }
 
 function showTrialLimitModal(reason){
@@ -1983,6 +1985,7 @@ function onAuthSuccess(){
   }
   _isTrialMode=false;
   localStorage.removeItem('19labs_trial_started');
+  localStorage.removeItem('19labs_guest_ran');
   // Upload any locally-stored keys to server (in case they were set before login)
   _syncLocalKeysToServer();
   loadSavedKeys();
@@ -2014,11 +2017,15 @@ async function _restoreRunHistory(){
     if(r.ok){
       const d=await r.json();
       const serverIds=new Set((d.runs||[]).map(run=>run.id));
-      // Add new server runs to local history
+      // Merge server runs into local history.
+      // For guests: only update status of runs already in local history (not add new ones).
+      // This prevents other guests' server-side runs from polluting the sidebar.
       (d.runs||[]).forEach(run=>{
         const label=run.filename||(run.best_model?`${run.best_model}`:'Run');
         const status=run.status==='done'?'done':run.status==='error'?'error':'done';
-        if(!runHistory.find(rh=>rh.id===run.id))runHistory.push({id:run.id,status,label});
+        const existing=runHistory.find(rh=>rh.id===run.id);
+        if(existing){existing.status=status;if(label&&label!==run.id)existing.label=label;}
+        else if(_authUser){runHistory.push({id:run.id,status,label,_owned:true});}
       });
       // Only purge stale local entries when the server returns a non-empty list
       if(serverIds.size>0){
@@ -2136,6 +2143,7 @@ async function doLogout(){
   _authToken='';_authUser=null;_savedKeys={};
   localStorage.removeItem('19labs_auth_token');
   localStorage.removeItem('19labs_trial_started');
+  localStorage.removeItem('19labs_guest_ran');
   localStorage.removeItem('19labs_last_run_id');
   localStorage.removeItem('19labs_run_history'); // clear run history on logout
   // Hard reload — clears all in-memory state and prevents auto-re-login via API key path
@@ -3502,7 +3510,11 @@ async function launchRun(){
         return;
       }
       if(!_serverConfig.has_bedrock){
-        showAuthModal();return;
+        // No server Bedrock and no API key — prompt guest to enter their own key
+        // rather than forcing signup. Show settings panel open to key input.
+        chat('ai','To run experiments, enter your <strong>Anthropic API key</strong> in Settings → API Keys, or <a href="#" onclick="showAuthModal();return false" style="color:var(--accent)">create a free account</a>.');
+        showSettings();
+        return;
       }
     }
   }
@@ -3544,6 +3556,7 @@ async function launchRun(){
     const{run_id}=await sr.json();S.runId=run_id;updStatus();
     localStorage.setItem('19labs_last_run_id',run_id);
     addRunHistory(run_id,'running',S.file?.name||'Run');
+    if(!_authUser&&!C.key)localStorage.setItem('19labs_guest_ran','1');
     toast(`Run ${run_id} started`,'ok');
     sbUpdate({runId:run_id});
 

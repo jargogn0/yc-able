@@ -330,6 +330,15 @@ def _init_db():
             conn._conn.rollback()
         except Exception:
             pass
+    # Add guest_ip column for scoping guest run history by IP
+    try:
+        conn.execute("ALTER TABLE runs ADD COLUMN guest_ip TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        try:
+            conn._conn.rollback()
+        except Exception:
+            pass
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
@@ -531,8 +540,8 @@ def _save_run_to_db(run_id: str, run: dict):
         conn.execute("""INSERT INTO runs
             (id, user_id, status, filename, provider, started, finished, hint, budget,
              best_model, best_metric_name, best_metric_val, total_experiments,
-             token_input, token_output, token_calls, yc_score, error, result_json, csv_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             token_input, token_output, token_calls, yc_score, error, result_json, csv_path, guest_ip)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
               status=EXCLUDED.status, finished=EXCLUDED.finished,
               best_model=EXCLUDED.best_model, best_metric_name=EXCLUDED.best_metric_name,
@@ -559,16 +568,17 @@ def _save_run_to_db(run_id: str, run: dict):
              diag.get("yc_readiness_score"),
              run.get("error"),
              result_json_str,
-             run.get("csv", "")))
+             run.get("csv", ""),
+             run.get("owner_ip", "") if not run.get("owner_id") else ""))
         conn.commit()
         conn.close()
     except Exception:
         pass  # Non-critical -- don't block the run
 
-def _load_run_history_from_db(user_id: str | None = None):
+def _load_run_history_from_db(user_id: str | None = None, guest_ip: str | None = None):
     """Load recent runs from DB for the /api/runs endpoint.
     Authenticated users see only their own runs.
-    Anonymous users see only ownerless (guest) runs."""
+    Anonymous users see only their own guest runs (filtered by IP)."""
     try:
         conn = DBConn()
         if user_id:
@@ -576,13 +586,14 @@ def _load_run_history_from_db(user_id: str | None = None):
                 "SELECT * FROM runs WHERE user_id=? ORDER BY started DESC LIMIT 100",
                 (user_id,)
             ).fetchall()
-        else:
-            # Guest — only show runs explicitly created by guests (id starts with 'guest-').
-            # Old runs with user_id IS NULL may belong to auth users created before the
-            # user_id column existed, so we exclude them to prevent cross-user leakage.
+        elif guest_ip:
+            # Guest — only show runs from this specific IP to prevent cross-guest leakage
             rows = conn.execute(
-                "SELECT * FROM runs WHERE user_id IS NULL AND id LIKE 'guest-%' ORDER BY started DESC LIMIT 50"
+                "SELECT * FROM runs WHERE user_id IS NULL AND id LIKE 'guest-%' AND guest_ip=? ORDER BY started DESC LIMIT 50",
+                (guest_ip,)
             ).fetchall()
+        else:
+            rows = []
         conn.close()
         return list(rows)
     except Exception:
@@ -2623,9 +2634,10 @@ async def claim_runs(request: Request, body: ClaimRunsRequest):
 def list_runs(request: Request):
     user = _get_user(_token_from_request(request))
     user_id = user["id"] if user else None
+    requester_ip = _trial_ip(request)
     out = []
     # In-memory runs — strict ownership:
-    # auth users see ONLY their own; guests see ONLY ownerless runs
+    # auth users see ONLY their own; guests see ONLY their own (matched by IP)
     for rid, run in sorted(RUNS.items(), key=lambda x: x[1].get("started", 0), reverse=True):
         owner = run.get("owner_id")
         if user_id:
@@ -2633,7 +2645,11 @@ def list_runs(request: Request):
                 continue  # auth user — only their own runs
         else:
             if owner is not None:
-                continue  # guest — only ownerless (guest) runs
+                continue  # not a guest run
+            # Guest — only show runs from the same IP
+            run_ip = run.get("owner_ip")
+            if run_ip and run_ip != requester_ip:
+                continue
         out.append({
             "id": rid,
             "status": run["status"],
@@ -2643,9 +2659,9 @@ def list_runs(request: Request):
             "best_model": (run.get("result") or {}).get("best", {}).get("model"),
             "best_metric": (run.get("result") or {}).get("best", {}).get("metric_val"),
         })
-    # Historical runs from DB — filtered by user_id at the query level
+    # Historical runs from DB — filtered by user_id or guest_ip
     in_memory_ids = set(RUNS.keys())
-    for row in _load_run_history_from_db(user_id=user_id):
+    for row in _load_run_history_from_db(user_id=user_id, guest_ip=None if user_id else requester_ip):
         if row["id"] not in in_memory_ids:
             out.append({
                 "id": row["id"],
