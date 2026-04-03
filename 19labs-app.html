@@ -3494,6 +3494,50 @@ async function saveInlineKey(){
 }
 
 // ═══════════════════════════════════════════
+// GUEST API KEY MODAL
+// ═══════════════════════════════════════════
+function showGuestKeyModal(){
+  const ex=document.getElementById('guest-key-modal');if(ex)ex.remove();
+  const el=document.createElement('div');
+  el.id='guest-key-modal';
+  el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  el.innerHTML=`
+  <div style="background:#0f0f18;border:1px solid rgba(99,102,241,.35);border-radius:18px;padding:28px 28px 24px;max-width:420px;width:100%;position:relative;box-shadow:0 24px 64px rgba(0,0,0,.6)">
+    <button onclick="document.getElementById('guest-key-modal').remove()" style="position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);border:none;color:rgba(255,255,255,.5);font-size:14px;cursor:pointer">✕</button>
+    <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:6px">Enter your API key to run</div>
+    <div style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:20px">Paste your Anthropic, OpenAI, or Gemini key. Stored locally in your browser only.</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      ${['claude','openai','gemini'].map(p=>`<button id="gkm-prov-${p}" onclick="gkmSetProv('${p}')" style="flex:1;padding:7px 4px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(255,255,255,.1);background:${p===C.provider?'rgba(99,102,241,.25)':'rgba(255,255,255,.04)'};color:${p===C.provider?'#a5b4fc':'rgba(255,255,255,.5)'};">${p==='claude'?'Claude':'openai'===p?'OpenAI':'Gemini'}</button>`).join('')}
+    </div>
+    <input id="gkm-key-input" type="password" placeholder="sk-ant-api..." autocomplete="off"
+      style="width:100%;box-sizing:border-box;padding:11px 13px;background:rgba(255,255,255,.05);border:1px solid rgba(99,102,241,.3);border-radius:8px;color:#fff;font-family:var(--mono);font-size:13px;outline:none;margin-bottom:14px"
+      onkeydown="if(event.key==='Enter')gkmSubmit()">
+    <button onclick="gkmSubmit()" style="width:100%;padding:12px;background:linear-gradient(135deg,#4f46e5,#7c3aed);border:none;border-radius:9px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.3px">Run Experiment →</button>
+    <div style="text-align:center;margin-top:14px;font-size:12px;color:rgba(255,255,255,.35)">Or <a href="#" onclick="document.getElementById('guest-key-modal').remove();showAuthModal();return false" style="color:#818cf8;text-decoration:none">create a free account</a> for unlimited runs</div>
+  </div>`;
+  document.body.appendChild(el);
+  setTimeout(()=>document.getElementById('gkm-key-input')?.focus(),80);
+}
+function gkmSetProv(p){
+  C.provider=p;
+  ['claude','openai','gemini'].forEach(x=>{
+    const b=document.getElementById('gkm-prov-'+x);
+    if(!b)return;
+    b.style.background=x===p?'rgba(99,102,241,.25)':'rgba(255,255,255,.04)';
+    b.style.color=x===p?'#a5b4fc':'rgba(255,255,255,.5)';
+  });
+  document.getElementById('gkm-key-input').placeholder=p==='claude'?'sk-ant-api...':p==='openai'?'sk-...':'AIza...';
+}
+function gkmSubmit(){
+  const key=(document.getElementById('gkm-key-input')?.value||'').trim();
+  if(!key){toast('Enter an API key','err');return;}
+  C.key=key;
+  localStorage.setItem(`19labs_api_key_${C.provider}`,key);
+  document.getElementById('guest-key-modal').remove();
+  launchRun(); // retry with key now set
+}
+
+// ═══════════════════════════════════════════
 // LAUNCH RESEARCH
 // ═══════════════════════════════════════════
 async function launchRun(){
@@ -3510,10 +3554,7 @@ async function launchRun(){
         return;
       }
       if(!_serverConfig.has_bedrock){
-        // No server Bedrock and no API key — prompt guest to enter their own key
-        // rather than forcing signup. Show settings panel open to key input.
-        chat('ai','To run experiments, enter your <strong>Anthropic API key</strong> in Settings → API Keys, or <a href="#" onclick="showAuthModal();return false" style="color:var(--accent)">create a free account</a>.');
-        showSettings();
+        showGuestKeyModal();
         return;
       }
     }
