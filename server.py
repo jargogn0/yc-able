@@ -3303,7 +3303,7 @@ def download_project_pack(run_id: str):
     )
 
 @app.get("/api/run/{run_id}/artifact/{artifact_name}")
-def download_artifact(run_id: str, artifact_name: str):
+def download_artifact(run_id: str, artifact_name: str, request: Request):
     allowed = {
         "program_md":              "program.md",
         "prepare_py":              "prepare.py",
@@ -3332,6 +3332,28 @@ def download_artifact(run_id: str, artifact_name: str):
 
     # Resolve run + workspace — support both in-memory and post-restart DB lookups
     run = RUNS.get(run_id)
+
+    # Ownership check — must happen before we serve any bytes
+    caller_token = _token_from_request(request)
+    caller_user = _get_user(caller_token)
+    caller_ip = _trial_ip(request)
+    run_owner_id = run.get("owner_id") if run else None
+    run_owner_ip = run.get("owner_ip") if run else None
+    if run is None:
+        # Post-restart: load owner from DB
+        try:
+            _oc = DBConn()
+            _or = _oc.execute("SELECT user_id, guest_ip FROM runs WHERE id=?", (run_id,)).fetchone()
+            _oc.close()
+            if _or:
+                run_owner_id = _or["user_id"] or _or.get(0)
+                run_owner_ip = _or["guest_ip"] or _or.get(1)
+        except Exception:
+            pass
+    if run_owner_id and (not caller_user or caller_user["id"] != run_owner_id):
+        raise HTTPException(403, "Not your run")
+    if not run_owner_id and run_owner_ip and caller_ip != run_owner_ip:
+        raise HTTPException(403, "Not your run")
     ws_str = ""
     if run:
         result = run.get("result") or {}
@@ -4372,12 +4394,42 @@ async def serve_predict(run_id: str, request: Request):
 class FetchURLRequest(BaseModel):
     url: str
 
+def _is_ssrf_url(url: str) -> bool:
+    """Return True if the URL targets a private/loopback/metadata address."""
+    import ipaddress, socket
+    try:
+        parsed = urllib.parse.urlparse(url)
+        # Only allow http/https
+        if parsed.scheme not in ("http", "https"):
+            return True
+        host = parsed.hostname or ""
+        # Block cloud metadata endpoints by hostname
+        _BLOCKED_HOSTS = {
+            "169.254.169.254",   # AWS/GCP/Azure instance metadata
+            "metadata.google.internal",
+            "169.254.170.2",     # AWS ECS metadata
+        }
+        if host.lower() in _BLOCKED_HOSTS:
+            return True
+        # Resolve and block private/loopback ranges
+        try:
+            addr = ipaddress.ip_address(socket.gethostbyname(host))
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return True
+        except Exception:
+            pass  # hostname resolution failed — let urlopen fail naturally
+    except Exception:
+        return True  # unparseable URL — block it
+    return False
+
 @app.post("/api/fetch-url")
 async def fetch_url_data(req: FetchURLRequest):
     """Fetch CSV/JSON data from a URL."""
     import urllib.request, io
     try:
         url = req.url.strip()
+        if _is_ssrf_url(url):
+            raise HTTPException(400, "URL not allowed.")
         # Google Sheets → export as CSV
         if 'docs.google.com/spreadsheets' in url:
             # Extract sheet ID and convert to CSV export URL
@@ -4386,6 +4438,8 @@ async def fetch_url_data(req: FetchURLRequest):
             if match:
                 sheet_id = match.group(1)
                 url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+        if _is_ssrf_url(url):  # re-check after any rewrite
+            raise HTTPException(400, "URL not allowed.")
 
         req_obj = urllib.request.Request(url, headers={"User-Agent": "19Labs/1.0"})
         with urllib.request.urlopen(req_obj, timeout=30) as resp:

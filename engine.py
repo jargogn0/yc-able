@@ -103,8 +103,40 @@ _PACKAGE_REDIRECTS = {
 
 _INSTALL_TIMEOUT = 480  # 8 minutes — enough for any package including torch/tensorflow
 
+# Hard whitelist of pip package names that auto_install_packages is allowed to install.
+# Prompt injection cannot cause installation of an arbitrary package — if the LLM writes
+# `import malicious_pkg`, the pip name resolves to "malicious_pkg" which is not in this
+# set, so it gets skipped (and the import will fail at runtime, triggering repair).
+_ALLOWED_PIP_PACKAGES: frozenset = frozenset({
+    # Core ML
+    "scikit-learn", "pandas", "numpy", "scipy", "statsmodels", "optuna",
+    # Gradient boosting
+    "lightgbm", "xgboost", "catboost",
+    # AutoML
+    "autogluon", "autogluon.tabular",
+    # Deep learning — tabular
+    "pytorch-tabular", "tab-transformer-pytorch",
+    # Deep learning — time series
+    "neuralforecast", "mlforecast", "utilsforecast", "pytorch-forecasting",
+    "prophet", "neuralprophet", "sktime",
+    # Deep learning — general
+    "torch", "torchvision", "torchaudio", "timm", "transformers", "datasets",
+    "peft", "accelerate", "sentence-transformers", "xlstm",
+    # CV / NLP helpers
+    "opencv-python-headless", "Pillow", "librosa",
+    # Clustering / dim reduction
+    "hdbscan", "umap-learn",
+    # Explainability
+    "shap",
+    # Utilities
+    "pyarrow", "openpyxl", "xlrd", "beautifulsoup4", "pyyaml",
+    "python-dotenv", "tqdm", "joblib",
+})
+
 def auto_install_packages(code: str, log=None) -> list:
-    """Parse imports from generated code and pip-install any missing packages."""
+    """Parse imports from generated code and pip-install any missing packages.
+    Only packages in _ALLOWED_PIP_PACKAGES are ever installed — prompt injection
+    cannot cause arbitrary package installation."""
     import importlib
     modules = detect_imported_modules(code)
     to_install = []
@@ -125,6 +157,11 @@ def auto_install_packages(code: str, log=None) -> list:
             continue
         # Redirect to correct pip name
         pip_name = _PACKAGE_REDIRECTS.get(pip_name, pip_name)
+        # Hard whitelist — never install a package not in the approved set
+        if pip_name not in _ALLOWED_PIP_PACKAGES:
+            if log:
+                log.engine(f"Skipping non-whitelisted package: {pip_name}")
+            continue
         try:
             importlib.import_module(mod)
         except ImportError:
