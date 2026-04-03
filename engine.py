@@ -2069,7 +2069,7 @@ EXPERT DOMAIN ANALYSIS (source of truth):
 DATA-TYPE ROUTING: {_dtype_routing}
 {_struct_block}
 
-EXPERIMENT: {exp_num} ({_tier} tier){" — write a clean, fast LightGBM/XGBoost/CatBoost baseline. No Optuna, no stacking, no ensembles. Single model, solid preprocessing, correct metric. Fast to run, easy to iterate on." if exp_num == 1 else ""}
+EXPERIMENT: {exp_num} ({_tier} tier){" — write a clean, FAST LightGBM/XGBoost/CatBoost baseline. NEVER use GradientBoostingRegressor/GradientBoostingClassifier or RandomForest for exp 1 — they are 10-100x slower than LightGBM for zero benefit. Use LightGBM with n_jobs=-1, num_leaves=63, n_estimators=500. No Optuna, no stacking, no ensembles. Single model, solid preprocessing, correct metric." if exp_num == 1 else ""}
 TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
 METRIC: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
 
@@ -2102,6 +2102,8 @@ KARPATHY DISCIPLINE (MANDATORY):
   Add a wall-clock check: `import time; _start = time.time()` at top, and periodically
   check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
   This is NON-NEGOTIABLE. Timeout = automatic DISCARD.
+- SPEED IS MANDATORY: Always use n_jobs=-1 on every model that supports it (LightGBM, XGBoost, RandomForest, sklearn estimators). This uses all 24 available CPU cores. A model without n_jobs=-1 is a bug.
+- PREFER LGBM/XGB/CATBOOST: LightGBM trains 10-100x faster than sklearn GradientBoosting or RandomForest on large datasets. Default to LightGBM for all tabular regression/classification. Only use sklearn models when explicitly needed.
 - Robust preprocessing (nulls, categoricals, datetime).
 - Deterministic behavior (set random seeds).
 - MANDATORY MODEL SAVE — this is NON-NEGOTIABLE, always the LAST thing before print(json.dumps(metrics)):
