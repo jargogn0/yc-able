@@ -1191,8 +1191,15 @@ def _smart_default_metric(task, hint=""):
 
 # ── INFER OBJECTIVE ────────────────────────────────────────────
 def infer_objective(profile, hint="", domain_analysis="", previous_objective=None):
+    # Strip machine-injected context from the user's actual words so the LLM sees a clean correction
+    _competition_ctx = re.search(r'\[COMPETITION CONTEXT[^\]]{0,2000}\]', hint or '', re.DOTALL)
+    _competition_ctx_text = _competition_ctx.group(0) if _competition_ctx else ""
+    _personal_hint = re.sub(r'\[COMPETITION CONTEXT[^\]]{0,2000}\]', '', hint or '', flags=re.DOTALL).strip()
+    _personal_hint = re.sub(r'\s+', ' ', _personal_hint).strip()
+
     # Build context-aware hint block so the LLM can interpret corrections correctly
-    if hint and previous_objective:
+    _display_hint = _personal_hint or hint or ""  # show only user's own words, not machine noise
+    if _display_hint and previous_objective:
         _prev_summary = (
             f"task={previous_objective.get('task','?')}, "
             f"target={previous_objective.get('target','?')}, "
@@ -1202,7 +1209,7 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
         _hint_block = (
             f"\n⚠️  USER CORRECTION — you MUST interpret this in context of what was just proposed:\n"
             f"CURRENT PROPOSAL: {_prev_summary}\n"
-            f"USER SAID: \"{hint}\"\n\n"
+            f"USER SAID: \"{_display_hint}\"\n\n"
             f"This is a conversational reaction. Parse intent from context — do NOT take it literally:\n"
             f"  • 'no revenue forecast' when proposing predict_weight  → user wants revenue forecast instead\n"
             f"  • 'no, use NSE' when metric=rmse                       → change metric to NSE\n"
@@ -1214,12 +1221,16 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
             f"Apply the correction to the right field (task / target / metric / direction) and "
             f"keep everything else from the current proposal unchanged.\n"
         )
-    elif hint:
+        if _competition_ctx_text:
+            _hint_block += f"\nCOMPETITION FORMAT INFO (lower priority than user correction above):\n{_competition_ctx_text}\n"
+    elif _display_hint:
         _hint_block = (
             f"\n⚠️  USER INSTRUCTION (overrides profile inferences):\n"
-            f"The user said: \"{hint}\"\n"
+            f"The user said: \"{_display_hint}\"\n"
             f"Use this to determine the correct target, task, and metric.\n"
         )
+        if _competition_ctx_text:
+            _hint_block += f"\nCOMPETITION FORMAT INFO:\n{_competition_ctx_text}\n"
     else:
         _hint_block = ""
 
@@ -1286,7 +1297,25 @@ def infer_objective(profile, hint="", domain_analysis="", previous_objective=Non
             f"The target column is CONFIRMED as \"{_forced_target}\".\n"
             f"You MUST set TARGET: {_forced_target}\n"
             f"{_task_note}"
-            f"Setting TARGET to anything else (including 'id') is WRONG.\n"
+            f"Setting TARGET to anything else (including 'id', 'station_name') is WRONG.\n"
+        )
+    elif _personal_hint and len(_personal_hint) < 300:
+        # User gave a short explicit correction that didn't match any column by string.
+        # Let the LLM use its intelligence to find the right column by meaning.
+        _forced_task = None
+        _non_id_hdrs = [h for h in profile["headers"]
+                        if h.lower() not in {"id","index","row_id","rowid","station","station_name","name","code"}
+                        and not h.lower().endswith("_id") and not h.lower().endswith("_name")]
+        _override_block = (
+            f"\n\U0001f6a8 USER CORRECTION — HIGHEST PRIORITY:\n"
+            f"The user explicitly said: \"{_personal_hint}\"\n"
+            f"You MUST find the column in this dataset that BEST MATCHES the user's words — by meaning, not just spelling.\n"
+            f"Non-identifier columns to consider: {_non_id_hdrs[:20]}\n"
+            f"Examples of smart interpretation:\n"
+            f"  • user says 'radiation' → look for GHI, irradiance, solar, Wm2, radiation columns\n"
+            f"  • user says 'price' → look for cost, amount, value, revenue columns\n"
+            f"  • user says 'churn' → look for attrition, cancel, left, churned columns\n"
+            f"Set TARGET to the column the user is describing. NEVER set TARGET to station_name, ID, or any identifier.\n"
         )
     else:
         _forced_task = None
