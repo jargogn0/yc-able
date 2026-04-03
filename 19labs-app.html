@@ -3508,14 +3508,16 @@ async function send(){
 
   // ── CHAT MODE ──────────────────────────────
   if(S.mode==='chat'){
-    // While agent is running: relay as hint + chat response (never block)
+    // While agent is running: relay as hint, skip slow chatWithAI to avoid blocking sendLock
     if(S.running){
       const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does)/i.test(lo);
       if(!isQuestion&&S.runId){
         fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
         chat('sys','<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent as live guidance</span>');
+      } else {
+        chat('sys','<span style="font-size:11px;color:var(--text-3)">Agent is running — questions answered after training completes</span>');
       }
-      await chatWithAI(text);return;
+      return;
     }
     // "go" in chat mode — always re-analyze with chat context so conversation is respected
     const isRunCmd=/^(go|run|start|launch|execute|do it|let'?s go|train|yolo|ship it)$/i.test(lo.trim());
@@ -3544,13 +3546,14 @@ async function send(){
     if(lo.includes('setting')||lo.includes('api key')){openSettings();chat('sys','Settings opened.');return}
     const isExecute=/^(execute|run|go|launch|start|do it|confirm|yes|yep|yeah|approved|lgtm|ship it)$/i.test(lo.trim());
     const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does|explain|tell me)/i.test(lo);
-    // If agent is running → send hint AND chat response
+    // If agent is running → send hint, skip slow chatWithAI to avoid blocking sendLock
     if(S.running&&S.runId){
       if(!isQuestion){
         fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
         chat('sys','<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent as live guidance</span>');
+      } else {
+        chat('sys','<span style="font-size:11px;color:var(--text-3)">Agent is running — questions answered after training completes</span>');
       }
-      await chatWithAI(text);
       return;
     }
     // If plan exists and user confirms → execute
@@ -3587,11 +3590,13 @@ async function send(){
     const isStopCmd=/^(stop|cancel|pause|abort|halt|kill)$/i.test(lo.trim());
     if(isStopCmd){cancelRun();return}
     const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does)/i.test(lo);
-    // Inject actionable instructions as live hints AND get AI acknowledgment
+    // Inject hint, skip slow chatWithAI to avoid holding sendLock during training
     if(!isQuestion&&S.runId){
       fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
+      chat('sys','<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent as live guidance</span>');
+    } else {
+      chat('sys','<span style="font-size:11px;color:var(--text-3)">Agent is running — questions answered after training completes</span>');
     }
-    await chatWithAI(text);
     return;
   }
 
