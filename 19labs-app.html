@@ -2718,13 +2718,17 @@ function updSide(){
       h+=`<div class="side-item${isActive?' act':''}" style="cursor:pointer" onclick="switchDatasetFile(${JSON.stringify(name)})"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(name)}</div><div class="si-meta" style="color:${isTrainFile?'var(--accent)':'#3f3f46'};font-size:9px">${label}</div></div>`;
     });
   } else {
-    // Primary file
+    // Primary file — clickable, active when _previewIdx===-1
     const kb=(S.file.size/1024).toFixed(1);
-    h+=`<div class="side-item act"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta">${kb}K</div></div>`;
-    // Extra uploaded datasets
+    const primAct=_previewIdx===-1;
+    h+=`<div class="side-item${primAct?' act':''}" style="cursor:pointer" onclick="previewPrimary()"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(S.file.name)}</div><div class="si-meta" style="display:flex;align-items:center;gap:6px"><span style="color:var(--accent);font-size:9px;font-weight:700">train</span><span>${kb}K</span></div></div>`;
+    // Companion files — test, submission, extras
     _extraDatasets.forEach((d,i)=>{
       const kb2=(d.size/1024).toFixed(1);
-      h+=`<div class="side-item" style="cursor:pointer" onclick="previewExtraDS(${i})"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(d.name)}</div><div class="si-meta" style="display:flex;align-items:center;gap:4px">${kb2}K<span onclick="event.stopPropagation();removeExtraDS(${i})" style="cursor:pointer;opacity:.5;font-size:10px;margin-left:2px">✕</span></div></div>`;
+      const isAct=_previewIdx===i;
+      const roleLabel=d.role||_guessRole(d.name);
+      const roleColor=roleLabel==='test'?'#f59e0b':roleLabel==='submission'?'#34d399':'#71717a';
+      h+=`<div class="side-item${isAct?' act':''}" style="cursor:pointer" onclick="previewExtraDS(${i})"><div class="si-icon">${_ico.table}</div><div class="si-name">${esc(d.name)}</div><div class="si-meta" style="display:flex;align-items:center;gap:6px"><span style="color:${roleColor};font-size:9px;font-weight:700">${roleLabel}</span><span>${kb2}K</span><span onclick="event.stopPropagation();removeExtraDS(${i})" style="cursor:pointer;opacity:.4;font-size:10px" title="Remove">✕</span></div></div>`;
     });
     if(_extraDatasets.length>0){
       h+=`<div style="padding:4px 14px 6px"><button class="join-btn" onclick="joinDatasets()" style="width:100%;font-size:11px">⇄ Join All Datasets</button></div>`;
@@ -2732,13 +2736,26 @@ function updSide(){
   }
   fl.innerHTML=h;
 }
+function _guessRole(name){
+  const n=name.toLowerCase();
+  if(/sample|submission/.test(n))return 'submission';
+  if(/^test[._\-]|^test\./.test(n)||n==='test.csv')return 'test';
+  return 'extra';
+}
+function previewPrimary(){
+  if(!S.csv)return;
+  _previewIdx=-1;
+  const parsed=parseCSV(S.csv);
+  S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
+  showDataPreview();showDataQualityWarnings();stab('data');updSide();
+}
 function previewExtraDS(idx){
   const d=_extraDatasets[idx];
   if(!d)return;
+  _previewIdx=idx;
   const parsed=parseCSV(d.csv);
   S.cols=parsed.headers;S.rows=parsed.rows;S.colTypes=parsed.types;S.colNulls=parsed.nulls;S.totalRows=parsed.totalRows;
-  showDataPreview();stab('data');
-  toast(`Previewing ${d.name}`,'ok',2000);
+  showDataPreview();stab('data');updSide();
 }
 async function switchDatasetFile(name){
   if(!S.dataset_id||!name)return;
@@ -3285,17 +3302,18 @@ async function handleMultipleFiles(fileList){
   }
   const others=files.filter(f=>f!==trainFile&&f!==testFile&&f!==subFile);
 
-  // Reset extras from previous session
-  _extraDatasets.length=0;
+  // Reset extras and preview state from previous session
+  _extraDatasets.length=0;_previewIdx=-1;
 
   // Load primary (train) — skip autoDiscover until all files are ready
   await handleFile(trainFile,null,{skipAnalyze:true});
 
-  // Load companions silently into _extraDatasets
+  // Load companions silently into _extraDatasets with role labels
+  const roleOf=f=>isSubF(f)?'submission':isTestF(f)?'test':'extra';
   const companions=[testFile,subFile,...others].filter(Boolean);
   for(const cf of companions){
     const cfText=await readF(cf);
-    _extraDatasets.push({name:cf.name,csv:cfText,size:cf.size||cfText.length});
+    _extraDatasets.push({name:cf.name,csv:cfText,size:cf.size||cfText.length,role:roleOf(cf)});
   }
   updSide();
 
@@ -6808,7 +6826,8 @@ async function shareResults(runId){
 // ═══════════════════════════════════════════
 // TIER 2: MULTI-DATASET JOINS
 // ═══════════════════════════════════════════
-const _extraDatasets=[];// [{name, csv, size}]
+const _extraDatasets=[];// [{name, csv, size, role}]
+let _previewIdx=-1;// -1=primary, 0..n=_extraDatasets index
 function updateMultiDSPanel(){
   // File list is now in updSide(); just clear the old panel
   document.getElementById('multi-ds-panel').innerHTML='';
@@ -6860,6 +6879,7 @@ async function handleFile(f,preloadedText,_opts={}){
     return;
   }
   S.file=f;S.dataset_id=null;S.media_info=null;S.allFiles=null;S.previewFile=null;S.kaggleContext=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
+  _extraDatasets.length=0;_previewIdx=-1;
   document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
   document.getElementById('dz-title').textContent=f.name;
   document.getElementById('dz-sub').textContent=`${(f.size/1024).toFixed(1)} KB`;
