@@ -2513,6 +2513,24 @@ async def start_run(req: RunRequest, request: Request):
                     cb("warn", f"⚠ Model save failed: {_mbe}")
             else:
                 print(f"[models] WARNING: no model found for {run_id} — files: {list(ws.rglob('*'))[:20] if ws.exists() else 'ws gone'}", flush=True)
+
+            # ── Persist submission.csv if train.py generated it (competition runs) ──
+            _sub_src = ws / "submission.csv"
+            if _sub_src.exists():
+                try:
+                    _sub_dst = _MODELS_DIR / f"{run_id}_submission.csv"
+                    shutil.copy2(_sub_src, _sub_dst)
+                    result["submission_path"] = str(_sub_dst)
+                    import pandas as _spd
+                    _sub_rows = sum(1 for _ in open(_sub_src)) - 1
+                    _sub_cols = list(_spd.read_csv(_sub_src, nrows=1).columns)
+                    result["submission_rows"] = _sub_rows
+                    result["submission_cols"] = _sub_cols
+                    cb("result", f"submission.csv saved — {_sub_rows:,} rows, columns: {_sub_cols}")
+                    print(f"[run] submission.csv persisted → {_sub_dst} ({_sub_rows} rows)", flush=True)
+                except Exception as _se:
+                    print(f"[run] submission.csv persist failed: {_se}", flush=True)
+
             # ── Emit model readiness signal so frontend and SSE stream know the outcome ──
             if not _model_saved:
                 result["model_saved"] = False
@@ -3560,6 +3578,24 @@ def download_artifact(run_id: str, artifact_name: str, request: Request):
     return FileResponse(str(fp), filename=dl_filename, media_type=media)
 
 # ── PREDICTIONS CSV (actuals vs predicted table) ───────────────
+@app.get("/api/run/{run_id}/submission")
+async def download_submission(run_id: str, request: Request):
+    """Download the competition submission.csv generated during training."""
+    from fastapi.responses import FileResponse
+    run = _get_run_or_404(run_id)
+    _assert_run_owner(run, request)
+    # Check persistent copy first
+    _sub_dst = _MODELS_DIR / f"{run_id}_submission.csv"
+    if _sub_dst.exists():
+        return FileResponse(str(_sub_dst), media_type="text/csv", filename="submission.csv")
+    # Fall back to workspace
+    ws_str = run.get("ws") or (RUNS.get(run_id) or {}).get("ws")
+    if ws_str:
+        _sub_ws = Path(ws_str) / "submission.csv"
+        if _sub_ws.exists():
+            return FileResponse(str(_sub_ws), media_type="text/csv", filename="submission.csv")
+    raise HTTPException(404, "submission.csv not found — training may not have generated predictions yet")
+
 @app.get("/api/run/{run_id}/predictions")
 def get_predictions(run_id: str, request: Request, limit: int = 500):
     """Return actuals vs predicted CSV as JSON rows for the forecast table."""
