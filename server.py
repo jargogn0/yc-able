@@ -4602,6 +4602,16 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
     Poll GET /api/predict-job/{job_id} for status/result. Fixes Railway 30s timeout."""
     run = _get_run_or_404(run_id)
     _assert_run_owner(run, request)
+
+    # Fail fast if there's clearly no model — saves user from waiting 5 minutes
+    _early_model = _find_model_path(run_id, run)
+    if not _early_model:
+        _ag_early = _find_autogluon_path(run_id, run)
+        if not _ag_early:
+            raise HTTPException(400,
+                "No model found for this run. It may be from a previous deployment — "
+                "please run training again to rebuild the model.")
+
     contents = await file.read()
     job_id = uuid.uuid4().hex
     PREDICT_JOBS[job_id] = {"status": "pending", "run_id": run_id}
