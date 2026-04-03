@@ -2299,7 +2299,7 @@ function spUI(p){
   const sel=document.getElementById('model-select');
   if(sel){
     const saved=gm(p);
-    sel.innerHTML=P[p].models.map(m=>`<option value="${m.id}"${m.id===saved?'selected':''}>${m.label}</option>`).join('');
+    sel.innerHTML=P[p].models.map(m=>`<option value="${esc(m.id)}"${m.id===saved?' selected':''}>` +esc(m.label)+`</option>`).join('');
   }
 }
 async function saveSettings(){

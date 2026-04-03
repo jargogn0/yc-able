@@ -954,6 +954,7 @@ def ask(system, user, max_tokens=3000):
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
+                    timeout=120,
                 )
                 _token_usage["calls"] += 1
                 if r.usage:
@@ -970,6 +971,7 @@ def ask(system, user, max_tokens=3000):
                     max_tokens=max_tokens,
                     system=system,
                     messages=[{"role": "user", "content": user}],
+                    timeout=120,
                 )
                 _token_usage["calls"] += 1
                 if hasattr(r, "usage"):
@@ -4560,6 +4562,7 @@ GUARDRAILS — you must never violate these:
                 model=_model,
                 max_completion_tokens=1000,
                 messages=[{"role": "system", "content": system}] + messages,
+                timeout=120,
             )
             return r.choices[0].message.content
         else:
@@ -4570,6 +4573,7 @@ GUARDRAILS — you must never violate these:
                 model=model_id, max_tokens=1000,
                 system=system,
                 messages=messages,
+                timeout=120,
             )
             return r.content[0].text
     except Exception as e:
