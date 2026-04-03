@@ -3194,7 +3194,21 @@ def get_status(run_id: str, request: Request):
                     out["total_experiments"] = result.get("total_experiments", len(result.get("history", [])))
                     out["continuous_mode"]= result.get("continuous_mode", False)
                     out["token_usage"]    = result.get("token_usage", {})
-                    # Code and logs persisted into result_json
+                    # submission.csv metadata — needed for frontend download bar on reload
+                    if result.get("submission_rows") is not None:
+                        out["submission_rows"] = result["submission_rows"]
+                        out["submission_cols"] = result.get("submission_cols")
+                        out["submission_path"] = result.get("submission_path")
+                    elif result.get("submission_path"):
+                        # Path recorded but rows missing — check the file
+                        try:
+                            import pandas as _spd
+                            _sp = pathlib.Path(result["submission_path"])
+                            if _sp.exists():
+                                out["submission_rows"] = sum(1 for _ in open(_sp)) - 1
+                                out["submission_cols"] = list(_spd.read_csv(_sp, nrows=1).columns)
+                        except Exception:
+                            pass
                     if result.get("train_code"):
                         out["code"] = result["train_code"]
                     if result.get("run_logs"):
@@ -3236,6 +3250,10 @@ def get_status(run_id: str, request: Request):
         out["token_usage"] = result.get("token_usage", {})
         if result.get("train_code"):
             out["code"] = result["train_code"]
+        # submission.csv metadata for download bar on reload/reconnect
+        if result.get("submission_rows") is not None:
+            out["submission_rows"] = result["submission_rows"]
+            out["submission_cols"] = result.get("submission_cols")
     # Also expose code from workspace file (for live runs before result is set)
     if "code" not in out:
         ws_path = Path(run.get("ws", ""))

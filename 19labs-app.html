@@ -4712,10 +4712,17 @@ function showBest(best,obj,runId){
   </div>
   <div id="share-url-container"></div>`;
   c.insertBefore(e,c.firstChild);
-  // Show submission download if already generated
+  // Show submission download — from RUNS_META if SSE was received, else probe the endpoint
   if(S.runId){
     const _res=RUNS_META[S.runId]||{};
-    if(_res.submission_rows!=null)showSubmissionBar(S.runId,_res.submission_rows,_res.submission_cols);
+    if(_res.submission_rows!=null){
+      showSubmissionBar(S.runId,_res.submission_rows,_res.submission_cols);
+    } else {
+      // Probe silently — handles the case where SSE message was missed (page reload, tab switch)
+      apiFetch(`${BASE}/api/run/${encodeURIComponent(S.runId)}/submission`,{method:'HEAD'}).then(r=>{
+        if(r.ok)showSubmissionBar(S.runId,null,null);
+      }).catch(()=>{});
+    }
   }
 }
 // Cache run result metadata for showBest → submission bar
