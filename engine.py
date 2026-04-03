@@ -1018,6 +1018,34 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         fixed = "import json\n" + fixed
         notes.append("added_missing_json_import")
 
+    # ── Model persistence guarantee ────────────────────────────────────────────
+    # Appended to EVERY generated script. Runs after training code completes.
+    # If no model.pkl / best_model.pkl was written, we scan common variable names
+    # and force-save the first object that has a .predict method.
+    # This catches: crashes before joblib.dump, custom filenames, native-only saves.
+    _SAVE_TAIL = (
+        "\n\n# ── 19Labs: guaranteed model save (appended by guardrails) ──\n"
+        "import pathlib as _19pl, joblib as _19jl\n"
+        "_19_saved = _19pl.Path('model.pkl').exists() or _19pl.Path('best_model.pkl').exists()\n"
+        "if not _19_saved:\n"
+        "    for _19_vn in ['model','clf','reg','pipeline','pipe','predictor',"
+                           "'estimator','best_model','xgb_model','lgbm_model','cb_model','gbm']:\n"
+        "        _19_vo = globals().get(_19_vn)\n"
+        "        if _19_vo is not None and hasattr(_19_vo, 'predict'):\n"
+        "            try:\n"
+        "                _19jl.dump(_19_vo, 'model.pkl')\n"
+        "                print(f'[19Labs] Guardrail saved {_19_vn} → model.pkl')\n"
+        "            except Exception as _19e:\n"
+        "                print(f'[19Labs] WARNING: guardrail save failed: {_19e}')\n"
+        "            break\n"
+        "    else:\n"
+        "        print('[19Labs] WARNING: no model object found — training may not have produced a model')\n"
+    )
+    # Only append if not already an autogluon script (those manage their own saves)
+    if "TabularPredictor" not in fixed and "autogluon" not in fixed.lower():
+        fixed = fixed + _SAVE_TAIL
+        notes.append("added_model_save_guarantee")
+
     return fixed, notes
 
 def normalize_reliability_mode(mode: str | None) -> str:
@@ -1506,6 +1534,11 @@ def execute(code, csv_path, ws, exp_num, data_sep=",", cancel_event=None):
             elapsed=elapsed, stdout=stdout, fixable_output=has_metrics)
     except Exception as e:
         return dict(success=False, error=str(e), elapsed=time.time() - t0)
+    finally:
+        # Warn loudly if no model file was produced — helps diagnose silent save failures
+        _model_files = list(ws.glob("model.pkl")) + list(ws.glob("best_model.pkl")) + list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib"))
+        if not _model_files:
+            print(f"[execute] WARNING: exp_{exp_num:02d} completed but no model file in {ws} — check training code", flush=True)
 
 # ── AUTO-FIX ───────────────────────────────────────────────────
 def auto_fix(code, error):

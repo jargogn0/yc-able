@@ -2137,7 +2137,7 @@ async def start_run(req: RunRequest, request: Request):
                                   for l in RUNS[run_id].get("logs", [])[-500:]]  # keep last 500
             # Record what files exist in workspace for diagnostics
             try:
-                result["_ws_files"] = [f.name for f in ws.rglob("*") if f.is_file()][:40]
+                result["_ws_files"] = [str(f.relative_to(ws)) for f in ws.rglob("*") if f.is_file()][:40]
             except Exception:
                 result["_ws_files"] = []
             RUNS[run_id]["result"] = result
@@ -2187,7 +2187,11 @@ async def start_run(req: RunRequest, request: Request):
                     _model_src = _mp
                     break
             if not _model_src:
-                for _mp in list(ws.rglob("*.pkl")) + list(ws.rglob("*.joblib")) + list(ws.rglob("*.ubj")):
+                _model_exts = ["*.pkl", "*.joblib", "*.ubj", "*.cbm"]
+                _model_hits = []
+                for _pat in _model_exts:
+                    _model_hits += list(ws.rglob(_pat))
+                for _mp in _model_hits:
                     if _mp.is_file() and "sample" not in _mp.name and "ag_models" not in str(_mp):
                         _model_src = _mp
                         break
