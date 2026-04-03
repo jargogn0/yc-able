@@ -1025,6 +1025,25 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
     fixed = code or ""
     notes: list[str] = []
 
+    # Strip pip install calls — all packages are pre-installed; runtime installs break execution
+    # Covers: subprocess.check_call/run(["pip"|sys.executable, "-m", "pip", "install", ...])
+    #         os.system("pip install ..."), !pip install (notebook magic)
+    _pip_patterns = [
+        # subprocess.check_call([sys.executable, "-m", "pip", "install", ...], ...)
+        r'subprocess\.(check_call|check_output|run|call)\s*\(\s*\[.*?["\']pip["\'].*?\].*?\)',
+        # subprocess.check_call([..., "pip", "install", ...])  spanning multiple lines
+        r'subprocess\.(check_call|check_output|run|call)\s*\(\s*\[[\s\S]*?["\']install["\'][\s\S]*?\]\s*[,)]',
+        # os.system("pip install ...")
+        r'os\.system\s*\(\s*["\']pip install[^"\']*["\'][^)]*\)',
+        # !pip install ... (IPython magic that sometimes leaks into generated code)
+        r'^!pip install.*$',
+    ]
+    for _pp in _pip_patterns:
+        new_fixed = re.sub(_pp, '# pip install removed — packages pre-installed in 19Labs', fixed, flags=re.MULTILINE | re.DOTALL)
+        if new_fixed != fixed:
+            fixed = new_fixed
+            notes.append("stripped_pip_install")
+
     if "absolute_deviation" in fixed:
         fixed = fixed.replace("absolute_deviation", "absolute_error")
         notes.append("normalized_invalid_loss_name")
@@ -1652,7 +1671,7 @@ RULES:
 - NEVER hardcode 'train.csv' or any local absolute path.
 - ALWAYS split data into train/test. Compute metrics on BOTH.
 - Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics.
-- If the error is a missing package, keep the import — it will be auto-installed before the next run.
+- If the error is a missing package, switch to an equivalent pre-installed library. NEVER add pip/subprocess install calls.
 
 Fix the error. Keep the model/approach if possible. Output ONLY fixed ```python code.""", 6000))
     fixed, _ = apply_code_guardrails(fixed)
@@ -1714,6 +1733,7 @@ KARPATHY DISCIPLINE (MANDATORY):
 - train.py is the ONLY file you may edit. ALL code goes in train.py.
 - prepare.py is READ-ONLY. Never reference or modify it.
 - DATA_PATH and TIME_BUDGET are pre-defined variables injected at line 1. DO NOT redefine them. DO NOT use os.environ.
+- NEVER use subprocess, os.system, or any shell command to install packages. ALL packages are pre-installed. No pip, no conda, no apt-get. Ever.
 - TIME_BUDGET = {obj.get('time_budget', TIME_BUDGET)}s. Add wall-clock checks in training loops.
 - ALWAYS split data into train/test. Compute metrics on BOTH and report both.
 - ALL output goes to stdout. Metrics MUST be printed as a single JSON line at the end with ALL applicable metrics:
@@ -1994,6 +2014,7 @@ KARPATHY DISCIPLINE (MANDATORY):
 - DATA_PATH and TIME_BUDGET are Python variables pre-defined BEFORE your code runs (injected at line 1).
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly.
 {_data_load_line}
+- NEVER use subprocess, os.system, or any shell command to install packages. ALL packages are pre-installed. No pip installs. Ever.
 - TIME_BUDGET is also pre-defined. DO NOT redefine it. Your entire training MUST complete within it.
   Add a wall-clock check: `import time; _start = time.time()` at top, and periodically
   check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
@@ -2182,6 +2203,7 @@ TRAIN_PY:
 TRAIN.PY HARD RULES (Karpathy discipline):
 - DATA_PATH, DATA_SEP, and TIME_BUDGET are pre-defined variables (injected at line 1 before your code).
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly: `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)`
+- NEVER use subprocess, os.system, or any shell command to install packages. ALL packages are pre-installed. No pip installs. Ever.
 - Training MUST complete within TIME_BUDGET. Add wall-clock checks.
 - ALWAYS split data into train/test. Compute metrics on BOTH sets.
 - MANDATORY MODEL SAVE — always the LAST action before print(json.dumps(metrics)):
