@@ -39,6 +39,23 @@
   --rl:12px;
   --t:150ms cubic-bezier(.4,0,.2,1);
 }
+/* ── LIGHT MODE (antigravity) ── */
+body.light {
+  --bg: #f4f3f8;
+  --surface: #ffffff;
+  --surface-2: #f1f0f6;
+  --surface-3: #e9e8f0;
+  --border: rgba(0,0,0,.07);
+  --border-2: rgba(0,0,0,.14);
+  --text: #18181b;
+  --text-2: #52525b;
+  --text-3: #a1a1aa;
+  --accent-soft: rgba(59,130,246,.1);
+  --red-soft: rgba(239,68,68,.06);
+  --amber-soft: rgba(245,158,11,.06);
+  --green-soft: rgba(59,130,246,.07);
+  --ok-soft: rgba(100,100,120,.06);
+}
 html{height:100%;height:-webkit-fill-available}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased;height:100%;min-height:-webkit-fill-available}
 ::selection{background:var(--accent);color:#fff}
@@ -1122,6 +1139,181 @@ input[type=file]{display:none}
   .exp-row>span:nth-child(4),.exp-row>span:nth-child(5){display:none}
   .topbar-r{gap:6px}
 }
+
+/* ── LIGHT MODE COMPONENT OVERRIDES ── */
+/* Canvas backgrounds */
+body.light .dash { background: #f4f3f8 }
+body.light .db-wrap { background: #f4f3f8; }
+
+/* KPI cards — white floating cards */
+body.light .dash-kpi {
+  background: #fff;
+  border-color: rgba(0,0,0,.06);
+  box-shadow: 0 1px 3px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.05);
+}
+body.light .dash-kpi:hover {
+  box-shadow: 0 4px 24px rgba(0,0,0,.12), 0 1px 4px rgba(0,0,0,.05);
+}
+body.light .dash-kpi-val { color: #18181b }
+body.light .dash-kpi-label { color: #a1a1aa }
+body.light .dash-kpi-sub { color: #71717a }
+body.light .dash-hdr { border-bottom-color: rgba(0,0,0,.06) }
+body.light .dash-hdr-title { color: #18181b }
+body.light .dash-hdr-sub { color: #71717a }
+
+/* Cards */
+body.light .dash-card {
+  background: #fff;
+  border-color: rgba(0,0,0,.06);
+  box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04);
+}
+body.light .dash-card-title span { color: #52525b }
+body.light .dash-card-title small {
+  background: #f1f0f6;
+  border-color: rgba(0,0,0,.06);
+  color: #71717a;
+}
+
+/* Leaderboard */
+body.light .dash-lb-row { border-bottom-color: rgba(0,0,0,.05) }
+body.light .dash-lb-name { color: #18181b }
+body.light .dash-lb-val { color: #52525b }
+body.light .dash-lb-bar-wrap { background: #ebebf0 }
+
+/* Gap analysis */
+body.light .dash-gap-row { border-bottom-color: rgba(0,0,0,.05) }
+body.light .dash-gap-name { color: #18181b }
+body.light .dash-gap-val { color: #52525b }
+
+/* Metric bars */
+body.light .dash-metric-name { color: #71717a }
+body.light .dash-metric-val { color: #18181b }
+body.light .dash-metric-track { background: #ebebf0 }
+
+/* Meta grid */
+body.light .dash-meta-item {
+  background: #f7f6fb;
+  border-color: rgba(0,0,0,.06);
+}
+body.light .dash-meta-key { color: #a1a1aa }
+body.light .dash-meta-val { color: #18181b }
+
+/* Data dashboard KPIs */
+body.light .db-kpi {
+  background: #fff;
+  border-color: rgba(0,0,0,.06);
+  box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 14px rgba(0,0,0,.04);
+}
+body.light .db-kpi-v { color: #18181b }
+body.light .db-kpi-l { color: #a1a1aa }
+
+/* Empty state */
+body.light .dash-empty { background: #f4f3f8 }
+body.light .dash-empty-msg { color: #a1a1aa }
+
+/* Sidebar */
+body.light .side { background: #faf9fe; border-right-color: rgba(0,0,0,.06) }
+body.light .side-h { border-bottom-color: rgba(0,0,0,.06) }
+body.light .side-h h3 { color: #a1a1aa }
+body.light .side-item:hover { background: rgba(0,0,0,.03) }
+body.light .si-name { color: #52525b }
+body.light .si-meta { color: #a1a1aa }
+body.light .side-sec { color: #c4c2cc }
+body.light .side-sec::after { background: rgba(0,0,0,.06) }
+body.light .side-status { background: #f7f6fb; border-top-color: rgba(0,0,0,.06) }
+body.light .ss-l { color: #a1a1aa }
+
+/* Drop zone */
+body.light .dz { border-color: rgba(0,0,0,.1); background: rgba(255,255,255,.6) }
+body.light .dz:hover, body.light .dz.drag { border-color: var(--accent); background: rgba(59,130,246,.04) }
+body.light .dz-title { color: #52525b }
+body.light .dz-sub { color: #a1a1aa }
+
+/* Topbar */
+body.light .topbar {
+  background: #fff;
+  border-bottom-color: rgba(0,0,0,.07);
+  box-shadow: 0 1px 8px rgba(0,0,0,.04);
+}
+body.light .logo-text { color: #18181b }
+body.light .topbar-tag { color: #a1a1aa }
+body.light .topbar-sep { background: rgba(0,0,0,.08) }
+body.light .tbtn {
+  background: #f4f3f8;
+  border-color: rgba(0,0,0,.08);
+  color: #52525b;
+}
+body.light .tbtn:hover { background: #ebebf0; color: #18181b }
+
+/* Workspace */
+body.light .ws { background: #f4f3f8 }
+body.light .tabs {
+  background: #faf9fe;
+  border-bottom-color: rgba(0,0,0,.06);
+}
+body.light .tab { color: #a1a1aa }
+body.light .tab:hover { color: #52525b; background: rgba(0,0,0,.03) }
+body.light .tab.on { color: #18181b; background: rgba(0,0,0,.04) }
+
+/* Chat panel */
+body.light .chat { border-left-color: rgba(0,0,0,.06) }
+body.light .chat-hd { background: #faf9fe; border-bottom-color: rgba(0,0,0,.06) }
+body.light .chat-msgs { background: #f4f3f8 }
+body.light .msg-ai .msg-body { background: #fff; border-color: rgba(0,0,0,.06); color: #18181b; box-shadow: 0 1px 4px rgba(0,0,0,.05) }
+body.light .msg-ai .msg-name { color: #a1a1aa }
+body.light .msg-user .msg-body { background: #ede9fe; color: #3730a3 }
+body.light .comp { border-top-color: rgba(0,0,0,.06); background: #faf9fe }
+body.light .comp-in { background: #fff; border-color: rgba(0,0,0,.08); color: #18181b }
+body.light .comp-in:focus { border-color: var(--accent) }
+body.light .comp-in::placeholder { color: #c4c2cc }
+
+/* Status bar */
+body.light .statusbar { background: #faf9fe; border-top-color: rgba(0,0,0,.06); color: #a1a1aa }
+
+/* Chat welcome */
+body.light .cw { background: #f4f3f8 }
+body.light .cw-headline { color: #18181b }
+body.light .cw-sub { color: #71717a }
+body.light .cw-domain {
+  background: #fff;
+  border-color: rgba(0,0,0,.07);
+  color: #52525b;
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+body.light .cw-domain:hover { background: #ede9fe; color: #6d28d9; border-color: rgba(109,40,217,.2) }
+
+/* URL row / connect button */
+body.light .url-in { background: #fff; border-color: rgba(0,0,0,.08); color: #18181b }
+body.light .url-btn { background: #f1f0f6; border-color: rgba(0,0,0,.08); color: #52525b }
+body.light .conn-btn { background: #f1f0f6; border-color: rgba(0,0,0,.08); color: #52525b }
+
+/* Empty state */
+body.light .ws-empty { background: #f4f3f8 }
+body.light .we-t { color: #18181b }
+body.light .we-step { background: #fff; border-color: rgba(0,0,0,.06); box-shadow: 0 1px 4px rgba(0,0,0,.04) }
+body.light .we-step-n { background: rgba(59,130,246,.1); color: var(--accent) }
+
+/* Run history */
+body.light .rh-item:hover { background: rgba(0,0,0,.03) }
+body.light .rh-label { color: #52525b }
+body.light .rh-id { color: #c4c2cc }
+body.light .rh-group { color: #c4c2cc }
+body.light .rh-group::after { background: rgba(0,0,0,.06) }
+body.light .rh-score { background: rgba(16,185,129,.08); color: #059669 }
+
+/* Data preview table */
+body.light .dp { background: #f4f3f8 }
+body.light .dp th { background: #faf9fe; color: #71717a; border-bottom-color: rgba(0,0,0,.06) }
+body.light .dp td { color: #52525b; border-bottom-color: rgba(0,0,0,.04) }
+body.light .dp tr:hover td { background: rgba(0,0,0,.02) }
+
+/* Toast */
+body.light .toast.info { background: rgba(255,255,255,.95); color: #52525b; border-color: rgba(0,0,0,.08) }
+
+/* Scrollbars in light mode */
+body.light .side-scroll::-webkit-scrollbar-thumb,
+body.light .chat-msgs::-webkit-scrollbar-thumb,
+body.light .ws-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,.1) }
 </style>
 </head>
 <body>
@@ -1390,6 +1582,7 @@ input[type=file]{display:none}
   </a>
   <div class="topbar-sep"></div>
   <div class="topbar-tag">Auto-ML Research</div>
+  <button id="theme-btn" class="tbtn" onclick="toggleTheme()" data-tip="Toggle light/dark" style="padding:5px 8px;font-size:14px" aria-label="Toggle theme">🌙</button>
   <div class="topbar-r">
     <button class="stop-btn" id="stop-btn" style="display:none" onclick="cancelRun()" data-tip="Stop current run">Stop</button>
     <div class="badge" id="badge">IDLE</div>
@@ -1615,6 +1808,20 @@ input[type=file]{display:none}
 </div>
 
 <script>
+// ── THEME ──
+function _applyTheme(t){
+  document.body.classList.toggle('light',t==='light');
+  const btn=document.getElementById('theme-btn');
+  if(btn)btn.textContent=t==='light'?'🌙':'☀️';
+}
+function toggleTheme(){
+  const next=document.body.classList.contains('light')?'dark':'light';
+  localStorage.setItem('19labs_theme',next);
+  _applyTheme(next);
+}
+// Apply saved theme immediately (before first paint)
+_applyTheme(localStorage.getItem('19labs_theme')||'dark');
+
 // ── Desktop app detection ──────────────────
 // window.desktop is exposed by Electron preload.js
 if(window.desktop?.isDesktop && window.desktop?.platform==='darwin'){
@@ -2684,6 +2891,9 @@ function renderDataDashboard(){
 }
 function _buildDataDashboardHTML(){
   if(!S.cols||!S.rows)return'';
+  const isLight=document.body.classList.contains('light');
+  const svgAxisColor=isLight?'#a1a1aa':'#3f3f46';
+  const svgGridColor=isLight?'#e9e8f0':'#1a1a1d';
   const ci=c=>S.cols.indexOf(c);
 
   // ── numeric values (non-null) for a column
