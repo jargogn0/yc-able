@@ -4082,9 +4082,21 @@ def run_research(
     # INFER
     log.engine("Inferring task from data...")
     obj = infer_objective(profile, user_hint, domain_analysis=domain_analysis)
+    # ── Enrich obj with domain analysis metadata so it flows to the result ──
+    # id_cols / leakage_cols tell prediction time exactly which columns to keep as IDs
+    # and which to drop — no hardcoding, no guessing, works for any dataset
+    if isinstance(domain_analysis, dict):
+        if domain_analysis.get("id_cols") is not None:
+            obj["id_cols"] = domain_analysis["id_cols"]
+        if domain_analysis.get("leakage_cols") is not None:
+            obj["leakage_cols"] = domain_analysis["leakage_cols"]
+        if domain_analysis.get("datetime_cols") is not None:
+            obj["datetime_cols"] = domain_analysis["datetime_cols"]
+        if domain_analysis.get("data_type"):
+            obj["data_type"] = domain_analysis["data_type"]
     log.claude(f"Task: {obj['task']} | Target: {obj['target']} | Metric: {obj['metric']} ({obj['direction']})")
     log.claude(f"Domain: {obj['domain']} | Confidence: {obj['confidence']:.0%}")
-    log.claude(f"Good enough: {obj['good_enough']}")
+    log.claude(f"ID cols: {obj.get('id_cols',[])} | Leakage cols: {obj.get('leakage_cols',[])} | Good enough: {obj['good_enough']}")
     log.claude(obj["reasoning"])
 
     # Validate target column exists in the dataset

@@ -1308,7 +1308,7 @@ def _find_autogluon_path(run_id: str, run: dict) -> "str | None":
     return None
 
 
-def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_code: str = "", train_csv_path: str = "", label_classes: "list | None" = None) -> dict:
+def _predict_subprocess(model_path: Path, csv_bytes: bytes, target: str, train_code: str = "", train_csv_path: str = "", label_classes: "list | None" = None, id_cols: "list | None" = None, leakage_cols: "list | None" = None) -> dict:
     """Run prediction in a fresh Python subprocess.
     Training already works in subprocess (xgboost/lgbm find libgomp via their bundled RPATH).
     Mirrors that environment instead of fighting in-process libgomp resolution."""
@@ -1350,15 +1350,47 @@ import numpy as np
 df = pd.read_csv({str(_csv_path)!r})
 target = {target!r}
 train_csv_path = {train_csv_path!r}
-features = df.drop(columns=[c for c in [target] if c and c in df.columns])
-id_col = next((c for c in df.columns if c.lower() in ('id','customerid','customer_id','passengerid')), None)
+
+# ── ID column detection — general, works for ANY dataset ──────────────────
+# Priority 1: id_cols stored in run objective (set by domain analysis LLM)
+# Priority 2: statistical detection — high uniqueness ratio or sequential ints
+# This replaces all hardcoded column name guessing.
+_stored_id_cols = {repr(id_cols or [])}
+_stored_leakage_cols = {repr(leakage_cols or [])}
+_drop_cols_all = set([c for c in _stored_id_cols + _stored_leakage_cols if c in df.columns])
+
+def _is_id_col(series, n_rows):
+    # Detect if a column looks like an identifier rather than a feature.
+    if series.nunique() == 0: return False
+    uniqueness = series.nunique() / max(n_rows, 1)
+    # High uniqueness (>90%) → likely ID
+    if uniqueness > 0.9: return True
+    # Sequential integers starting near 0 or 1
+    if pd.api.types.is_integer_dtype(series):
+        s = series.dropna().sort_values().reset_index(drop=True)
+        if len(s) >= 2:
+            diffs = s.diff().dropna()
+            if (diffs == 1).all() and s.iloc[0] in (0, 1): return True
+    return False
+
+# If no stored id_cols, auto-detect statistically
+if not _stored_id_cols:
+    for col in df.columns:
+        if col == target: continue
+        if _is_id_col(df[col], len(df)):
+            _drop_cols_all.add(col)
+
+# The ID col to use in output = first identified ID column (or first column if none)
+id_col = next((c for c in (_stored_id_cols or []) if c in df.columns), None)
+if id_col is None:
+    id_col = next((c for c in df.columns if c != target and _is_id_col(df[c], len(df))), None)
+
 id_vals = df[id_col].tolist() if id_col else list(range(len(df)))
 
-# Load training CSV to get exact OHE column list used during training
-# NOTE: we do NOT use this as ground-truth anymore — the LLM may have dropped
-# many columns (PassengerId, Name, Ticket, Cabin etc.) before get_dummies.
-# feature_cols.pkl (saved by guardrail) is the only reliable source.
-_train_feat_cols = None  # kept as last-resort fallback only
+# Features = all columns except target and identified drop cols
+features = df.drop(columns=[c for c in ([target] + list(_drop_cols_all)) if c and c in df.columns])
+
+_train_feat_cols = None  # feature_cols.pkl is the authoritative source
 
 def encode(f):
     from sklearn.preprocessing import LabelEncoder
@@ -3855,12 +3887,17 @@ async def predict_file(run_id: str, file: UploadFile = File(...)):
             except Exception:
                 pass
     _label_classes = (result or {}).get("label_classes")
+    _obj_meta = result.get("objective") or result.get("best") or {}
+    _id_cols_stored = _obj_meta.get("id_cols") or []
+    _leakage_cols_stored = _obj_meta.get("leakage_cols") or []
     try:
         _sub_result = await asyncio.to_thread(
             _predict_subprocess, model_path, contents, target,
             _train_code,
             _train_csv_path,
             _label_classes,
+            _id_cols_stored,
+            _leakage_cols_stored,
         )
         id_col_s = _sub_result.get("id_col")
         id_vals_s = _sub_result["id_vals"]
