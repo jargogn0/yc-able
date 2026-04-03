@@ -653,6 +653,19 @@ def profile_dataset(csv_path):
             return True
         return False
 
+    # Categorical columns that look like identifiers/grouping keys, not targets
+    _IDENTIFIER_SUFFIXES = ("_name", "_code", "_key", "_type", "_id", "_num", "_no", "_number")
+    _IDENTIFIER_EXACT = {"name", "id", "code", "station", "country", "region", "city", "state",
+                         "location", "site", "source", "category_id", "type_id", "group_id"}
+
+    def _is_categorical_identifier(c):
+        name_lo = c["name"].lower()
+        if name_lo in _IDENTIFIER_EXACT:
+            return True
+        if any(name_lo.endswith(s) for s in _IDENTIFIER_SUFFIXES):
+            return True
+        return False
+
     def _build_target_candidates(cols, n_rows):
         # Well-known target column names — ranked highest
         _TARGET_NAMES = {
@@ -665,9 +678,12 @@ def profile_dataset(csv_path):
         for c in cols:
             name_lo = c["name"].lower()
             is_id = _is_id_like(c)
+            is_cat_id = _is_categorical_identifier(c)
             is_known_target = name_lo in _TARGET_NAMES
-            # Include: low-cardinality categoricals (2–50 unique) — classification targets
-            is_cat_target = c["type"] in ("categorical", "high_cardinality") and 2 <= c["unique"] <= 50
+            # Include: low-cardinality categoricals (2–50 unique) — but NOT identifier-like names
+            is_cat_target = (c["type"] in ("categorical", "high_cardinality")
+                             and 2 <= c["unique"] <= 50
+                             and not is_cat_id)
             # Include: numeric with enough signal, not ID-like
             is_num_target = c["type"] == "numeric" and c["unique"] > 10 and not is_id
             if is_known_target or is_cat_target or is_num_target:
@@ -1375,14 +1391,19 @@ HYPOTHESES:
     tc = profile["target_candidates"]
     _llm_target = g("TARGET")
     # If LLM returns "ID" or similar identifier as target, override with best candidate
-    _ID_GUARD = {"id", "row_id", "rowid", "index", "record_id", "uid", "uuid", "station", "station_id", "sample_id"}
-    if _llm_target and (_llm_target.lower() in _ID_GUARD or _llm_target.lower().endswith("_id") or _llm_target.lower() == "id"):
-        _safe_tc = [c for c in tc if c.lower() not in _ID_GUARD and not c.lower().endswith("_id")]
+    _ID_GUARD = {"id", "row_id", "rowid", "index", "record_id", "uid", "uuid",
+                 "station", "station_id", "station_name", "sample_id",
+                 "name", "code", "country", "region", "city", "site", "location"}
+    def _is_guarded(col_name):
+        lo = col_name.lower()
+        return lo in _ID_GUARD or lo.endswith("_id") or lo.endswith("_name") or lo.endswith("_code")
+    if _llm_target and _is_guarded(_llm_target):
+        _safe_tc = [c for c in tc if not _is_guarded(c)]
         _llm_target = _safe_tc[0] if _safe_tc else (tc[0] if tc else _llm_target)
     _final_target = _forced_target or _llm_target or (tc[0] if tc else profile["headers"][-1])
     # Final safety: never allow a pure identifier column as target
-    if _final_target and (_final_target.lower() in _ID_GUARD or (_final_target.lower().endswith("_id") and _final_target.lower() != "id")):
-        _safe_tc2 = [c for c in tc if c.lower() not in _ID_GUARD and not c.lower().endswith("_id")]
+    if _final_target and _is_guarded(_final_target):
+        _safe_tc2 = [c for c in tc if not _is_guarded(c)]
         if _safe_tc2:
             _final_target = _safe_tc2[0]
 
