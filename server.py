@@ -603,7 +603,10 @@ def _server_has_bedrock() -> bool:
 
 def _trial_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For", "")
-    return (forwarded.split(",")[0] or request.client.host or "unknown").strip()
+    if forwarded:
+        # Take the LAST entry — added by our trusted proxy (Railway/nginx), not spoofable by clients
+        return forwarded.split(",")[-1].strip()
+    return request.client.host or "unknown"
 
 def _trial_check_and_increment(ip: str) -> tuple[bool, int]:
     """Returns (allowed, total_runs_used). Increments guest_runs counter if allowed.
@@ -653,7 +656,9 @@ async def auth_middleware(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(status_code=500, content={"error": str(exc)})
+    import logging
+    logging.getLogger("19labs").exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 RUNS: dict[str, dict] = {}
 _shared_results: dict[str, dict] = {}
@@ -1813,6 +1818,8 @@ async def get_config():
         "bedrock_model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
     }
 
+_ALLOWED_UPLOAD_EXTS = {".csv", ".tsv", ".zip", ".parquet", ".xlsx", ".xls", ".json", ".txt"}
+
 @app.post("/api/upload-dataset")
 async def upload_media_dataset(file: UploadFile = File(...)):
     """Accept ZIP/image/audio/CSV dataset. Returns dataset_id for use in /api/run."""
@@ -1820,6 +1827,8 @@ async def upload_media_dataset(file: UploadFile = File(...)):
     tmp_dir = _make_workspace(f"19labs_media_{dataset_id}")
     filename = file.filename or "dataset.zip"
     ext = Path(filename).suffix.lower()
+    if ext not in _ALLOWED_UPLOAD_EXTS:
+        raise HTTPException(400, f"File type '{ext}' not supported. Please upload a CSV, ZIP, or supported tabular format.")
     content = await file.read()
 
     if ext == ".zip":
@@ -2036,6 +2045,7 @@ async def start_run(req: RunRequest, request: Request):
     cancel_event = threading.Event()
     RUNS[run_id] = dict(
         id=run_id, owner_id=user["id"] if user else None,
+        owner_ip=_trial_ip(request),
         status="running", ws=str(ws),
         csv=str(csv_path), logs=[], result=None,
         started=time.time(), provider=req.provider,
@@ -2480,6 +2490,16 @@ async def inject_hint(run_id: str, req: Request):
     if run_id not in RUNS:
         raise HTTPException(404, "Run not found")
     run = RUNS[run_id]
+    # Ownership check: authenticated user OR same IP as run creator
+    caller_token = _token_from_request(req)
+    caller_user = _get_user(caller_token)
+    caller_ip = _trial_ip(req)
+    run_owner_id = run.get("owner_id")
+    run_owner_ip = run.get("owner_ip")
+    if run_owner_id and (not caller_user or caller_user["id"] != run_owner_id):
+        raise HTTPException(403, "Not your run")
+    if not run_owner_id and run_owner_ip and caller_ip != run_owner_ip:
+        raise HTTPException(403, "Not your run")
     if run["status"] != "running":
         return {"ok": False, "msg": "Run not active"}
     run.setdefault("live_hints", []).append(hint)

@@ -1913,16 +1913,18 @@ async function doAuth(){
     if(!r.ok){
       let msg=data.detail||'Something went wrong. Please try again.';
       if(r.status===409){
-        err.innerHTML=msg+' <a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signin\');return false">Sign in instead →</a>';
+        err.innerHTML=esc(msg)+' <a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signin\');return false">Sign in instead →</a>';
       } else if(r.status===401){
-        err.textContent=msg.includes('No account')||msg.includes('not found')
-          ? msg+' '
+        const safeMsg=msg.includes('No account')||msg.includes('not found')
+          ? esc(msg)+' '
           : 'Incorrect email or password. Please check and try again.';
         if(msg.includes('No account')||msg.includes('not found')){
-          err.innerHTML=err.textContent+'<a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signup\');return false">Create account →</a>';
+          err.innerHTML=safeMsg+'<a href="#" style="color:var(--accent)" onclick="switchAuthTab(\'signup\');return false">Create account →</a>';
+        } else {
+          err.textContent=safeMsg;
         }
       } else {
-        err.textContent=msg;
+        err.textContent=esc(msg);
       }
       btn.disabled=false;btn.textContent=origText;return;
     }
@@ -3108,12 +3110,12 @@ async function streamInsight(runId){
       es.onmessage=e=>{
         const d=JSON.parse(e.data);
         if(d.done){es.close();resolve();return;}
-        if(d.t){text+=d.t;textEl.innerHTML=text.replace(/\n/g,'<br>')+'<span class="insight-cursor">▊</span>';}
+        if(d.t){text+=d.t;textEl.innerHTML=esc(text).replace(/\n/g,'<br>')+'<span class="insight-cursor">▊</span>';}
         c.scrollTop=c.scrollHeight;
       };
       es.onerror=()=>{es.close();resolve();};
     });
-    textEl.innerHTML=text.replace(/\n/g,'<br>');
+    textEl.innerHTML=esc(text).replace(/\n/g,'<br>');
   }catch(e){el.remove();}
 }
 
