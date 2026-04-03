@@ -2647,8 +2647,8 @@ function safeHtml(s){
   // Use DOMPurify when available (loaded from CDN) — it correctly handles all
   // XSS vectors including unquoted attributes, encoded handlers, CSS expressions.
   // Allow a safe subset of formatting tags; strip everything else.
-  const _SAFE_TAGS=['strong','code','em','br','p','ul','ol','li','h1','h2','h3','h4','pre','b','i','span','a'];
-  const _SAFE_ATTR=['href','class','style','target','rel'];
+  const _SAFE_TAGS=['strong','code','em','br','p','ul','ol','li','h1','h2','h3','h4','pre','b','i','span','a','button'];
+  const _SAFE_ATTR=['href','class','style','target','rel','data-action','data-filename'];
   if(typeof DOMPurify!=='undefined'){
     return DOMPurify.sanitize(String(s),{
       ALLOWED_TAGS:_SAFE_TAGS,
