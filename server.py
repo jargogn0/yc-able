@@ -776,13 +776,16 @@ def _cleanup_old_workspaces():
             folder_name = p.name
             rid = folder_name[len("19labs_"):] if folder_name.startswith("19labs_") else None
             if rid:
-                # Only delete workspace if the model has been safely copied to _MODELS_DIR
-                model_persisted = (
-                    (_MODELS_DIR / f"{rid}.pkl").exists() or
-                    (_MODELS_DIR / f"{rid}_ag").is_dir()
-                )
+                # Only delete workspace if the model has been safely copied to _MODELS_DIR.
+                # For AG models, require the sentinel file (.copy_complete) which is written
+                # only after the atomic rename completes — prevents deleting workspace while
+                # a partial copy is in progress.
+                _ag_dir = _MODELS_DIR / f"{rid}_ag"
+                _ag_complete = _ag_dir.is_dir() and (_ag_dir / ".copy_complete").exists()
+                _pkl_exists  = (_MODELS_DIR / f"{rid}.pkl").exists()
+                model_persisted = _pkl_exists or _ag_complete
                 if not model_persisted:
-                    continue  # Keep workspace — model not yet persisted
+                    continue  # Keep workspace — model not yet fully persisted
             shutil.rmtree(p, ignore_errors=True)
         except Exception:
             pass
@@ -2358,24 +2361,42 @@ async def start_run(req: RunRequest, request: Request):
                 result["_ws_files"] = []
             RUNS[run_id]["result"] = result
             # ── Persist model ──────────────────────────────────────────────────
-            # Priority 1: AutoGluon ag_models/ directory → copy to persistent storage
+            _model_saved = False
+            # Priority 1: AutoGluon ag_models/ directory → atomic copy to persistent storage
             _ag_ws_dir = ws / "ag_models"
             if _ag_ws_dir.exists() and any(_ag_ws_dir.rglob("*")):
                 try:
-                    _ag_persistent = _MODELS_DIR / f"{run_id}_ag"
+                    _ag_persistent     = _MODELS_DIR / f"{run_id}_ag"
+                    _ag_persistent_tmp = _MODELS_DIR / f"{run_id}_ag_tmp"
+                    # Remove any previous failed temp copy
+                    if _ag_persistent_tmp.exists():
+                        shutil.rmtree(_ag_persistent_tmp, ignore_errors=True)
                     if _ag_persistent.exists():
                         shutil.rmtree(_ag_persistent)
-                    shutil.copytree(_ag_ws_dir, _ag_persistent)
+                    # Copy to temp directory first
+                    shutil.copytree(_ag_ws_dir, _ag_persistent_tmp)
+                    # Validate the copy has actual content
+                    _ag_files = list(_ag_persistent_tmp.rglob("*"))
+                    if not _ag_files:
+                        raise RuntimeError("Copied AG directory is empty — copy failed silently")
+                    # Atomic rename temp → final
+                    _ag_persistent_tmp.rename(_ag_persistent)
+                    # Write sentinel to mark copy as fully complete
+                    (_ag_persistent / ".copy_complete").write_text("1")
                     result["model_ag_path"] = str(_ag_persistent)
-                    # Update model.pkl to point to persistent path
+                    result["model_saved"] = True
+                    # Update model.pkl reference to point to persistent path
                     _pkl_path = ws / "model.pkl"
                     import joblib as _jl
                     _jl.dump({"type": "autogluon", "ag_path": str(_ag_persistent)}, _pkl_path)
                     shutil.copy2(_pkl_path, _MODELS_DIR / f"{run_id}.pkl")
                     RUNS[run_id]["result"] = result
-                    print(f"[models] AutoGluon model copied to persistent storage: {_ag_persistent}", flush=True)
+                    _model_saved = True
+                    cb("model", f"✓ Model saved to persistent storage ({len(_ag_files)} files)")
+                    print(f"[models] AutoGluon model atomically persisted → {_ag_persistent}", flush=True)
                 except Exception as _age:
                     print(f"[models] AutoGluon persist failed: {_age}", flush=True)
+                    cb("warn", f"⚠ Model persistence failed: {_age}")
 
             # ── Persist explain data + label classes for post-workspace predictions ──
             _csv_src = Path(run.get("csv", ""))
@@ -2448,13 +2469,26 @@ async def start_run(req: RunRequest, request: Request):
                             )
                             _dbc.commit()
                             _dbc.close()
+                            _model_saved = True
+                            result["model_saved"] = True
+                            cb("model", f"✓ Model saved ({len(_blob)//1024}KB)")
                             print(f"[models] Model saved to DB ({len(_blob)//1024}KB) for {run_id}", flush=True)
                         except Exception as _dbe:
                             print(f"[models] DB model save failed: {_dbe}", flush=True)
+                    elif _is_ag_ref and not _model_saved:
+                        # AG reference pkl — model is in _MODELS_DIR/_ag; count as saved
+                        _model_saved = True
+                        result["model_saved"] = True
                 except Exception as _mbe:
                     print(f"[models] model save failed: {_mbe}", flush=True)
+                    cb("warn", f"⚠ Model save failed: {_mbe}")
             else:
                 print(f"[models] WARNING: no model found for {run_id} — files: {list(ws.rglob('*'))[:20] if ws.exists() else 'ws gone'}", flush=True)
+            # ── Emit model readiness signal so frontend and SSE stream know the outcome ──
+            if not _model_saved:
+                result["model_saved"] = False
+                result["model_save_warning"] = "No trained model was found in the workspace. Predictions are unavailable for this run."
+                cb("warn", "⚠ No model artifact found — this run cannot make predictions. Check the Logs tab for training errors.")
             if RUNS[run_id]["status"] == "stopping":
                 RUNS[run_id]["status"] = "done"  # graceful stop completed
                 _save_run_to_db(run_id, RUNS[run_id])
@@ -4048,13 +4082,26 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
     import joblib, pandas as pd, numpy as np, io as _io
     run = _get_run_or_404(run_id)
     _assert_run_owner(run, request)
-    result = run.get("result")
-    if not result:
-        # Result metadata lost (large model stripped from DB) — check if model file still exists
+    result = run.get("result") or {}
+    if not result.get("objective"):
+        # Result metadata thin or missing — try richer DB record for objective/target
+        try:
+            _conn2 = DBConn()
+            _row2  = _conn2.execute(
+                "SELECT result_json, best_metric_name FROM runs WHERE id=?", (run_id,)
+            ).fetchone()
+            _conn2.close()
+            if _row2 and _row2["result_json"]:
+                _db_res = json.loads(_row2["result_json"])
+                if _db_res:
+                    result = {**_db_res, **result}  # DB is base; in-memory overlays it
+        except Exception:
+            pass
+    if not result and not run.get("result"):
+        # No metadata at all — verify model file exists at minimum
         _rescue_path = _find_model_path(run_id, {"result": {}})
         if not _rescue_path:
             raise HTTPException(400, "Run not finished yet — no model found")
-        result = {}  # minimal; model exists but objective metadata is gone
 
     # Try AutoGluon first (most reliable — handles feature types automatically)
     _ag_path = _find_autogluon_path(run_id, run)
@@ -4066,6 +4113,24 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
 
     obj = result.get("objective") or result.get("best") or {}
     target = obj.get("target", "")
+    training_cols = (
+        result.get("feature_cols") or
+        result.get("training_columns") or
+        obj.get("feature_cols") or
+        []
+    )
+
+    # Validate input columns when training schema is known
+    if training_cols and len(df.columns) > 0:
+        _expected = [c for c in training_cols if c != target]
+        _missing  = [c for c in _expected if c not in df.columns]
+        if _missing and len(_missing) / max(len(_expected), 1) > 0.5:
+            raise HTTPException(
+                400,
+                f"Input CSV is missing {len(_missing)}/{len(_expected)} required columns: "
+                f"{_missing[:8]}{'...' if len(_missing) > 8 else ''}. "
+                f"CSV columns found: {list(df.columns)[:10]}"
+            )
 
     if _ag_path:
         try:

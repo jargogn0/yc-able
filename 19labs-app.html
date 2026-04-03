@@ -4106,6 +4106,11 @@ async function launchRun(){
     if(st.best){S.best=st.best;showBest(st.best,st.objective,run_id)}
     if(st.report){S.report=st.report;showRpt(st.report)}
     if(st.artifacts){S.artifacts=st.artifacts;showArts(run_id,st.artifacts);updArtSide()}
+    // Surface model save warnings prominently so the user knows predictions won't work
+    const _res=st.result||{};
+    if(_res.model_saved===false&&_res.model_save_warning){
+      chat('ai',`<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:10px;margin:2px 0"><span style="font-size:18px;flex-shrink:0">⚠️</span><div><div style="font-size:13px;font-weight:600;color:#fbbf24;margin-bottom:4px">Model not saved</div><div style="font-size:12px;color:#a1a1aa;line-height:1.6">${safeHtml(_res.model_save_warning)}</div></div></div>`);
+    }
     // Badge the dashboard tab
     const dashTab=document.querySelector('.tab[data-t="dash"]');
     if(dashTab&&!dashTab.querySelector('.tab-badge'))dashTab.innerHTML='<span class="tab-lbl">Dashboard</span> <span class="tab-badge">★</span>';
