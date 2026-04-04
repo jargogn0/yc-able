@@ -3659,10 +3659,23 @@ async function send(){
     const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does)/i.test(lo);
     // Inject hint, skip slow chatWithAI to avoid holding sendLock during training
     if(!isQuestion&&S.runId){
-      fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})}).catch(()=>{});
-      chat('sys','<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent as live guidance</span>');
+      chat('sys','<span style="font-size:11px;color:var(--text-3)" id="hint-ack-pending">↳ Sending to agent…</span>');
+      try{
+        const _hr=await fetch(`${BASE}/api/run/${S.runId}/hint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hint:text})});
+        const _hj=await _hr.json();
+        const _ackEl=document.getElementById('hint-ack-pending');
+        if(_hj.objective_changed&&_hj.changes){
+          const _chg=Object.entries(_hj.changes).map(([k,[o,n]])=>`${k}: <strong>${esc(String(o))}</strong> → <strong>${esc(String(n))}</strong>`).join(' · ');
+          if(_ackEl)_ackEl.outerHTML=`<span style="font-size:11px;color:#34d399">✅ Objective updated — ${_chg}. Takes effect next experiment.</span>`;
+        } else {
+          if(_ackEl)_ackEl.outerHTML=`<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent — will guide next experiment strategy</span>`;
+        }
+      }catch(_){
+        const _ackEl=document.getElementById('hint-ack-pending');
+        if(_ackEl)_ackEl.outerHTML=`<span style="font-size:11px;color:var(--text-3)">↳ Sent to agent</span>`;
+      }
     } else {
-      chat('sys','<span style="font-size:11px;color:var(--text-3)">Agent is running — questions answered after training completes</span>');
+      chat('sys','<span style="font-size:11px;color:var(--text-3)">Agent is running — type to send corrections. It will apply them in the next experiment.</span>');
     }
     return;
   }
@@ -3690,7 +3703,16 @@ async function send(){
 
   if(!S.analyzed){S.hint=text;if(isGo){await autoDiscover();if(S.analyzed){S.confirmed=true;await launchRun()}return}await runDiscover(text);return}
   if(S.analyzed&&!S.confirmed){
-    if(isYes||isGo){S.confirmed=true;await launchRun();return}
+    if(isYes||isGo){
+      // Show the locked objective before launching — user sees exactly what will run
+      const _lObj=S.discovery?.objective||{};
+      const _lTarget=_lObj.target||'?';
+      const _lMetric=(_lObj.metric||'').toUpperCase()||'?';
+      const _lTask=(_lObj.task||'').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase()||'?';
+      const _lBudget=S.budget||6;
+      chat('sys',`<span style="font-size:12px;color:var(--text-2)">🔒 <strong>Locked objective:</strong> predict <strong>${esc(_lTarget)}</strong> · ${esc(_lTask)} · metric <strong>${_lMetric}</strong> · budget ${_lBudget} experiments. Starting…</span>`);
+      S.confirmed=true;await launchRun();return;
+    }
     if(isNo){S.hint='';S.analyzed=false;chat('ai',"Tell me what target or approach you want and I'll re-analyze.");return}
     // Model/approach instruction — just store it and acknowledge, no API call needed
     const isApproachHint=/\b(lightgbm|lgbm|lgb|xgboost|xgb|catboost|random forest|neural|optuna|gradient boost|gbm|gbdt|start with|use a |try a |baseline|simpler|linear model|ensemble|stacking|ridge|lasso|elastic)\b/i.test(lo);

@@ -848,6 +848,106 @@ def _parse_domain_field(resp, key):
     m = re.search(rf"^{key}:\s*(.+?)(?=\n[A-Z_]+:|$)", resp, re.MULTILINE | re.DOTALL)
     return m.group(1).strip() if m else ""
 
+_METRIC_ALIASES: dict[str, str] = {
+    # NSE / Nash-Sutcliffe
+    "nse": "nse", "nash": "nse", "nash-sutcliffe": "nse",
+    # RMSE
+    "rmse": "rmse", "root mean squared": "rmse",
+    # MAE
+    "mae": "mae", "mean absolute": "mae",
+    # MAPE
+    "mape": "mape", "mean absolute percentage": "mape",
+    # AUC / ROC
+    "auc": "auc", "roc": "auc", "roc_auc": "auc", "rocauc": "auc",
+    # F1
+    "f1": "f1",
+    # Accuracy
+    "accuracy": "accuracy", "acc": "accuracy",
+    # Logloss
+    "logloss": "logloss", "log loss": "logloss", "cross entropy": "logloss",
+    # R2
+    "r2": "r2", "r squared": "r2", "r^2": "r2",
+    # MSE
+    "mse": "mse",
+    # Precision / Recall
+    "precision": "precision", "recall": "recall",
+}
+
+_METRIC_DIRECTION: dict[str, str] = {
+    "rmse": "lower_is_better", "mae": "lower_is_better", "mape": "lower_is_better",
+    "mse": "lower_is_better", "logloss": "lower_is_better",
+    "auc": "higher_is_better", "f1": "higher_is_better", "accuracy": "higher_is_better",
+    "nse": "higher_is_better", "r2": "higher_is_better", "precision": "higher_is_better",
+    "recall": "higher_is_better",
+}
+
+
+def _apply_hint_to_obj(hint: str, obj: dict, profile: dict) -> dict:
+    """
+    Parse a free-text user correction and update obj fields in-place.
+    Returns a dict of {field: (old_value, new_value)} for every field changed.
+    """
+    hint_lo = hint.lower()
+    changes: dict[str, tuple] = {}
+
+    # ── Metric detection ──────────────────────────���────────────────────────
+    detected_metric = None
+    for alias, canonical in _METRIC_ALIASES.items():
+        # look for "use NSE", "switch to MAE", "optimize for F1", "metric is AUC"
+        if re.search(
+            r'(?:use|switch\s+to|optimize\s+for|metric\s+(?:is|=|:)?|instead\s+of\s+\w+\s+use)\s+' + re.escape(alias),
+            hint_lo
+        ) or re.search(
+            r'\b' + re.escape(alias) + r'\b.*(?:metric|score|evaluat|criterion)',
+            hint_lo
+        ) or (len(alias) >= 4 and re.search(r'\buse\s+' + re.escape(alias) + r'\b', hint_lo)):
+            detected_metric = canonical
+            break
+    if detected_metric and detected_metric != obj.get("metric"):
+        changes["metric"] = (obj.get("metric"), detected_metric)
+        obj["metric"] = detected_metric
+        obj["direction"] = _METRIC_DIRECTION.get(detected_metric, "lower_is_better")
+
+    # ── Target column detection ───────────────────────────────────────────
+    # "predict X", "target is X", "target column X", "use X as target"
+    headers = profile.get("headers", [])
+    headers_lo = {h.lower(): h for h in headers}
+    for pat in [
+        r'predict\s+["\']?([A-Za-z0-9_\s]+?)["\']?(?:\s|$|,|\.)',
+        r'target\s+(?:is|=|column\s+is)?\s*["\']?([A-Za-z0-9_\s]+?)["\']?(?:\s|$|,|\.)',
+        r'use\s+["\']?([A-Za-z0-9_\s]+?)["\']?\s+as\s+target',
+    ]:
+        m = re.search(pat, hint_lo)
+        if m:
+            candidate = m.group(1).strip()
+            # exact match
+            if candidate in headers_lo:
+                new_target = headers_lo[candidate]
+                if new_target != obj.get("target"):
+                    changes["target"] = (obj.get("target"), new_target)
+                    obj["target"] = new_target
+                break
+            # fuzzy match — candidate is substring of a header
+            fuzzy = [h for h in headers if candidate in h.lower() or h.lower() in candidate]
+            if fuzzy:
+                new_target = fuzzy[0]
+                if new_target != obj.get("target"):
+                    changes["target"] = (obj.get("target"), new_target)
+                    obj["target"] = new_target
+                break
+
+    # ── Task type detection ───────────────────────────────────────────────
+    if re.search(r'\bclassif', hint_lo) and "classification" not in obj.get("task", "").lower():
+        new_task = "BinaryClassification" if "binary" in hint_lo else "MultiClassClassification" if "multi" in hint_lo else "BinaryClassification"
+        changes["task"] = (obj.get("task"), new_task)
+        obj["task"] = new_task
+    elif re.search(r'\bregress', hint_lo) and "regression" not in obj.get("task", "").lower():
+        changes["task"] = (obj.get("task"), "Regression")
+        obj["task"] = "Regression"
+
+    return changes
+
+
 def _domain_analysis_text(da) -> str:
     """Render domain_analysis (dict or str) as a compact text block for LLM prompts."""
     if isinstance(da, dict):
@@ -2488,19 +2588,32 @@ def revise_after_iteration(program_md, train_py, score, error, history, domain_a
             f"MANDATORY next approach: {' OR '.join(_suggest)}."
         )
 
+    _obj = obj or {}
+    _metric = _obj.get('metric', 'rmse')
+    _target = _obj.get('target', '?')
+    _task   = _obj.get('task', 'Regression')
+    _direction = _obj.get('direction', 'lower_is_better')
+    _user_hint_extra = _obj.get('user_hint', '')
+
     review = ask(
         "You are an autonomous ML researcher and senior data scientist. "
         "You make sharp KEEP/DISCARD decisions and rewrite experiments with genuine domain expertise.",
         f"""Given the current program.md, train.py, run result, and expert domain analysis — decide KEEP/DISCARD and write the next experiment.
 
-EXPERT DOMAIN ANALYSIS (use this to guide your next approach):
-{_domain_analysis_text(domain_analysis)[:3000] if domain_analysis else "(not available)"}
-
-{('⚠️  USER EXPLICIT INSTRUCTION (HIGHEST PRIORITY — you MUST follow this): "' + (obj or {}).get('user_hint','') + '"') if (obj or {}).get('user_hint') else ""}
+══════════════════════════════════════════════════════
+AGREED OBJECTIVE (validated with user — DO NOT change):
+  Task:   {_task}
+  Target: {_target}
+  Metric: {_metric.upper()} ({_direction}) ← optimize FOR THIS, nothing else
+══════════════════════════════════════════════════════
+{('ADDITIONAL USER INSTRUCTION: "' + _user_hint_extra + '"') if _user_hint_extra else ""}
 {_family_saturation_directive}
 
+EXPERT DOMAIN ANALYSIS:
+{_domain_analysis_text(domain_analysis)[:3000] if domain_analysis else "(not available)"}
+
 KEEP CRITERIA:
-- KEEP if the primary metric improved vs previous best in history.
+- KEEP if {_metric.upper()} improved vs previous best in history.
 - KEEP the first successful experiment always (baseline).
 - DISCARD if metric is worse or equal to a previously KEPT experiment.
 
@@ -2536,14 +2649,13 @@ TRAIN.PY HARD RULES (Karpathy discipline):
   `model` = the COMPLETE fitted pipeline/estimator you call .predict() on.
   For stacking/ensembles: dump the FULL stacking object, NOT individual components.
   Native saves (save_model, .json) are forbidden as the ONLY save — joblib.dump is ALWAYS required.
-- PRIMARY METRIC IS: {(obj or {}).get('metric', 'rmse').upper()} (direction: {(obj or {}).get('direction', 'lower_is_better')})
-  YOU MUST OPTIMIZE FOR THIS METRIC — NOT RMSE unless that IS the primary metric.
+- PRIMARY METRIC IS: {_metric.upper()} (direction: {_direction}) — this is the AGREED objective, DO NOT switch to RMSE or any other metric.
   - Use it as eval_metric in LightGBM/XGBoost/CatBoost where supported
   - Use it as the scoring function in cross-validation / GridSearchCV
   - Use it to select the best model/hyperparameters
-  - The primary metric value MUST be the key "{(obj or {}).get('metric', 'rmse')}" in your final JSON
+  - The primary metric value MUST be the key "{_metric}" in your final JSON
 - Final line: print(json.dumps(metrics)) — MUST include "model" key PLUS train_ and test_ prefixed metrics.
-  Required keys: "{(obj or {}).get('metric', 'rmse')}" (primary, test set), "train_{(obj or {}).get('metric', 'rmse')}", "test_{(obj or {}).get('metric', 'rmse')}", "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse", "r2", and any applicable: mape, mae, nse.
+  Required keys: "{_metric}" (primary, test set), "train_{_metric}", "test_{_metric}", "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse", "r2", and any applicable: mape, mae, nse.
 - MANDATORY predictions.csv — save this BEFORE the final print(), no exceptions:
   try:
     import numpy as _np2, pandas as _pd2
@@ -4274,6 +4386,14 @@ def run_research(
 
     (ws / "objective.md").write_text(obj["raw"])
     (ws / "objective.json").write_text(json.dumps(obj, indent=2))
+    # Write objective + profile back to RUNS via a structured log callback so the hint
+    # endpoint always has the current objective for parsing user corrections mid-run
+    if log_callback:
+        log_callback({
+            "tag": "_internal_objective",
+            "objective": {k: v for k, v in obj.items() if isinstance(v, (str, int, float, list, bool)) and k != "raw"},
+            "profile_headers": profile.get("headers", []),
+        })
     artifacts = initialize_workspace_artifacts(ws, csv_path, profile, obj)
     log.engine("Initialized project artifacts (prepare.py, analysis.ipynb, progress.png)")
 
@@ -4377,7 +4497,31 @@ def run_research(
             _combined = "; ".join(_new_hints)
             _prev = obj.get("user_hint", "")
             obj["user_hint"] = ((_prev + "; " + _combined) if _prev else _combined)
-            log.engine(f"💬 Live hint injected → obj.user_hint = \"{obj['user_hint']}\"")
+            # Parse hint for explicit objective changes (metric, target, task)
+            _changes = _apply_hint_to_obj(_combined, obj, profile)
+            if _changes:
+                _change_desc = ", ".join(
+                    f"{k}: {v[0]} → {v[1]}" for k, v in _changes.items()
+                )
+                log.claude(f"✅ Objective updated from user instruction: {_change_desc}")
+                # Narrate back to user so they know it was understood
+                if log_callback:
+                    log_callback({
+                        "tag": "agent",
+                        "msg": (
+                            f"Got it. Updated objective: **{_change_desc}**. "
+                            f"This takes effect from the next experiment. "
+                            f"Current objective: task={obj.get('task')}, target={obj.get('target')}, "
+                            f"metric={obj.get('metric').upper()}."
+                        ),
+                        "ts": __import__("time").strftime("%H:%M:%S"),
+                    })
+                # Regenerate program.md with updated objective so all future experiments follow it
+                program_md = write_program_md(profile, obj, history, insights, domain_analysis=domain_analysis)
+                (ws / "program.md").write_text(program_md)
+                log.engine(f"program.md regenerated with updated objective ({_change_desc})")
+            else:
+                log.engine(f"💬 Live hint injected (no objective change detected): \"{_combined}\"")
 
         log.engine(f"\n{'═'*50}\nEXPERIMENT {n}/{budget} {'(continuous)' if continuous else ''}\n{'═'*50}")
 

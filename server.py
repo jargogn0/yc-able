@@ -2420,6 +2420,14 @@ async def start_run(req: RunRequest, request: Request):
         req.hint = ((req.hint or "") + _extra_ctx).strip()
 
     cancel_event = threading.Event()
+    # Quick profile for hint parsing (header-level only — no stats, very fast)
+    _run_profile: dict = {}
+    try:
+        import pandas as _pdq
+        _hdf = _pdq.read_csv(csv_path, nrows=0)
+        _run_profile = {"headers": list(_hdf.columns)}
+    except Exception:
+        pass
     RUNS[run_id] = dict(
         id=run_id, owner_id=user["id"] if user else None,
         owner_ip=_trial_ip(request),
@@ -2429,6 +2437,8 @@ async def start_run(req: RunRequest, request: Request):
         hint=req.hint or "", budget=req.budget,
         cancel_event=cancel_event,
         live_hints=[],  # appended by /api/run/{id}/hint during the run
+        profile=_run_profile,  # used by hint parser for target column matching
+        objective={},  # populated when engine calls back with inferred objective
     )
     # Log CSV source into run stream so it appears in the Exp tab
     _csv_src_msg = (
@@ -2446,10 +2456,23 @@ async def start_run(req: RunRequest, request: Request):
         sys.path.insert(0, str(Path(__file__).parent))
         from engine import run_research
 
-        def cb(tag, msg):
-            RUNS[run_id]["logs"].append({
-                "tag": tag, "msg": msg, "ts": time.strftime("%H:%M:%S")
-            })
+        def cb(tag_or_dict, msg=None):
+            # Accepts either cb("tag", "msg") or cb({"tag":..., ...}) for structured payloads
+            if isinstance(tag_or_dict, dict):
+                _d = tag_or_dict
+                _tag = _d.get("tag", "sys")
+                if _tag == "_internal_objective":
+                    # Engine wrote back its inferred objective — store it for hint parsing
+                    RUNS[run_id]["objective"] = _d.get("objective") or {}
+                    RUNS[run_id]["profile"]["headers"] = _d.get("profile_headers") or RUNS[run_id]["profile"].get("headers", [])
+                    return
+                RUNS[run_id]["logs"].append({
+                    "tag": _tag, "msg": _d.get("msg", ""), "ts": _d.get("ts", time.strftime("%H:%M:%S"))
+                })
+            else:
+                RUNS[run_id]["logs"].append({
+                    "tag": tag_or_dict, "msg": msg or "", "ts": time.strftime("%H:%M:%S")
+                })
 
         try:
             _prov = (req.provider or "claude").lower()
@@ -3159,7 +3182,18 @@ async def inject_hint(run_id: str, req: Request):
         return {"ok": False, "msg": "Run not active"}
     run.setdefault("live_hints", []).append(hint)
     run["logs"].append({"tag": "sys", "msg": f"💬 User hint: {hint}", "ts": time.strftime("%H:%M:%S")})
-    return {"ok": True}
+    # Pre-parse the hint so the frontend can show an immediate acknowledgment.
+    # The engine will do the authoritative parse; this is best-effort for UX.
+    from engine import _apply_hint_to_obj, _METRIC_ALIASES
+    import copy as _copy
+    _current_obj = _copy.deepcopy(run.get("objective") or {})
+    _profile = run.get("profile") or {}
+    _changes = _apply_hint_to_obj(hint, _current_obj, _profile)
+    if _changes:
+        # Update the run's cached objective so status checks reflect the correction
+        run["objective"] = _current_obj
+        run["logs"].append({"tag": "agent", "msg": f"✅ Objective updated: " + ", ".join(f"{k}: {v[0]} → {v[1]}" for k, v in _changes.items()), "ts": time.strftime("%H:%M:%S")})
+    return {"ok": True, "objective_changed": bool(_changes), "changes": {k: list(v) for k, v in _changes.items()}}
 
 
 # ── CANCEL RUN ─────────────────────────────────────────────────
