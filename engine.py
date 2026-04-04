@@ -2278,7 +2278,16 @@ KARPATHY DISCIPLINE (MANDATORY):
   Save this AFTER pd.get_dummies / preprocessing, using the final X_train column list. This enables correct prediction alignment.
 - PRIMARY METRIC: {obj.get('metric','rmse').upper()} — optimize for THIS, not RMSE.
   Use as eval_metric in LightGBM/XGBoost/CatBoost. Use as scoring in cross_val_score.
-- MANDATORY predictions.csv — ALWAYS save this file after fitting, no exceptions:
+╔══════════════════════════════════════════════════════════════╗
+║  TRAIN/TEST SPLIT — NON-NEGOTIABLE                           ║
+║  ALWAYS reserve a holdout test set BEFORE training.          ║
+║  • Tabular: train_test_split(df, test_size=0.2, random_state=42)                  ║
+║  • Time series: sort by date, last 20% rows = test (NO random split)              ║
+║  • KFold CV is OK but you MUST also report metrics on a final holdout.            ║
+║  NEVER train on 100% of data without a test set. It makes metrics meaningless.   ║
+╚══════════════════════════════════════════════════════════════╝
+
+- MANDATORY predictions.csv — ALWAYS save actual vs predicted on the TEST SET, no exceptions:
   ```python
   import pandas as pd
   _pred_df_rows = []
@@ -2289,6 +2298,38 @@ KARPATHY DISCIPLINE (MANDATORY):
   pd.DataFrame(_pred_df_rows).to_csv('predictions.csv', index=False)
   ```
   This table is shown to the user in the Results tab — it MUST exist.
+- FORECAST TABLE (save if a separate unlabelled test/prediction file exists):
+  If there is a companion CSV without a target column (e.g. test.csv, predict.csv, future.csv,
+  or any file in the same directory with "test" or "predict" or "future" in the name),
+  load it, apply the SAME preprocessing pipeline (fitted on train), predict on it,
+  and save as `forecast.csv`:
+  ```python
+  import os as _os, glob as _glob
+  _data_dir = _os.path.dirname(DATA_PATH)
+  _test_candidates = (
+      _glob.glob(_os.path.join(_data_dir, '*test*.csv')) +
+      _glob.glob(_os.path.join(_data_dir, '*predict*.csv')) +
+      _glob.glob(_os.path.join(_data_dir, '*future*.csv'))
+  )
+  _test_candidates = [f for f in _test_candidates if _os.path.abspath(f) != _os.path.abspath(DATA_PATH)]
+  if _test_candidates:
+      try:
+          _test_df = pd.read_csv(_test_candidates[0])
+          # Apply same feature engineering / preprocessing as train (fitted objects only, no refit)
+          _test_feats = <apply_same_pipeline_as_train>(_test_df)
+          _test_preds = model.predict(_test_feats)
+          _fc_rows = []
+          for _fi, _fp in enumerate(_test_preds):
+              _fr = {{'predicted': float(_fp)}}
+              # Add id/date columns if available:
+              for _id_col in ['id','ID','date','Date','datetime','timestamp']:
+                  if _id_col in _test_df.columns: _fr[_id_col] = str(_test_df[_id_col].iloc[_fi])
+          _fc_rows.append(_fr)
+          pd.DataFrame(_fc_rows).to_csv('forecast.csv', index=False)
+          print(f"forecast.csv saved — {{len(_fc_rows)}} rows")
+      except Exception as _fe: print(f"forecast.csv skipped: {{_fe}}")
+  ```
+  This powers the Forecast Table in the Results tab.
 - ALL output goes to stdout. Final line MUST be `print(json.dumps(metrics))` where metrics is a dict:
   REQUIRED keys:
   - "model": string (e.g. "LightGBM")
@@ -2465,7 +2506,9 @@ TRAIN.PY HARD RULES (Karpathy discipline):
   DO NOT redefine them. DO NOT use os.environ.get(). Use them directly: `df = pd.read_csv(DATA_PATH, sep=DATA_SEP)`
 - NEVER add pip/subprocess install calls inside train.py. Just write the import — the engine auto-installs any package before running your code.
 - Training MUST complete within TIME_BUDGET. Add wall-clock checks.
-- ALWAYS split data into train/test. Compute metrics on BOTH sets.
+- TRAIN/TEST SPLIT IS MANDATORY: ALWAYS reserve a holdout before training.
+  Tabular → train_test_split(test_size=0.2). Time series → sort by date, last 20% = test.
+  NEVER train on 100% of data without a holdout — metrics become meaningless.
 - MANDATORY MODEL SAVE — always the LAST action before print(json.dumps(metrics)):
   import joblib; joblib.dump(model, 'model.pkl')
   `model` = the COMPLETE fitted pipeline/estimator you call .predict() on.
@@ -2491,6 +2534,21 @@ TRAIN.PY HARD RULES (Karpathy discipline):
     import pandas as _pd2; _pd2.DataFrame(_rows).to_csv('predictions.csv', index=False)
   except Exception: pass
   This file powers the Results tab showing actuals vs predicted to the user.
+- FORECAST TABLE — if a companion test/predict CSV exists (same directory, no target column):
+  try:
+    import glob as _gl, os as _os2
+    _dir = _os2.path.dirname(DATA_PATH)
+    _fc_cands = [f for f in (_gl.glob(_os2.path.join(_dir,'*test*.csv'))+_gl.glob(_os2.path.join(_dir,'*predict*.csv'))+_gl.glob(_os2.path.join(_dir,'*future*.csv'))) if _os2.path.abspath(f)!=_os2.path.abspath(DATA_PATH)]
+    if _fc_cands:
+      _ft = _pd2.read_csv(_fc_cands[0])
+      _ft_feats = <same_preprocessing_pipeline_as_train>(_ft)
+      _ft_preds = model.predict(_ft_feats)
+      _fc_df = _pd2.DataFrame({{'predicted': _ft_preds}})
+      for _c in ['id','ID','date','Date','datetime','timestamp']:
+        if _c in _ft.columns: _fc_df.insert(0, _c, _ft[_c].values)
+      _fc_df.to_csv('forecast.csv', index=False)
+  except Exception: pass
+  forecast.csv powers the Forecast Table in the Results tab (predictions on unseen data).
 - GENERATE PLOTS (matplotlib, Agg backend). Same 5 plots as always:
     BG='#09090b'; BLUE='#3b82f6'; RED='#ef4444'; DIM='#27272a'
     plt.rcParams.update({{'figure.facecolor':BG,'axes.facecolor':BG,'axes.spines.top':False,

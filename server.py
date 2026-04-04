@@ -3939,6 +3939,56 @@ def get_predictions(run_id: str, request: Request, limit: int = 500):
                 raise HTTPException(500, f"Could not parse predictions: {e}")
     raise HTTPException(404, "predictions.csv not found — run an experiment first")
 
+@app.get("/api/run/{run_id}/forecast")
+def get_forecast(run_id: str, request: Request, limit: int = 1000):
+    """Return forecast.csv (predictions on unseen data) as JSON rows."""
+    run_check = _get_run_or_404(run_id)
+    _assert_run_owner(run_check, request)
+    ws_str = None
+    if run_id in RUNS:
+        ws_str = RUNS[run_id].get("ws")
+    else:
+        try:
+            from sqlalchemy.orm import Session as _S
+            with _S(engine) as sess:
+                result = sess.query(RunRecord).filter_by(run_id=run_id).first()
+                if result:
+                    ws_str = (result.result_json or {}).get("ws") if isinstance(result.result_json, dict) else None
+                    if not ws_str:
+                        _ws_exact = _WS_DIR / f"19labs_{run_id}"
+                        if _ws_exact.exists():
+                            ws_str = str(_ws_exact)
+                        else:
+                            import glob as _g
+                            matches = list(_g.glob(str(_WS_DIR / f"19labs_{run_id}_*")))
+                            if matches:
+                                ws_str = str(matches[0])
+        except Exception:
+            pass
+    if not ws_str:
+        raise HTTPException(404, "Run not found")
+    ws = Path(ws_str)
+    # Try forecast.csv then submission.csv
+    candidates = [ws / "forecast.csv", ws / "submission.csv"]
+    for csv_path in candidates:
+        if csv_path.exists():
+            try:
+                import pandas as pd
+                df = pd.read_csv(csv_path, nrows=limit)
+                # Normalise common column names
+                col_map = {}
+                for c in df.columns:
+                    lc = c.lower().strip()
+                    if lc in ("predicted", "prediction", "pred", "forecast", "y_pred"): col_map[c] = "predicted"
+                    elif lc in ("date", "datetime", "time", "period", "timestamp"): col_map[c] = "date"
+                df = df.rename(columns=col_map)
+                rows = df.where(df.notna(), None).to_dict(orient="records")
+                source = csv_path.name
+                return {"ok": True, "columns": list(df.columns), "rows": rows, "total": len(rows), "source": source}
+            except Exception as e:
+                raise HTTPException(500, f"Could not parse forecast: {e}")
+    raise HTTPException(404, "No forecast data yet — run an experiment first")
+
 # ── TRAIN.PY CONTENT (text endpoint) ──────────────────────────
 @app.get("/api/run/{run_id}/train-py")
 def get_train_py(run_id: str, request: Request):
