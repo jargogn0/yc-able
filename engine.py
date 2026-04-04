@@ -2385,10 +2385,13 @@ Output ONLY a complete ```python block.""",
             7000
         )
         clean3, _ = apply_code_guardrails(extract_code(code3))
-        if clean3 and re.search(r'print\s*\(\s*json\.dumps', clean3) and not _BANNED_SLOW_MODELS.search(clean3):
-            clean = clean3
-        elif clean3 and not _BANNED_SLOW_MODELS.search(clean3):
-            clean = clean3
+        if clean3:
+            if not _BANNED_SLOW_MODELS.search(clean3):
+                clean = clean3
+            else:
+                # LLM ignored ban again — use rewrite anyway, it's the best we have
+                print("[engine] Warning: forced LightGBM rewrite still has banned models. Using rewrite over original.", file=_sys.stderr)
+                clean = clean3
     return clean
 
 def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis="", obj=None):

@@ -1384,6 +1384,7 @@ class RunRequest(BaseModel):
     csv: str = ""          # full CSV text (empty when dataset_id is set or csv_cache_id given)
     dataset_id: str = ""   # pre-uploaded media dataset (images / audio)
     csv_cache_id: str = "" # server-side CSV cache (avoids re-sending large files)
+    csv_file_path: str = "" # server-local absolute path (MCP on same machine — avoids network transfer)
     hint: str = ""
     budget: int = 6
     reliability_mode: str = "balanced"
@@ -1402,6 +1403,7 @@ class DiscoverRequest(BaseModel):
     csv: str = ""
     dataset_id: str = ""   # pre-uploaded media dataset
     csv_cache_id: str = "" # server-side CSV cache (avoids re-sending large files)
+    csv_file_path: str = "" # server-local absolute path (MCP on same machine — avoids network transfer)
     hint: str = ""
     previous_objective: dict | None = None  # what the agent was proposing before the user corrected it
     extra_files: list[dict] = []  # [{name, csv}] — additional datasets uploaded alongside primary
@@ -2372,6 +2374,15 @@ async def start_run(req: RunRequest, request: Request):
                 _ws_csvs = sorted(ws.glob("*.csv"), key=lambda p: p.stat().st_size, reverse=True)
                 csv_path = _ws_csvs[0] if _ws_csvs else (ws / req.filename)
             print(f"[run] Using cached CSV → {csv_path} (cache_id={_run_cache_id})", flush=True)
+        elif req.csv_file_path:
+            # Server-local path (MCP on same machine) — symlink/copy into workspace
+            _sfp = Path(req.csv_file_path).resolve()
+            if not _sfp.exists() or not _sfp.is_file():
+                raise HTTPException(400, f"csv_file_path not found: {_sfp}")
+            csv_path = ws / req.filename
+            if not csv_path.exists():
+                shutil.copy2(_sfp, csv_path)
+            print(f"[run] Using server-local CSV → {_sfp}", flush=True)
         else:
             csv_path = ws / req.filename
             csv_path.write_text(req.csv, encoding="utf-8")
@@ -2835,6 +2846,29 @@ async def discover(req: DiscoverRequest):
                     except Exception:
                         pass
                 print(f"[discover] using CSV cache {_cache_id}", flush=True)
+            elif req.csv_file_path:
+                # Server-local path (MCP on same machine) — use directly, create cache entry
+                _sfp = Path(req.csv_file_path).resolve()
+                if not _sfp.exists() or not _sfp.is_file():
+                    raise HTTPException(400, f"csv_file_path not found: {_sfp}")
+                _new_cache_id = str(uuid.uuid4())[:12]
+                _new_cache_dir = _WS_DIR / f"csvcache_{_new_cache_id}"
+                _new_cache_dir.mkdir(parents=True, exist_ok=True)
+                csv_path = _new_cache_dir / req.filename
+                if not csv_path.exists():
+                    shutil.copy2(_sfp, csv_path)
+                # Copy companion files from same directory (test.csv, sample_submission.csv, etc.)
+                for _companion in _sfp.parent.glob("*.csv"):
+                    if _companion == _sfp:
+                        continue
+                    _cdst = _new_cache_dir / _companion.name
+                    if not _cdst.exists():
+                        shutil.copy2(_companion, _cdst)
+                data_path = str(csv_path)
+                profile = profile_dataset(data_path)
+                _cache_id = _new_cache_id
+                _cache_dir = _new_cache_dir
+                print(f"[discover] using server-local CSV → {_sfp}", flush=True)
             else:
                 # First time — write CSVs and save to persistent cache
                 _new_cache_id = str(uuid.uuid4())[:12]
