@@ -1728,6 +1728,9 @@ body.light .ws-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,.1) }
           <span style="flex:1"></span>
           <button class="abtn" onclick="pushCode()" style="font-size:11px;padding:4px 10px" id="push-btn">Save</button>
           <button class="abtn" onclick="execCode()" id="exec-btn" style="font-size:11px;padding:4px 12px;background:var(--accent);color:#fff;border-color:var(--accent)">▶ Run</button>
+          <label class="abtn" style="font-size:11px;padding:4px 10px;cursor:pointer;background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:#a78bfa" title="Upload CSV and run predictions with current model">
+            ↑ Predict CSV<input type="file" accept=".csv" style="display:none" onchange="if(this.files[0])runTestPrediction(this.files[0]);this.value=''">
+          </label>
         </div>
         <div id="monaco-wrap" style="flex:1;min-height:0"></div>
         <div id="code-output" style="display:none;flex-direction:column;flex-shrink:0;max-height:240px;border-top:1px solid var(--border);background:#0a0a0c">
@@ -3392,12 +3395,13 @@ async function runTestPrediction(f){
     chat('ai',_renderPredictPreview(j),true);
     toast(`${j.total_rows} predictions ready`,'ok',4000);
   }catch(e){
-    const msg=e.message.slice(0,120);
+    const msg=e.message;
     if(titleEl)titleEl.textContent='Drop test.csv to predict';
-    if(subEl)subEl.textContent='failed: '+msg.slice(0,60);
+    if(subEl)subEl.textContent='failed — see Logs tab';
     if(dzT)dzT.classList.remove('drag');
-    chat('ai',`Prediction failed: ${msg}`);
-    toast(`Failed: ${msg.slice(0,60)}`,'err');
+    chat('ai',`Prediction failed: ${msg.slice(0,200)}`);
+    toast('Prediction failed — check Logs tab for details','err',6000);
+    S.logs.push(`[predict-error] ${msg}`);updLogs();stab('log');
   }
 }
 

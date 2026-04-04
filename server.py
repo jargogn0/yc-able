@@ -4680,7 +4680,10 @@ async def predict_file(run_id: str, request: Request, file: UploadFile = File(..
         except HTTPException as _he:
             PREDICT_JOBS[job_id] = {"status": "error", "error": _he.detail}
         except Exception as _e:
-            PREDICT_JOBS[job_id] = {"status": "error", "error": str(_e)}
+            import traceback as _tb
+            _full = _tb.format_exc()
+            print(f"[predict-file] FAILED for {run_id}:\n{_full}", flush=True)
+            PREDICT_JOBS[job_id] = {"status": "error", "error": f"{type(_e).__name__}: {_e}\n\n{_full}"}
 
     asyncio.create_task(_bg())
     return JSONResponse({"job_id": job_id, "status": "pending"})
