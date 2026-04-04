@@ -4227,10 +4227,14 @@ async function launchRun(){
   const effectiveBudget=isGuest?Math.min(S.budget,_serverConfig.guest_max_budget||4):S.budget;
   try{
     const _runHint=((obj||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
-    const _runExtraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:d.csv})):undefined;
+    // Use csv_cache_id if available to avoid re-sending large files on every run
+    const _useCsvCacheForRun=S.csvCacheId&&S.analyzed;
+    const _runExtraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:_useCsvCacheForRun?'':d.csv})):undefined;
     const _runBody=S.dataset_id
       ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-      :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+      :_useCsvCacheForRun
+        ?{filename:S.file.name,csv:'',csv_cache_id:S.csvCacheId,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+        :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();

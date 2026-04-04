@@ -1348,8 +1348,9 @@ async def auth_save_keys(request: Request):
 # ── START RUN (JSON body) ──────────────────────────────────────
 class RunRequest(BaseModel):
     filename: str
-    csv: str = ""          # full CSV text (empty when dataset_id is set)
+    csv: str = ""          # full CSV text (empty when dataset_id is set or csv_cache_id given)
     dataset_id: str = ""   # pre-uploaded media dataset (images / audio)
+    csv_cache_id: str = "" # server-side CSV cache (avoids re-sending large files)
     hint: str = ""
     budget: int = 6
     reliability_mode: str = "balanced"
@@ -2316,9 +2317,24 @@ async def start_run(req: RunRequest, request: Request):
             # Image / audio media dataset — pass directory to engine
             csv_path = Path(media["path"])
     else:
-        # Direct CSV text upload
-        csv_path = ws / req.filename
-        csv_path.write_text(req.csv, encoding="utf-8")
+        # Direct CSV text upload — prefer server-side cache to avoid re-sending large files
+        _run_cache_id = req.csv_cache_id or ""
+        _run_cache_dir = _WS_DIR / f"csvcache_{_run_cache_id}" if _run_cache_id else None
+        if _run_cache_dir and _run_cache_dir.exists():
+            # Reuse cached CSV — copy all cached files into workspace so engine can access them
+            for _cp in _run_cache_dir.glob("*.csv"):
+                _dst = ws / _cp.name
+                if not _dst.exists():
+                    shutil.copy2(_cp, _dst)
+            # Point csv_path to the workspace copy (avoids cross-dir path issues in engine)
+            csv_path = ws / req.filename
+            if not csv_path.exists():
+                _ws_csvs = sorted(ws.glob("*.csv"), key=lambda p: p.stat().st_size, reverse=True)
+                csv_path = _ws_csvs[0] if _ws_csvs else (ws / req.filename)
+            print(f"[run] Using cached CSV → {csv_path} (cache_id={_run_cache_id})", flush=True)
+        else:
+            csv_path = ws / req.filename
+            csv_path.write_text(req.csv, encoding="utf-8")
 
     # Write extra uploaded datasets to workspace so train.py can access them
     _extra_file_descs = []
@@ -2326,6 +2342,16 @@ async def start_run(req: RunRequest, request: Request):
         _ef_name = (_ef.get("name") or "extra.csv").replace("/", "_").replace("..", "_")
         _ef_csv = _ef.get("csv") or ""
         if not _ef_csv or not _ef_name:
+            # If no CSV text, check if file exists in workspace already (from cache copy above)
+            _ef_ws_path = ws / _ef_name
+            if _ef_ws_path.exists():
+                try:
+                    import pandas as _pd
+                    _edf = _pd.read_csv(_ef_ws_path, nrows=3)
+                    _enrows = max(0, sum(1 for _ in open(_ef_ws_path)) - 1)
+                    _extra_file_descs.append(f"{_ef_name} ({_enrows:,} rows, cols: {list(_edf.columns)})")
+                except Exception:
+                    _extra_file_descs.append(_ef_name)
             continue
         try:
             _ef_path = ws / _ef_name
