@@ -774,8 +774,8 @@ Return this EXACT JSON structure (all fields required):
   "class_imbalance": "<ratio if classification e.g. 89/11, or null>",
   "key_insights": ["<insight 1>", "<insight 2>", "<insight 3>"],
   "critical_warnings": ["<warning 1 — what will break if ignored>"],
-  "baseline_approach": "<exp 1: specific model + key params, e.g. LightGBM classifier, scale_pos_weight=8, 200 trees, no tuning>",
-  "better_approach": "<exp 2: upgrade, e.g. Optuna-tuned XGBoost, stratified 5-fold CV, SMOTE for imbalance>",
+  "baseline_approach": "<exp 1: specific model matched to data_type above. Tabular→LightGBM/XGBoost; NLP→TF-IDF+LogReg; TimeSeries→walk-forward split+LightGBM+lags; Images→ResNet18; Audio→MFCC+GBM; Survival→CoxPH; Clustering→KMeans; Anomaly→IsolationForest. Include key params. No Optuna, no ensembles.>",
+  "better_approach": "<exp 2: upgrade — e.g. Optuna-tuned CatBoost, stratified k-fold CV, SMOTE if imbalanced; or sentence-transformers for NLP; or Prophet/SARIMAX for time series>",
   "advanced_approach": "<exp 3+: best possible — consider deep learning where it wins: TabNet/FT-Transformer (pytorch-tabular) for complex tabular; NeuralForecast (NBEATS/TFT/xLSTM/PatchTST) for time series; HuggingFace fine-tuning for NLP/audio; torchvision/timm for images. Or stacking ensemble if DL isn't warranted.>",
   "feature_engineering": ["<concrete FE idea 1>", "<concrete FE idea 2>"],
   "expected_performance": "<realistic range e.g. AUC 0.78-0.88; >0.93 suggests leakage>"
@@ -1969,8 +1969,8 @@ def _hint_specifies_model(user_hint):
 def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis=""):
     # All experiments — including Exp 1 — are AI-written.
     # The AI uses baseline_approach / better_approach / advanced_approach from domain analysis.
-    # Exp 1 (BASELINE tier) naturally produces LightGBM/XGBoost/CatBoost — fast, memory-safe,
-    # and gives the agent real code to iterate on in Exp 2+.
+    # Model family is determined by data type routing — NOT a universal LightGBM default.
+    # Tabular → GBM. NLP → TF-IDF+LogReg. TimeSeries → walk-forward+lags. Images → CNN. Audio → MFCC+GBM.
     _is_media = bool(profile.get('is_media'))
     _is_ts = 'timeseries' in obj.get('task', '').lower() or 'forecast' in obj.get('task', '').lower()
 
@@ -2160,6 +2160,27 @@ DO NOT say "I will generate submission.csv in the next experiment". Generate it 
     _tier_num = min(exp_num, 3)
     _dtype_routing = _dtype_routing_map.get(_da_type, {}).get(_tier_num, _dtype_routing_map.get(_da_type, {}).get(1, ""))
 
+    # Row-count routing: override model family recommendations based on dataset size
+    _n_rows = profile.get('rows', 0)
+    _is_tabular = _da_type in ('tabular_classification', 'tabular_regression', '')
+    if _is_tabular and exp_num == 1:
+        if _n_rows < 500:
+            _row_count_hint = (
+                "SMALL DATASET (<500 rows): Do NOT use gradient boosting — it overfits badly on tiny data. "
+                "Use Ridge/Lasso/ElasticNet for regression or LogisticRegression/SVM for classification. "
+                "Add cross-validation (cv=5). Regularization is key."
+            )
+        elif _n_rows < 2000:
+            _row_count_hint = (
+                "SMALL-MEDIUM DATASET (<2000 rows): LightGBM is acceptable but use strong regularization "
+                "(min_child_samples=20, reg_alpha=0.1, reg_lambda=0.1, n_estimators=200). "
+                "ElasticNet/LogReg also valid here."
+            )
+        else:
+            _row_count_hint = ""
+    else:
+        _row_count_hint = ""
+
     _uh_block_code = (
         "╔══════════════════════════════════════════════════════════════╗\n"
         "║  USER INSTRUCTION — YOUR CODE MUST IMPLEMENT THIS            ║\n"
@@ -2179,7 +2200,7 @@ DO NOT say "I will generate submission.csv in the next experiment". Generate it 
 - Any missing package is auto-installed on demand via pip. Use whatever you need.
 - CRITICAL: Use what genuinely fits. For NLP → transformers (HuggingFace). For time series → prophet/statsmodels.
   For imbalanced → SMOTE+class weights. For tabular → gradient boosting + optuna. For images → torch/tensorflow.
-- BANNED: AutoGluon / autogluon — too slow for iterative research. NEVER use it. Use LightGBM/XGBoost/CatBoost for all tabular tasks.
+- BANNED: AutoGluon / autogluon — too slow for iterative research. NEVER use it.
 
 KNOWN API BREAKAGES — these will crash, avoid exactly:
 - mean_squared_error(y, p, squared=False) → WRONG. Use: np.sqrt(mean_squared_error(y, p))
@@ -2189,10 +2210,15 @@ KNOWN API BREAKAGES — these will crash, avoid exactly:
 EXPERT DOMAIN ANALYSIS (source of truth):
 {_domain_analysis_text(domain_analysis) or "(not available — use program spec)"}
 
-DATA-TYPE ROUTING: {_dtype_routing}
+╔══════════════════════════════════════════════════════════════╗
+║  PRIMARY MODEL SELECTION — FOLLOW THIS, NOT DEFAULTS         ║
+║  DATA TYPE: {_da_type or "tabular"}
+║  ROUTING: {_dtype_routing or "Use domain analysis baseline_approach"}
+{f"║  {_row_count_hint}" if _row_count_hint else ""}║
+╚══════════════════════════════════════════════════════════════╝
 {_struct_block}
 
-EXPERIMENT: {exp_num} ({_tier} tier){" — write a clean, FAST LightGBM/XGBoost/CatBoost baseline. NEVER use AutoGluon, GradientBoostingRegressor, GradientBoostingClassifier or RandomForest for exp 1 — they are too slow. Use LightGBM with n_jobs=-1, num_leaves=63, n_estimators=500. No Optuna, no stacking, no ensembles. Single model, solid preprocessing, correct metric." if exp_num == 1 else ""}
+EXPERIMENT: {exp_num} ({_tier} tier){" — FOLLOW THE DATA-TYPE ROUTING above. Every dataset is different — match the model to the data type. No Optuna, no stacking, no ensembles. Single model, solid preprocessing, correct metric. BANNED for exp-1: AutoGluon, GradientBoostingRegressor, GradientBoostingClassifier, RandomForest (too slow). For tabular data: LightGBM/XGBoost/CatBoost. For NLP: TF-IDF+LogReg. For time series: walk-forward split + LightGBM with lag features. For images: ResNet18. Use what fits the domain — do NOT default to LightGBM for everything." if exp_num == 1 else ""}
 TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
 METRIC: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
 
@@ -2226,7 +2252,7 @@ KARPATHY DISCIPLINE (MANDATORY):
   check `if time.time() - _start > TIME_BUDGET * 0.9: break` in any training loops.
   This is NON-NEGOTIABLE. Timeout = automatic DISCARD.
 - SPEED IS MANDATORY: Always use n_jobs=-1 on every model that supports it (LightGBM, XGBoost, RandomForest, sklearn estimators). This uses all 24 available CPU cores. A model without n_jobs=-1 is a bug.
-- PREFER LGBM/XGB/CATBOOST: LightGBM trains 10-100x faster than sklearn GradientBoosting or RandomForest on large datasets. Default to LightGBM for all tabular regression/classification. Only use sklearn models when explicitly needed.
+- FOR TABULAR DATA (when routing says gradient boosting): LightGBM trains 10-100x faster than sklearn GradientBoosting or RandomForest. Use LightGBM/XGBoost/CatBoost for tabular, NOT sklearn's GradientBoosting. For other data types (NLP, time series, images, audio) — use the appropriate stack from DATA-TYPE ROUTING above.
 - Robust preprocessing (nulls, categoricals, datetime).
 - Deterministic behavior (set random seeds).
 - MANDATORY MODEL SAVE — this is NON-NEGOTIABLE, always the LAST thing before print(json.dumps(metrics)):
