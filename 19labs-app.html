@@ -3976,7 +3976,7 @@ async function runDiscover(hint){
   stab('exp');
 
   // Timer to show activity lines in terminal during discovery (no SSE during discover)
-  const _diMsgs=['reading columns and types…','computing statistics…','detecting signals…','inferring objective…'];
+  const _diMsgs=['reading columns and types…','computing statistics…','detecting signals…','building profile…'];
   let _diIdx=0;
   const _diTimer=setInterval(()=>{
     if(_diIdx<_diMsgs.length){_atLine(_diMsgs[_diIdx++],'dim');}
@@ -4458,7 +4458,18 @@ function _initDiscoverProgress(){
 
 function _initRunProgress(){
   _atInit(S.file?.name||'dataset');
-  _atLine('Initializing run…');
+  // Show the agreed plan from analysis
+  const obj=S.discovery?.objective||S.discovery?.discovery||{};
+  if(obj.target){
+    _atLine(`predict  ${obj.target}`,'highlight');
+    const _taskMap={'BinaryClassification':'binary classification','MultiClassClassification':'multi-class classification',
+      'Regression':'regression','TimeSeriesForecasting':'time-series forecasting'};
+    const task=_taskMap[obj.task]||((obj.task||'').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase())||'—';
+    _atLine(`task     ${task}`,'highlight');
+    _atLine(`metric   ${(obj.metric||'').toUpperCase()||'—'}`,'highlight');
+    _atLine('');
+  }
+  _atLine('initializing run…');
 }
 
 function _rpAdvance(){}  // no-op, terminal uses _atLine directly
@@ -4472,46 +4483,45 @@ function _rpRemove(){
 }
 
 function _rpFinishDiscover(prof,obj,taskLabel){
-  _rpRemove();
-  const rows=(prof.rows||0).toLocaleString();
-  const cols=prof.cols||'?';
+  // Show AGREED plan from analysis (what chat decided, not raw engine guess)
   const target=obj.target||'—';
   const metric=(obj.metric||'').toUpperCase()||'—';
+  const numeric=(prof.numeric||[]).length;
+  const cat=(prof.categorical||[]).length;
   _atLine('');
-  _atLine(`${rows} rows · ${cols} columns`);
-  _atLine(`target   ${target}`,'highlight');
+  _atLine('── agreed plan ──────────────────────');
+  _atLine(`predict  ${target}`,'highlight');
   _atLine(`task     ${taskLabel}`,'highlight');
   _atLine(`metric   ${metric}`,'highlight');
+  if(numeric||cat) _atLine(`features ${numeric} numeric · ${cat} categorical`);
   _atLine('');
-  _atLine('type go in chat to start training');
+  _atLine('say go in chat to start training');
   _rpRemove();
 }
 
 function _updateRunProgress(d){
   if(!document.getElementById('ana-term'))return;
   const msg=d.msg,tag=d.tag;
-  // Key engine messages → terminal lines
   if(tag==='engine'){
     if(msg.includes('Profiling dataset')){_atLine('profiling dataset…');}
-    else if(msg.includes('Analyzing domain')){_atLine('analyzing domain and data quality…');}
-    else if(msg.includes('Inferring task')){_atLine('inferring task from data…');}
-    else if(msg.includes('Initialized project')){_atLine('initializing project artifacts…');}
-    else if(msg.includes('Kaggle competition')){_atLine(msg.slice(0,80));}
-    else if(msg.match(/\d[\d,]+\s*rows/i)){_atLine(msg.slice(0,120),'highlight');}
-    else if(msg.includes('Signals:')){_atLine(msg.slice(0,120),'dim');}
-    else if(msg.includes('train.py written')){_atLine('train.py written');}
+    else if(msg.includes('Analyzing domain')){_atLine('analyzing domain…');}
+    else if(msg.includes('Inferring task')){_atLine('inferring task…');}
+    else if(msg.includes('Initialized project')){_atLine('project initialized');}
+    else if(msg.includes('Kaggle competition')){_atLine(msg.slice(0,90));}
+    else if(msg.match(/\d[\d,]+\s*rows\s*[×x]/i)){_atLine(msg.slice(0,120),'highlight');}
+    else if(msg.includes('train.py written')){
+      _atLine('train.py written — switching to code…');
+      setTimeout(()=>stab('code'),600); // auto-switch to Code tab
+    }
     else if(msg.includes('Fitting model')){_atLine(msg.slice(0,80));}
     else if(msg.includes('EXPERIMENT ')){_atLine(msg.slice(0,80));}
   }
-  if(tag==='claude'){
-    const taskM=msg.match(/Task:\s*(\w+)\s*\|\s*Target:\s*([^|]+)\s*\|/);
-    if(taskM){_atLine(`task: ${taskM[1]}  target: ${taskM[2].trim()}`,'highlight');}
-    const domM=msg.match(/Domain:\s*([^|]+)/);
-    if(domM){_atLine(`domain: ${domM[1].trim().slice(0,80)}`);}
-    if(msg.includes('ID cols:')){_atLine(msg.slice(0,120),'dim');}
+  // Do NOT echo task/target from engine — those come from the agreed plan shown above
+  // Remove terminal and switch to Exp tab when first experiment result arrives
+  if(tag==='result'&&msg.includes('Exp ')){
+    _rpRemove();
+    stab('exp');
   }
-  // Remove terminal when first experiment card arrives
-  if(tag==='result'&&msg.includes('Exp ')){_rpRemove();}
 }
 
 function procMsg(d){
