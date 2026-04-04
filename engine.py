@@ -254,6 +254,41 @@ GOOD_ENOUGH  = {"r2": 0.90, "auc": 0.92, "f1": 0.88, "accuracy": 0.90, "mape": 0
 SECONDARY_METRICS = ["r2", "mape", "mae", "rmse", "nse"]  # always request these alongside primary
 MAX_CONTINUOUS_EXPERIMENTS = 200   # hard cap for continuous mode safety
 
+
+def _detect_model_family(code: str) -> str:
+    """Return the primary model family used in a train.py script."""
+    if not code:
+        return "unknown"
+    c = code.lower()
+    if "tabularpredictor" in c or "autogluon" in c:
+        return "autogluon"
+    if "lgb" in c or "lightgbm" in c:
+        return "lightgbm"
+    if "xgb" in c or "xgboost" in c:
+        return "xgboost"
+    if "catboost" in c or "catboostregressor" in c or "catboostclassifier" in c:
+        return "catboost"
+    if "randomforest" in c:
+        return "random_forest"
+    if "gradientboosting" in c:
+        return "sklearn_gbm"
+    if "prophet" in c:
+        return "prophet"
+    if "lstm" in c or "gru" in c or ("torch" in c and ("nn.linear" in c or "module" in c)):
+        return "deep_learning"
+    if "sentence_transformers" in c or "transformers" in c:
+        return "transformer"
+    if "stackingregressor" in c or "stackingclassifier" in c or "votingregressor" in c or "votingclassifier" in c:
+        return "stacking_ensemble"
+    if "ridge" in c or "lasso" in c or "elasticnet" in c or "linearregression" in c or "logisticregression" in c:
+        return "linear"
+    if "svc(" in c or "svr(" in c:
+        return "svm"
+    if "mlpclassifier" in c or "mlpregressor" in c:
+        return "neural_network"
+    return "other"
+
+
 RELIABILITY_PROFILES = {
     "demo_safe": {
         "budget_cap": 6,
@@ -1191,25 +1226,45 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         "            _19_id_col = next((c for c in _19_raw.columns if c.lower() in ('id','row_id','rowid')), _19_raw.columns[0])\n"
         "            # Find target column names from sample_submission if available\n"
         "            _19_sub_f = next((_19os.path.join(_19_data_dir,f) for f in _19os.listdir(_19_data_dir) if 'sample' in f.lower() and f.lower().endswith('.csv')), None)\n"
+        "            # Read sample submission for column names + order (ground truth format)\n"
+        "            _19_sub_ref = _19pd.read_csv(_19_sub_f, nrows=0) if _19_sub_f else None\n"
+        "            _19_sub_ref_cols = list(_19_sub_ref.columns) if _19_sub_ref is not None else None\n"
         "            if _19_preds_all is not None:\n"
         "                _19_preds_all.insert(0, _19_id_col, _19_raw[_19_id_col].values)\n"
-        "                if _19_sub_f:\n"
-        "                    _19_sub_cols = list(_19pd.read_csv(_19_sub_f).columns)\n"
-        "                    _19_preds_all.columns = _19_sub_cols[:len(_19_preds_all.columns)]\n"
+        "                if _19_sub_ref_cols:\n"
+        "                    # Rename columns to match sample_submission exactly, then reorder\n"
+        "                    if len(_19_preds_all.columns) == len(_19_sub_ref_cols):\n"
+        "                        _19_preds_all.columns = _19_sub_ref_cols\n"
+        "                    elif len(_19_preds_all.columns) <= len(_19_sub_ref_cols):\n"
+        "                        _19_preds_all.columns = _19_sub_ref_cols[:len(_19_preds_all.columns)]\n"
         "                _19_preds_all.to_csv('submission.csv', index=False)\n"
-        "                print(f'[19Labs] Auto-generated submission.csv (multi-output) — {len(_19_preds_all)} rows')\n"
+        "                print(f'[19Labs] Auto-generated submission.csv (multi-output) — {len(_19_preds_all)} rows, cols={list(_19_preds_all.columns)}')\n"
         "            else:\n"
         "                import numpy as _19np\n"
         "                _19_preds_arr = _19np.array(_19_preds) if not isinstance(_19_preds, _19np.ndarray) else _19_preds\n"
-        "                _19_sub_cols = list(_19pd.read_csv(_19_sub_f).columns) if _19_sub_f else None\n"
-        "                _19_tgt_cols = _19_sub_cols[1:] if _19_sub_cols and len(_19_sub_cols) > 1 else ['target']\n"
+        "                # Determine target columns from sample_submission (most reliable source)\n"
+        "                if _19_sub_ref_cols and len(_19_sub_ref_cols) > 1:\n"
+        "                    _19_id_sub = _19_sub_ref_cols[0]\n"
+        "                    _19_tgt_cols = _19_sub_ref_cols[1:]\n"
+        "                else:\n"
+        "                    _19_id_sub = _19_id_col\n"
+        "                    _19_tgt_cols = ['target']\n"
         "                if _19_preds_arr.ndim == 2 and len(_19_tgt_cols) > 1:\n"
-        "                    _19_sub_data = {_19_id_col: _19_raw[_19_id_col]}\n"
+        "                    _19_sub_data = {_19_id_sub: _19_raw[_19_id_col].values}\n"
         "                    for _19_i, _19_c in enumerate(_19_tgt_cols):\n"
-        "                        _19_sub_data[_19_c] = _19_preds_arr[:, _19_i] if _19_preds_arr.shape[1] > _19_i else _19_preds_arr[:, 0]\n"
+        "                        _19_col_preds = _19_preds_arr[:, _19_i] if _19_preds_arr.shape[1] > _19_i else _19_preds_arr[:, 0]\n"
+        "                        # Cast to sample_submission dtype if available\n"
+        "                        if _19_sub_ref is not None and _19_c in _19_sub_ref.dtypes:\n"
+        "                            try: _19_col_preds = _19_col_preds.astype(_19_sub_ref.dtypes[_19_c])\n"
+        "                            except Exception: pass\n"
+        "                        _19_sub_data[_19_c] = _19_col_preds\n"
         "                    _19_sub_df = _19pd.DataFrame(_19_sub_data)\n"
         "                else:\n"
-        "                    _19_sub_df = _19pd.DataFrame({_19_id_col: _19_raw[_19_id_col], _19_tgt_cols[0]: _19_preds_arr.ravel() if _19_preds_arr.ndim > 1 else _19_preds_arr})\n"
+        "                    _19_flat = _19_preds_arr.ravel() if _19_preds_arr.ndim > 1 else _19_preds_arr\n"
+        "                    _19_sub_df = _19pd.DataFrame({_19_id_sub: _19_raw[_19_id_col].values, _19_tgt_cols[0]: _19_flat})\n"
+        "                # Final reorder to match sample_submission column order exactly\n"
+        "                if _19_sub_ref_cols and all(c in _19_sub_df.columns for c in _19_sub_ref_cols):\n"
+        "                    _19_sub_df = _19_sub_df[_19_sub_ref_cols]\n"
         "                _19_sub_df.to_csv('submission.csv', index=False)\n"
         "                print(f'[19Labs] Auto-generated submission.csv — {len(_19_sub_df)} rows, columns: {list(_19_sub_df.columns)}')\n"
         "        except Exception as _19_se:\n"
@@ -2254,13 +2309,20 @@ KARPATHY DISCIPLINE (MANDATORY):
   Use as eval_metric in LightGBM/XGBoost/CatBoost. Use as scoring in cross_val_score.
 - MANDATORY predictions.csv — ALWAYS save this file after fitting, no exceptions:
   ```python
-  import pandas as pd
-  _pred_df_rows = []
-  for i, (act, pred) in enumerate(zip(y_test, y_pred)):
-      row = {{'actual': float(act), 'predicted': float(pred)}}
-      # If you have a date column, add it:  row['date'] = str(test_dates.iloc[i]) if hasattr(test_dates,'iloc') else str(i)
-      _pred_df_rows.append(row)
-  pd.DataFrame(_pred_df_rows).to_csv('predictions.csv', index=False)
+  import numpy as _np2, pandas as _pd2
+  _yt = _np2.array(y_test) if not isinstance(y_test, _np2.ndarray) else y_test
+  _yp = _np2.array(y_pred) if not isinstance(y_pred, _np2.ndarray) else y_pred
+  if _yt.ndim == 2 and _yt.shape[1] > 1:  # multi-output
+      _cols = {{}}
+      for _ci in range(_yt.shape[1]):
+          _cols[f'actual_{{_ci}}'] = _yt[:, _ci].astype(float)
+          _cols[f'predicted_{{_ci}}'] = (_yp[:, _ci] if _yp.ndim==2 else _yp).astype(float)
+      _pd2.DataFrame(_cols).to_csv('predictions.csv', index=False)
+  else:
+      _yt2 = _yt.ravel(); _yp2 = _yp.ravel()
+      _pred_df_rows = [{{'actual': float(_yt2[i]), 'predicted': float(_yp2[i])}} for i in range(len(_yt2))]
+      # If you have a date column: _pred_df_rows[i]['date'] = str(test_dates.iloc[i])
+      _pd2.DataFrame(_pred_df_rows).to_csv('predictions.csv', index=False)
   ```
   This table is shown to the user in the Results tab — it MUST exist.
 - ALL output goes to stdout. Final line MUST be `print(json.dumps(metrics))` where metrics is a dict:
@@ -2397,9 +2459,34 @@ Output ONLY a complete ```python block.""",
 def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis="", obj=None):
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
-        f"{h.get('metric_name', 'metric')}={h.get('metric_val', 0):.6f} note={h.get('note', '')[:120]}"
+        f"{h.get('metric_name', 'metric')}={h.get('metric_val', 0):.6f} "
+        f"model={h.get('model', '?')} note={h.get('note', '')[:80]}"
         for h in history[-12:]
     ) if history else "- (none)"
+
+    # Detect model family saturation to force pivots when stuck
+    _recent_families = [_detect_model_family(h.get("model", "") + " " + h.get("note", ""))
+                        for h in history[-8:] if h.get("success")]
+    _fam_counts: dict[str, int] = {}
+    for _f in _recent_families:
+        _fam_counts[_f] = _fam_counts.get(_f, 0) + 1
+    _current_family = _detect_model_family(train_py)
+    _dominant = max(_fam_counts, key=lambda k: _fam_counts[k]) if _fam_counts else _current_family
+    _dominant_count = _fam_counts.get(_dominant, 0)
+    _all_tried = list(set(_recent_families))
+    _CANDIDATE_FAMILIES = ["LightGBM", "XGBoost", "CatBoost", "stacking ensemble (StackingRegressor/Classifier)",
+                           "neural network (MLPRegressor/PyTorch)", "Prophet", "deep_learning (LSTM/Transformer)"]
+    _untried_candidates = [f for f in _CANDIDATE_FAMILIES
+                           if not any(_detect_model_family(f.lower()) == t for t in _all_tried)]
+    _family_saturation_directive = ""
+    if _dominant_count >= 3:
+        _suggest = _untried_candidates[:2] or ["stacking ensemble", "neural network"]
+        _family_saturation_directive = (
+            f"\n🚨 MODEL FAMILY SATURATION: '{_dominant}' has been used {_dominant_count}x in the last 8 experiments "
+            f"with no improvement. You MUST switch to a completely different model family. "
+            f"Tried families: {_all_tried}. "
+            f"MANDATORY next approach: {' OR '.join(_suggest)}."
+        )
 
     review = ask(
         "You are an autonomous ML researcher and senior data scientist. "
@@ -2410,6 +2497,7 @@ EXPERT DOMAIN ANALYSIS (use this to guide your next approach):
 {_domain_analysis_text(domain_analysis)[:3000] if domain_analysis else "(not available)"}
 
 {('⚠️  USER EXPLICIT INSTRUCTION (HIGHEST PRIORITY — you MUST follow this): "' + (obj or {}).get('user_hint','') + '"') if (obj or {}).get('user_hint') else ""}
+{_family_saturation_directive}
 
 KEEP CRITERIA:
 - KEEP if the primary metric improved vs previous best in history.
@@ -2458,14 +2546,24 @@ TRAIN.PY HARD RULES (Karpathy discipline):
   Required keys: "{(obj or {}).get('metric', 'rmse')}" (primary, test set), "train_{(obj or {}).get('metric', 'rmse')}", "test_{(obj or {}).get('metric', 'rmse')}", "train_rmse", "test_rmse", "train_r2", "test_r2", "rmse", "r2", and any applicable: mape, mae, nse.
 - MANDATORY predictions.csv — save this BEFORE the final print(), no exceptions:
   try:
-    _rows = []
-    for i in range(len(y_test)):
-      _r = {{'actual': float(y_test.iloc[i] if hasattr(y_test,'iloc') else y_test[i]),
-             'predicted': float(y_pred[i])}}
-      # Add date if you have it: _r['date'] = str(test_dates.iloc[i])
-      # Add customer/group if multi-series: _r['customer'] = str(test_group[i])
-      _rows.append(_r)
-    import pandas as _pd2; _pd2.DataFrame(_rows).to_csv('predictions.csv', index=False)
+    import numpy as _np2, pandas as _pd2
+    _yt = _np2.array(y_test) if not isinstance(y_test, _np2.ndarray) else y_test
+    _yp = _np2.array(y_pred) if not isinstance(y_pred, _np2.ndarray) else y_pred
+    if _yt.ndim == 2 and _yt.shape[1] > 1:  # multi-output
+      _cols = {{}}
+      for _ci in range(_yt.shape[1]):
+        _cols[f'actual_{{_ci}}'] = _yt[:, _ci].astype(float)
+        _cols[f'predicted_{{_ci}}'] = (_yp[:, _ci] if _yp.ndim==2 else _yp).astype(float)
+      _pd2.DataFrame(_cols).to_csv('predictions.csv', index=False)
+    else:
+      _yt2 = _yt.ravel(); _yp2 = _yp.ravel()
+      _rows = []
+      for i in range(len(_yt2)):
+        _r = {{'actual': float(_yt2[i]), 'predicted': float(_yp2[i])}}
+        # Add date if you have it: _r['date'] = str(test_dates.iloc[i])
+        # Add group/ID if multi-series: _r['group'] = str(test_group[i])
+        _rows.append(_r)
+      _pd2.DataFrame(_rows).to_csv('predictions.csv', index=False)
   except Exception: pass
   This file powers the Results tab showing actuals vs predicted to the user.
 - GENERATE PLOTS (matplotlib, Agg backend). Same 5 plots as always:
@@ -2531,11 +2629,40 @@ CURRENT TRAIN.PY:
         pm = program_md
         used_fallback.append("program_md")
     if not tm:
-        tm = train_py
-        used_fallback.append("train_py")
+        # LLM returned malformed response — retry once with explicit format reminder
+        import sys as _sys
+        print("[engine] revise_after_iteration: train.py extraction failed — retrying with format reminder", file=_sys.stderr)
+        _retry_resp = ask(
+            "You write complete Python ML training scripts. Output ONLY a ```python code block. No prose.",
+            f"""Your previous response was missing the triple-backtick ```python markers for TRAIN_PY.
+Rewrite ONLY the train.py, following this plan:
+
+{pm[:2000]}
+
+Previous train.py to improve upon:
+```python
+{train_py[:3000]}
+```
+
+Output EXACTLY:
+```python
+<your complete train.py here>
+```
+
+MANDATORY last line: print(json.dumps(metrics))
+MANDATORY: import joblib; joblib.dump(model, 'model.pkl')
+Primary metric key in JSON: "{(obj or {}).get('metric', 'rmse')}" """,
+            5000
+        )
+        _retry_tm, _ = apply_code_guardrails(extract_code(_retry_resp))
+        if _retry_tm:
+            tm = _retry_tm
+        else:
+            tm = train_py
+            used_fallback.append("train_py")
     if used_fallback:
         import sys as _sys
-        print(f"[engine] revise_after_iteration: LLM fallback for {used_fallback} — response may be malformed", file=_sys.stderr)
+        print(f"[engine] revise_after_iteration: fallback used for {used_fallback}", file=_sys.stderr)
     tm, _ = apply_code_guardrails(tm)
 
     # Truncation guard: if new train.py is cut off, regenerate it standalone
