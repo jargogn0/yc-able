@@ -1643,7 +1643,7 @@ for _fcp in [
             else:
                 import json as _jj
                 with open(_fcp) as _ff: _saved_feat_cols = _jj.load(_ff)
-            print(f'[predict] Loaded feature schema: {len(_saved_feat_cols)} cols from {_fcp}', flush=True)
+            print(f'[predict] Loaded feature schema: {{len(_saved_feat_cols)}} cols from {{_fcp}}', flush=True)
             break
         except Exception: pass
 
@@ -1721,7 +1721,14 @@ if preds is not None and target:
     except Exception:
         pass
 
-print(json.dumps({{"id_col": id_col, "id_vals": id_vals, "preds": [str(p) for p in preds]}}))
+import numpy as _np2
+_preds_arr = _np2.array(preds) if not isinstance(preds, _np2.ndarray) else preds
+if _preds_arr.ndim == 2:
+    # Multi-output: serialize as list of lists
+    _preds_out = _preds_arr.tolist()
+else:
+    _preds_out = _preds_arr.tolist()
+print(json.dumps({{"id_col": id_col, "id_vals": id_vals, "preds": _preds_out, "is_multioutput": _preds_arr.ndim == 2}}))
 """
         _script_path = _tdp / "predict.py"
         _script_path.write_text(_script)
@@ -4523,11 +4530,28 @@ async def _predict_file_core(run_id: str, contents: bytes, run: dict) -> dict:
         id_col_s = _sub_result.get("id_col")
         id_vals_s = _sub_result["id_vals"]
         preds_s = _sub_result["preds"]
-        sub_target_s = target or "prediction"
-        _sub_df = pd.DataFrame({
-            (id_col_s or "id"): id_vals_s,
-            sub_target_s: preds_s,
-        })
+        is_multi = _sub_result.get("is_multioutput", False)
+        _id_key = id_col_s or "id"
+        if is_multi and isinstance(preds_s[0], list):
+            # Multi-output: try to use sample submission column names
+            _sub_cols = None
+            _ws_path = Path(run.get("ws", ""))
+            for _sf in list(_ws_path.glob("*sample*submission*")) + list(_ws_path.glob("*submission*sample*")):
+                try:
+                    _sub_cols = list(pd.read_csv(_sf, nrows=0).columns)
+                    break
+                except Exception: pass
+            n_out = len(preds_s[0])
+            if _sub_cols and len(_sub_cols) >= n_out + 1:
+                pred_cols = _sub_cols[1:n_out+1]  # skip ID col
+            else:
+                pred_cols = [(target or "prediction") + (f"_{i}" if i > 0 else "") for i in range(n_out)]
+            _sub_data = {_id_key: id_vals_s}
+            for i, col in enumerate(pred_cols):
+                _sub_data[col] = [row[i] for row in preds_s]
+            _sub_df = pd.DataFrame(_sub_data)
+        else:
+            _sub_df = pd.DataFrame({_id_key: id_vals_s, (target or "prediction"): preds_s})
         return _prediction_json_dict(_sub_df, run_id)
     except Exception as _sub_err:
         print(f"[predict-file] subprocess predict failed: {_sub_err} — trying in-process", flush=True)
