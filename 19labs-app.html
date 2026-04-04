@@ -210,8 +210,8 @@ body.desktop-mac .topbar{padding-left:84px}
 .btn-deploy-skip:hover{color:var(--text-2);border-color:var(--border-2)}
 
 /* Mode switcher */
-.mode-switcher{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:3px;flex:1}
-.mode-btn{flex:1;padding:5px 0;font-size:11px;font-weight:600;border:none;border-radius:5px;background:none;color:var(--text-3);cursor:pointer;transition:all var(--t);font-family:var(--sans);letter-spacing:.2px}
+.mode-switcher{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:3px;width:100%}
+.mode-btn{flex:1;padding:6px 0;font-size:12px;font-weight:600;border:none;border-radius:5px;background:none;color:var(--text-3);cursor:pointer;transition:all var(--t);font-family:var(--sans);letter-spacing:.2px;text-align:center}
 .mode-btn:hover{color:var(--text-2)}
 .mode-btn.active{background:var(--surface-3);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .mode-btn.active[id="mode-agent"]{color:var(--accent)}
@@ -669,9 +669,9 @@ input[type=file]{display:none}
 
 /* ── CHAT ── */
 .chat{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);min-height:0;overflow:hidden;height:100%}
-.chat-h{height:38px;padding:0 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;box-sizing:border-box}
+.chat-h{height:42px;padding:0 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;flex-shrink:0;box-sizing:border-box;position:relative}
 .chat-h h3{font-size:13px;font-weight:700}
-.chat-dot{width:20px;height:20px;margin-left:auto;opacity:.25;transition:opacity .3s;flex-shrink:0}
+.chat-dot{width:18px;height:18px;position:absolute;right:10px;top:50%;transform:translateY(-50%);opacity:.25;transition:opacity .3s;pointer-events:none}
 .chat-dot img{width:100%;height:100%;filter:drop-shadow(0 0 4px rgba(168,85,247,.0))}
 .chat-dot.on{opacity:1;animation:ghost-pulse 1.5s ease-in-out infinite}
 .chat-dot.on img{filter:drop-shadow(0 0 6px rgba(168,85,247,.8))}
