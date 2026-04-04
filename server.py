@@ -134,28 +134,31 @@ try:
 except Exception as _ge:
     print(f"[startup] libgomp pre-load error: {_ge}", flush=True)
 
-# Pre-import sklearn/joblib AND the ML prediction libraries to trigger linker
-# resolution while libgomp is already loaded and LD_LIBRARY_PATH is correct.
-# Any later import of these modules reuses sys.modules — no re-linking needed.
-try:
-    import sklearn.ensemble, sklearn.preprocessing, joblib  # noqa: F401
-except Exception:
-    pass
-try:
-    import xgboost  # noqa: F401
-    print("[startup] xgboost pre-loaded OK", flush=True)
-except Exception as _xge:
-    print(f"[startup] xgboost pre-load failed: {_xge}", flush=True)
-try:
-    import lightgbm  # noqa: F401
-    print("[startup] lightgbm pre-loaded OK", flush=True)
-except Exception as _lge:
-    print(f"[startup] lightgbm pre-load failed: {_lge}", flush=True)
-try:
-    import catboost  # noqa: F401
-    print("[startup] catboost pre-loaded OK", flush=True)
-except Exception as _cbe:
-    print(f"[startup] catboost pre-load failed: {_cbe}", flush=True)
+# Pre-load ML libs in a background thread so the server can accept requests
+# immediately. libgomp is already loaded above (required before any ML import),
+# so these background imports will link correctly.
+import threading as _threading
+def _preload_ml_libs():
+    try:
+        import sklearn.ensemble, sklearn.preprocessing, joblib  # noqa: F401
+    except Exception:
+        pass
+    try:
+        import xgboost  # noqa: F401
+        print("[startup] xgboost pre-loaded OK", flush=True)
+    except Exception as _xge:
+        print(f"[startup] xgboost pre-load failed: {_xge}", flush=True)
+    try:
+        import lightgbm  # noqa: F401
+        print("[startup] lightgbm pre-loaded OK", flush=True)
+    except Exception as _lge:
+        print(f"[startup] lightgbm pre-load failed: {_lge}", flush=True)
+    try:
+        import catboost  # noqa: F401
+        print("[startup] catboost pre-loaded OK", flush=True)
+    except Exception as _cbe:
+        print(f"[startup] catboost pre-load failed: {_cbe}", flush=True)
+_threading.Thread(target=_preload_ml_libs, daemon=True).start()
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse, RedirectResponse
