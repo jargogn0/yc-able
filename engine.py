@@ -1852,7 +1852,8 @@ def write_program_md(profile, obj, history, insights, domain_analysis=""):
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
 - Any missing package is auto-installed on demand via pip. Use whatever you need.
 - Use whatever is genuinely best for the task. Do NOT artificially limit yourself.
-- BANNED: AutoGluon / autogluon — too slow for iterative research. NEVER recommend it. Use LightGBM/XGBoost/CatBoost.
+- BANNED: AutoGluon / autogluon — too slow. NEVER recommend it.
+- BANNED for exp 1: GradientBoostingRegressor, GradientBoostingClassifier, RandomForestRegressor, RandomForestClassifier — all too slow for rapid iteration. Use LightGBM, XGBoost, or CatBoost instead.
 
 KNOWN API BREAKAGES — avoid these exactly:
 - sklearn ≥1.4: mean_squared_error() has NO `squared` kwarg. Use np.sqrt(mean_squared_error(y,p)) for RMSE.

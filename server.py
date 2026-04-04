@@ -4626,7 +4626,17 @@ async def _predict_file_core(run_id: str, contents: bytes, run: dict) -> dict:
 
     def _ohe_align(f, feat_names, n_expected=None):
         """One-hot encode then align — for models trained with pd.get_dummies."""
-        fe = pd.get_dummies(f.copy().fillna(0))
+        fc = f.copy().fillna(0)
+        # Drop high-cardinality columns before OHE to prevent OOM
+        # (e.g. ID columns with 100K+ unique values would produce 100K+ OHE columns)
+        _ohe_limit = max(100, int(len(fc) * 0.005))  # max 0.5% cardinality or 100 unique vals
+        for _col in fc.select_dtypes(include=["object", "category"]).columns:
+            if fc[_col].nunique() > _ohe_limit:
+                from sklearn.preprocessing import LabelEncoder as _OheLE
+                _le = _OheLE()
+                fc[_col] = _le.fit_transform(fc[_col].astype(str))
+                print(f"[predict-file] OHE: label-encoded high-card col '{_col}' ({fc[_col].nunique()} unique vals)", flush=True)
+        fe = pd.get_dummies(fc)
         if feat_names:
             for col in feat_names:
                 if col not in fe.columns:
@@ -4653,6 +4663,11 @@ async def _predict_file_core(run_id: str, contents: bytes, run: dict) -> dict:
         try:
             _tdf = pd.read_csv(_train_csv_path)
             _tdf = _tdf.drop(columns=[c for c in [target] if c and c in _tdf.columns])
+            # Drop high-cardinality columns before OHE to prevent OOM
+            _tdf_limit = max(100, int(len(_tdf) * 0.005))
+            for _tc in _tdf.select_dtypes(include=["object", "category"]).columns:
+                if _tdf[_tc].nunique() > _tdf_limit:
+                    _tdf[_tc] = _tdf[_tc].astype("category").cat.codes
             feat_names = list(pd.get_dummies(_tdf.fillna(0)).columns)
             print(f"[predict-file] feat_names from training CSV: {len(feat_names)} cols", flush=True)
         except Exception as _tce:
