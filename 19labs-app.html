@@ -6180,18 +6180,26 @@ async function loadRunStatus(id){
 // ═══════════════════════════════════════════
 let _consoleOpen=false;
 let _consoleES=null;
+let _consoleReconnTimer=null;
 function toggleConsole(){
   _consoleOpen=!_consoleOpen;
   const el=document.getElementById('srv-console');
   if(el)el.style.display=_consoleOpen?'flex':'none';
   if(_consoleOpen&&!_consoleES)_startConsole();
 }
+function _closeConsole(){
+  if(_consoleReconnTimer){clearTimeout(_consoleReconnTimer);_consoleReconnTimer=null;}
+  if(_consoleES){try{_consoleES.close();}catch(_){}  _consoleES=null;}
+}
 function _startConsole(){
+  _closeConsole(); // always close previous connection first
   const lines=document.getElementById('srv-con-lines');
   const status=document.getElementById('srv-con-status');
   const url=`${BASE}/api/logs/stream${_authToken?'?token='+encodeURIComponent(_authToken):''}`;
-  _consoleES=new EventSource(url);
-  _consoleES.onmessage=e=>{
+  const es=new EventSource(url);
+  _consoleES=es;
+  es.onmessage=e=>{
+    if(es!==_consoleES)return; // stale connection — discard
     try{
       const d=JSON.parse(e.data);
       const line=d.line||'';
@@ -6212,12 +6220,17 @@ function _startConsole(){
       while(lines.children.length>1000)lines.removeChild(lines.firstChild);
     }catch(_){}
   };
-  _consoleES.onerror=()=>{
+  es.onerror=()=>{
+    if(es!==_consoleES)return; // stale — ignore
     if(status)status.textContent='● disconnected';
     if(status)status.style.color='#f87171';
-    setTimeout(()=>{if(_consoleOpen){_consoleES=null;_startConsole();}},3000);
+    try{es.close();}catch(_){}
+    _consoleES=null;
+    if(_consoleReconnTimer)clearTimeout(_consoleReconnTimer);
+    _consoleReconnTimer=setTimeout(()=>{_consoleReconnTimer=null;if(_consoleOpen&&!_consoleES)_startConsole();},3000);
   };
-  _consoleES.onopen=()=>{
+  es.onopen=()=>{
+    if(es!==_consoleES)return;
     if(status)status.textContent='● live';
     if(status)status.style.color='#34d399';
   };
