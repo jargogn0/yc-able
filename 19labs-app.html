@@ -4449,7 +4449,10 @@ function _atLine(msg,cls=''){
 }
 
 function _initDiscoverProgress(){
-  _atInit(S.file?.name||'dataset');
+  const allNames=S.allFiles||([S.file?.name].concat(_extraDatasets.map(d=>d.name)).filter(Boolean));
+  _atInit(allNames.join('  ·  '));
+  allNames.forEach(n=>_atLine(n,'dim'));
+  _atLine('');
   _atLine('Profiling dataset…');
 }
 
