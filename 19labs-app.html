@@ -3991,23 +3991,16 @@ async function runDiscover(hint){
   let key=C.key||gk(C.provider);
   S._discoverActive=true;
 
-  // Show animated analysis card in chat
-  const _anaId='ana-'+Date.now();
-  const _steps=['Profiling dataset…','Scanning columns & types…','Detecting domain & signals…','Inferring objective & target…','Building research plan…'];
-  let _stepIdx=0;
-  chat('ai',`<div id="${_anaId}" style="font-size:12px;color:var(--text-3)"><div id="${_anaId}-step" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1s infinite;flex-shrink:0"></span><span>${_steps[0]}</span></div><div id="${_anaId}-done" style="display:flex;flex-direction:column;gap:4px"></div></div>`);
-  const _anaTimer=setInterval(()=>{
-    _stepIdx=Math.min(_stepIdx+1,_steps.length-1);
-    const s=document.getElementById(`${_anaId}-step`);
-    const d=document.getElementById(`${_anaId}-done`);
-    if(s)s.querySelector('span:last-child').textContent=_steps[_stepIdx];
-    if(d&&_stepIdx>0){
-      const prev=document.createElement('div');
-      prev.style.cssText='display:flex;align-items:center;gap:8px;color:#34d399;font-size:11px';
-      prev.innerHTML=`<span>✓</span><span>${_steps[_stepIdx-1]}</span>`;
-      d.insertBefore(prev,d.firstChild);
-    }
-  },900);
+  // Show live progress in Exp tab (center panel) instead of chat bubble
+  _initDiscoverProgress();
+  stab('exp');
+
+  // Fake SSE-style timer to advance Exp panel phases during discovery
+  const _diPhases=['profile','domain','infer','plan'];
+  let _diIdx=0;
+  const _diTimer=setInterval(()=>{
+    if(_diIdx<_diPhases.length){_rpAdvance(_diPhases[_diIdx++]);}
+  },2800);
 
   try{
     // Include the current objective so the LLM can interpret corrections in context
@@ -4021,10 +4014,7 @@ async function runDiscover(hint){
       :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     S._discoverActive=false;
-    clearInterval(_anaTimer);
-    // Remove animation card
-    const _anaEl=document.getElementById(_anaId);
-    if(_anaEl)_anaEl.closest('.msg')?.remove();
+    clearInterval(_diTimer);
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){
@@ -4090,6 +4080,8 @@ async function runDiscover(hint){
       _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
     }
     _html+=`</div>`;
+    // Replace progress panel with the profile summary stat card, then switch to chat
+    _rpFinishDiscover(prof,obj,_task);
     chat('ai',_html);
     setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
@@ -4099,9 +4091,8 @@ async function runDiscover(hint){
       _syncPlanPanel();
     }
   }catch(e){
-    clearInterval(_anaTimer);
-    const _anaEl2=document.getElementById(_anaId);
-    if(_anaEl2)_anaEl2.closest('.msg')?.remove();
+    clearInterval(_diTimer);
+    _rpRemove();
     S._discoverActive=false;
     typing(false);chat('err',`Analysis failed: ${esc(e.message)}`);setBadge('ERROR','err');
     sbUpdate({status:'Analysis failed',running:false,error:true});
@@ -4446,6 +4437,38 @@ function _sealNarrBubble(){
   if(el)el.removeAttribute('id');
 }
 
+// ── Discover Progress Panel (shown in Exp tab during analysis) ──
+function _initDiscoverProgress(){
+  const c=document.getElementById('p-exp');
+  if(!c)return;
+  _rpPhase=0;
+  _RP_PHASES.forEach(p=>p.done=false);
+  const fname=S.file?.name||'dataset';
+  clearEmpty('p-exp');
+  c.innerHTML=`<div class="run-progress" id="run-progress-card">
+    <div class="rp-header">
+      <div class="rp-icon" style="animation:cwIconFloat 3s ease-in-out infinite">🔬</div>
+      <div>
+        <div class="rp-title">${esc(fname)}</div>
+        <div class="rp-sub" id="rp-sub">Profiling dataset…</div>
+      </div>
+    </div>
+    <div class="rp-stats" id="rp-stats">
+      <div class="rp-stat"><div class="rp-stat-val" id="rp-rows">—</div><div class="rp-stat-lbl">Rows</div></div>
+      <div class="rp-stat"><div class="rp-stat-val" id="rp-cols">—</div><div class="rp-stat-lbl">Columns</div></div>
+      <div class="rp-stat highlight"><div class="rp-stat-val" id="rp-target" style="font-size:13px">—</div><div class="rp-stat-lbl">Target</div></div>
+      <div class="rp-stat"><div class="rp-stat-val" id="rp-task" style="font-size:13px">—</div><div class="rp-stat-lbl">Task</div></div>
+    </div>
+    <div class="rp-phases" id="rp-phases">${_RP_PHASES.slice(0,4).map((p,i)=>`
+      <div class="rp-phase${i===0?' active':''}" id="rp-phase-${p.id}">
+        <span class="rp-phase-dot"></span>
+        <span class="rp-phase-lbl">${p.icon} ${p.label}</span>
+      </div>`).join('')}
+    </div>
+    <div class="rp-live" id="rp-live"><span style="color:var(--border-2)">Starting analysis…</span></div>
+  </div>`;
+}
+
 // ── Run Progress Panel ──────────────────────────────────────────
 const _RP_PHASES=[
   {id:'profile', label:'Profiling dataset', icon:'📊', done:false},
@@ -4511,6 +4534,37 @@ function _rpSub(msg){const el=document.getElementById('rp-sub');if(el)el.textCon
 function _rpRemove(){
   const card=document.getElementById('run-progress-card');
   if(card){card.style.transition='opacity .4s';card.style.opacity='0';setTimeout(()=>card.remove(),400);}
+}
+
+function _rpFinishDiscover(prof,obj,taskLabel){
+  // Mark all phases done
+  _RP_PHASES.slice(0,4).forEach(p=>{
+    p.done=true;
+    const el=document.getElementById(`rp-phase-${p.id}`);
+    if(el){el.className='rp-phase done';}
+  });
+  // Swap to a static summary card after short delay
+  setTimeout(()=>{
+    const card=document.getElementById('run-progress-card');
+    if(!card)return;
+    const rows=(prof.rows||0).toLocaleString();
+    const cols=prof.cols||'?';
+    const target=obj.target||'—';
+    const metric=(obj.metric||'').toUpperCase()||'—';
+    const numeric=(prof.numeric||[]).length;
+    const cat=(prof.categorical||[]).length;
+    card.innerHTML=`<div class="rp-header">
+      <div class="rp-icon">✅</div>
+      <div><div class="rp-title">Analysis complete</div><div class="rp-sub" id="rp-sub">${esc(taskLabel)} · optimizing ${esc(metric)}</div></div>
+    </div>
+    <div class="rp-stats">
+      <div class="rp-stat"><div class="rp-stat-val">${rows}</div><div class="rp-stat-lbl">Rows</div></div>
+      <div class="rp-stat"><div class="rp-stat-val">${cols}</div><div class="rp-stat-lbl">Columns</div></div>
+      <div class="rp-stat highlight"><div class="rp-stat-val" style="font-size:13px">${esc(target.slice(0,18))}</div><div class="rp-stat-lbl">Target</div></div>
+      <div class="rp-stat"><div class="rp-stat-val" style="font-size:11px">${numeric}N · ${cat}C</div><div class="rp-stat-lbl">Features</div></div>
+    </div>
+    <div style="text-align:center;padding:12px 0 4px;font-size:12px;color:var(--text-3)">Type <strong style="color:var(--accent)">go</strong> in chat to start training →</div>`;
+  }, 600);
 }
 
 function _updateRunProgress(d){
@@ -7427,7 +7481,16 @@ async function handleFile(f,preloadedText,_opts={}){
   showDataPreview();
   showDataQualityWarnings();
   showTransformBar();
-  stab('data');
+
+  // Greet user in chat immediately, then show live profiling in Exp tab
+  if(!_opts.skipAnalyze){
+    const _greetNames=['Hey! I can see','Got it! Looking at','Nice dataset! Scanning'];
+    const _g=_greetNames[Math.floor(Math.random()*_greetNames.length)];
+    chat('ai',`${_g} <strong>${esc(f.name)}</strong> — profiling your data now. What do you want to predict or understand?`);
+    // Don't stab('data') — let autoDiscover switch to exp for progress panel
+  } else {
+    stab('data');
+  }
 
   // On mobile: briefly show data preview then switch to chat for agent response
   if(window.innerWidth<=767){setMobPanel('ws');setTimeout(()=>setMobPanel('chat'),800);}
