@@ -3457,17 +3457,29 @@ def download_deploy(run_id: str, request: Request):
             if model_added:
                 break
 
-        # 2. train.py (the winning experiment script)
+        # 2. feature_cols.pkl — required for prediction alignment
+        for search_dir in ([dp, ws] if dp and dp.exists() else [ws]):
+            candidate = search_dir / "feature_cols.pkl"
+            if candidate.exists():
+                z.write(candidate, Path("feature_cols.pkl")); break
+
+        # 3. submission.csv — predictions on test set if generated
+        for search_dir in ([dp, ws] if dp and dp.exists() else [ws]):
+            candidate = search_dir / "submission.csv"
+            if candidate.exists():
+                z.write(candidate, Path("submission.csv")); break
+
+        # 4. train.py (the winning experiment script)
         for src in ([dp / "train.py", ws / "train.py"] if dp and dp.exists() else [ws / "train.py"]):
             if src.exists():
                 z.write(src, Path("train.py")); break
 
-        # 3. requirements.txt
+        # 5. requirements.txt
         for src in ([dp / "requirements.txt", ws / "requirements.txt"] if dp and dp.exists() else [ws / "requirements.txt"]):
             if src.exists():
                 z.write(src, Path("requirements.txt")); break
 
-        # 4. Minimal README
+        # 6. Minimal README
         best = result.get("best") or {}
         obj = result.get("objective") or {}
         readme = (
@@ -3502,7 +3514,7 @@ def download_project_pack(run_id: str, request: Request):
     include_paths: list[tuple[Path, Path]] = []
 
     # Core run files from workspace
-    for name in ["objective.json", "profile.json", "program.md", "train.py", "results.tsv", "final_report.md", "requirements.txt"]:
+    for name in ["objective.json", "profile.json", "program.md", "train.py", "results.tsv", "final_report.md", "requirements.txt", "feature_cols.pkl", "submission.csv"]:
         p = ws / name
         if p.exists() and p.is_file():
             include_paths.append((p, Path(name)))
@@ -3514,6 +3526,17 @@ def download_project_pack(run_id: str, request: Request):
             fp = Path(p)
             if fp.exists() and fp.is_file():
                 include_paths.append((fp, Path(fp.name)))
+
+    # Model file — search workspace then persistent models dir
+    _model_candidates = [
+        ws / "best_model.pkl", ws / "model.pkl",
+        _MODELS_DIR / f"{run_id}.pkl",
+        _MODELS_DIR / f"{run_id}_ag" / "model.pkl",
+    ]
+    for _mc in _model_candidates:
+        if _mc.exists():
+            include_paths.append((_mc, Path("model.pkl")))
+            break
 
     # Include deploy bundle contents if available
     dp = result.get("deploy_path")
