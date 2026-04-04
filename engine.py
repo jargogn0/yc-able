@@ -1832,18 +1832,20 @@ Return STRICT JSON:
 {{
   "recommended_objective": "short objective sentence",
   "recommended_metric": "{obj['metric']}",
-  "clarifying_questions": [],
+  "clarifying_questions": [
+    "ONLY include questions here if you are genuinely uncertain — e.g. multiple plausible targets, ambiguous task type, Kaggle computed targets, user hint is vague. Each question must be SPECIFIC to this dataset (mention real column names). Format each as a string. Leave this EMPTY ARRAY [] if you are confident."
+  ],
   "decision_tree": [],
   "experiment_directions": ["exp1: {_da_baseline or 'baseline model'}", "exp2: tuned with CV", "exp3: ensemble"],
   "risks": {json.dumps(_da_warnings[:2]) if _da_warnings else '["check for data leakage"]'},
   "first_iteration_plan": "one concise paragraph describing the baseline approach",
-  "agent_message": "1-2 SHORT sentences ONLY. Format: 'Predicting **[TARGET]** ([task type], [metric]). [Baseline model + key reason]. Say **go** to start.' NEVER ask questions. NEVER explain more than 2 things."
+  "agent_message": "1-2 SHORT sentences ONLY. Format: 'Predicting **[TARGET]** ([task type], [metric]). [Baseline model + key reason].' NEVER ask questions in agent_message — put questions in clarifying_questions instead. NEVER explain more than 2 things."
 }}""",
         800
     )
     advice = _extract_json_blob(advice_raw)
 
-    # ── Minimal post-process: only fix factually wrong task language + strip generic openers ──
+    # ── Post-process ─────────────────────────────────────────────────────────
     if isinstance(advice, dict):
         _msg = advice.get("agent_message", "") or ""
         _task = obj.get("task", "")
@@ -1857,6 +1859,28 @@ Return STRICT JSON:
             _msg = re.sub(r'\bregression model\b', 'classification model', _msg, flags=re.IGNORECASE)
             _msg = re.sub(r'\bstart with a regression\b', 'start with a classification', _msg, flags=re.IGNORECASE)
         advice["agent_message"] = _msg
+        # Strip the placeholder instruction from clarifying_questions if LLM left it
+        _qs = advice.get("clarifying_questions") or []
+        if isinstance(_qs, list):
+            _qs = [q for q in _qs if q and "ONLY include questions" not in q and len(q) > 10]
+            advice["clarifying_questions"] = _qs
+    else:
+        advice = {
+            "recommended_objective": f"Predict {obj.get('target')} using {obj.get('task')}",
+            "recommended_metric": obj.get("metric", "rmse"),
+            "clarifying_questions": [],
+            "experiment_directions": [],
+            "risks": [],
+            "first_iteration_plan": "",
+            "agent_message": "",
+        }
+
+    # Add needs_clarification flag so frontend can gate "go" behind answers
+    _confidence = obj.get("confidence", 0.7)
+    _open_questions = advice.get("clarifying_questions") or []
+    advice["needs_clarification"] = bool(_open_questions) or _confidence < 0.72
+    advice["confidence"] = _confidence
+
     # Ensure user_hint is preserved in the objective for the run phase
     if user_hint and not obj.get("user_hint"):
         obj["user_hint"] = user_hint
@@ -2723,6 +2747,22 @@ CURRENT TRAIN.PY:
     keep = bool(re.search(r"KEEP\s*:\s*YES", review, re.IGNORECASE))
     reason_match = re.search(r"REASONING\s*:\s*(.+)", review, re.IGNORECASE)
     reasoning = reason_match.group(1).strip() if reason_match else ""
+    # Extract what the next experiment will actually try (for user-visible narration)
+    # Pull the first meaningful line from the rewritten program.md or train.py plan section
+    _what_next = ""
+    _pm_preview = ""
+    try:
+        if "TRAIN_PY:" in review.upper():
+            _pm_raw = review.split("PROGRAM_MD:", 1)[1].split("TRAIN_PY:", 1)[0] if "PROGRAM_MD:" in review.upper() else ""
+            # Look for "Experiment N:" or "Next:" or "## Approach" lines in the program.md
+            for _ln in _pm_raw.splitlines():
+                _ls = _ln.strip()
+                if re.match(r'^(exp\s*\d|next|approach|model|##|###)', _ls, re.IGNORECASE) and len(_ls) > 8:
+                    _pm_preview = _ls.lstrip('#').strip()
+                    break
+    except Exception:
+        pass
+    _what_next = _pm_preview or reasoning[:200]
 
     pm = ""
     tm = ""
@@ -2811,6 +2851,7 @@ Output ONLY ```python block.""",
         "new_program_md": pm.strip(),
         "new_train_py": tm.strip(),
         "reasoning": reasoning or ("KEEP" if keep else "DISCARD"),
+        "what_next": _what_next,  # plain-English description of what next experiment will try
     }
 
 def init_results_tsv(ws):
@@ -4384,6 +4425,22 @@ def run_research(
             log.engine(f"Target '{obj['target']}' not found in columns — falling back to '{fallback}'")
             obj["target"] = fallback
 
+    # Narrate the final agreed objective back to user so they can catch mistakes
+    # before the first experiment actually runs
+    _conf = obj.get("confidence", 0.7)
+    _conf_note = "" if _conf >= 0.72 else f" _(confidence {_conf:.0%} — if this looks wrong, send a correction now before experiment 1 starts)_"
+    if log_callback:
+        log_callback({
+            "tag": "agent",
+            "msg": (
+                f"**Starting research.** Task: **{obj.get('task')}** · "
+                f"Target: **{obj.get('target')}** · "
+                f"Metric: **{(obj.get('metric') or 'rmse').upper()}** · "
+                f"Budget: **{budget}** experiments.{_conf_note}"
+            ),
+            "ts": __import__("time").strftime("%H:%M:%S"),
+        })
+
     (ws / "objective.md").write_text(obj["raw"])
     (ws / "objective.json").write_text(json.dumps(obj, indent=2))
     # Write objective + profile back to RUNS via a structured log callback so the hint
@@ -4741,6 +4798,15 @@ def run_research(
         program_md = revision["new_program_md"]
         train_py_candidate = revision["new_train_py"]
         reasoning = revision["reasoning"]
+        _what_next = revision.get("what_next", "")
+        # Narrate next experiment approach so user knows what the agent decided and why
+        if _what_next and n < budget and log_callback:
+            _decision_word = "✅ Keeping" if keep else "🔄 Discarding"
+            log_callback({
+                "tag": "agent",
+                "msg": f"{_decision_word} exp {n}. Next: {_what_next[:300]}",
+                "ts": __import__("time").strftime("%H:%M:%S"),
+            })
 
         if res.get("success"):
             # Guard: treat NaN/inf metric as failure even if success=True

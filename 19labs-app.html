@@ -4119,20 +4119,51 @@ async function runDiscover(hint){
     // Agent plan sentence (from API or fallback)
     const _plan=d.agent_message||`I'll train a <strong>${_task}</strong> model to predict <strong>${esc(_target)}</strong>, optimizing for <strong>${_metric}</strong>.`;
 
+    // Clarifying questions + confidence
+    const _questions=(d.clarifying_questions||[]).filter(q=>q&&q.length>5);
+    const _needsClarification=d.needs_clarification||_questions.length>0;
+    const _confidence=d.confidence!=null?Math.round(d.confidence*100):null;
+    const _lowConf=_confidence!=null&&_confidence<72;
+
     // Build clean natural-language summary
     let _html=`<div style="line-height:1.65;font-size:13px">`;
-    _html+=`<div style="color:#71717a;margin-bottom:10px;font-size:12px">${_rows} rows · ${_cols} columns</div>`;
-    _html+=`<div style="margin-bottom:10px">Scanned your dataset. I'll predict <strong>${esc(_target)}</strong> using <strong>${_task}</strong> — measuring accuracy with <strong>${_metric}</strong>.</div>`;
+    _html+=`<div style="color:#71717a;margin-bottom:10px;font-size:12px">${_rows} rows · ${_cols} columns${_confidence!=null&&_lowConf?` · <span style="color:#f59e0b">confidence ${_confidence}%</span>`:''}`;
+    _html+=`</div>`;
+    _html+=`<div style="margin-bottom:10px">I'll predict <strong>${esc(_target)}</strong> using <strong>${_task}</strong> — measuring with <strong>${_metric}</strong>.</div>`;
     if(_notes.length){
       _html+=`<div style="margin-bottom:10px">${_notes.map(n=>`<div style="color:#f59e0b;margin-bottom:4px;font-size:12px">\u26A0 ${n}</div>`).join('')}</div>`;
     }
-    _html+=`<div style="color:#a1a1aa;font-size:12px;margin-top:6px">${_plan}</div>`;
+    _html+=`<div style="color:#a1a1aa;font-size:12px;margin-top:4px;margin-bottom:10px">${_plan}</div>`;
+
+    // Show clarifying questions if agent has genuine uncertainty about this specific dataset
+    if(_questions.length>0){
+      _html+=`<div style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:10px 12px;margin-bottom:10px">`;
+      _html+=`<div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Before I start — please confirm:</div>`;
+      _html+=`<ol style="margin:0;padding-left:18px;font-size:12px;color:#d4d4d8;line-height:1.7">`;
+      _questions.forEach(q=>{_html+=`<li style="margin-bottom:4px">${esc(q)}</li>`;});
+      _html+=`</ol>`;
+      // Clickable quick-answer chips
+      _html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">`;
+      _html+=`<button onclick="cwSuggest('Yes, that looks correct — go')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(99,102,241,.3);background:rgba(99,102,241,.1);color:#a5b4fc;cursor:pointer">✓ Yes, looks correct</button>`;
+      _html+=`<button onclick="document.getElementById('cin').focus()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(245,158,11,.3);background:rgba(245,158,11,.08);color:#fbbf24;cursor:pointer">✎ Correct something</button>`;
+      _html+=`</div>`;
+      _html+=`</div>`;
+    }
+
+    if(_needsClarification&&!_questions.length&&_lowConf){
+      _html+=`<div style="font-size:12px;color:#f59e0b;margin-bottom:10px">\u26A0 My confidence is ${_confidence}% — if the target or task type looks wrong, tell me before saying go.</div>`;
+    }
+
+    // Footer: what action to take next
+    const _goInstr=_questions.length>0
+      ? `Answer above, then say <strong style="color:#a5b4fc">go</strong> — or just say <strong style="color:#a5b4fc">go</strong> if everything looks right.`
+      : `Say <strong style="color:#a5b4fc">go</strong> to start — or correct the target, task, or metric first.`;
     if(S.mode==='chat'){
-      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Ask me anything to validate — change the target, task type, or metric. Say <strong style="color:#a5b4fc">go</strong> when ready to launch the Agent.</div>`;
+      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">${_goInstr}</div>`;
     } else if(S.mode==='plan'){
-      _html+=`<div style="margin-top:14px;padding-top:12px;border-top:1px solid #27272a;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button onclick="executePlan()" style="padding:7px 18px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">▶ Execute Plan</button><span style="font-size:11px;color:#52525b">or type corrections — I'll re-analyze. Say <strong style="color:#a5b4fc">go</strong> to launch.</span></div>`;
+      _html+=`<div style="margin-top:14px;padding-top:12px;border-top:1px solid #27272a;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button onclick="executePlan()" style="padding:7px 18px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">▶ Execute Plan</button><span style="font-size:11px;color:#52525b">${_goInstr}</span></div>`;
     } else {
-      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
+      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">${_goInstr}</div>`;
     }
     _html+=`</div>`;
     // Update terminal with agreed plan
@@ -4729,6 +4760,16 @@ function procMsg(d){
     const c=document.getElementById('msgs');
     const atBottom=c.scrollHeight-c.scrollTop-c.clientHeight<120;
     if(atBottom)c.scrollTop=c.scrollHeight;
+    return;
+  }
+
+  // Agent reasoning messages → show as AI chat bubble (objective updates, experiment reasoning)
+  if(tag==='agent'){
+    // Deduplicate: don't show the same message twice (reconnect replay)
+    if(!S._seenNarrations.has(msg)){
+      S._seenNarrations.add(msg);
+      chat('ai',md(msg));
+    }
     return;
   }
 
