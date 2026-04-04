@@ -1995,27 +1995,21 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
             if _kaggle_sample else
             "  # Read sample_submission.csv to get the required output column names"
         )
-        # Build computed-targets block: explain how to derive targets when they don't exist in Train.csv
-        _computed_block = ""
+        _computed_warning = ""
         if _kaggle_targets_computed and _kaggle_target_cols:
-            _computed_block = f"""
-⚠️  CRITICAL — COMPUTED TARGETS: The submission requires {_kaggle_target_cols} but these columns DO NOT exist in Train.csv.
-You MUST COMPUTE them from the raw training data. Common patterns:
-- Group Train.csv by the ID column ({repr(_kaggle_id_col)}) — this creates one row per submission ID
-- Compute aggregated statistics (mean, std, RMSE, bias) from the raw measurements within each group
-- Use these aggregated values as your training targets
-- For test set: use the trained model to predict the aggregated statistics per test ID
-NEVER predict raw row-level values and call them {_kaggle_target_cols[0]} — that is WRONG.
-"""
+            _computed_warning = (
+                f"⚠️  NOTE: {_kaggle_target_cols} are NOT columns in Train.csv — "
+                f"they must be derived/computed from the raw training data. "
+                f"The domain analysis and problem description explain how. "
+                f"NEVER predict raw row-level values and label them {_kaggle_target_cols[0]}.\n"
+            )
         _target_cols_str = repr(_kaggle_target_cols) if _kaggle_target_cols else "sample_sub.columns[1:]"
-        _id_col_str = repr(_kaggle_id_col)
         _kaggle_train_block = f"""
-KAGGLE COMPETITION MODE — MANDATORY RULES:{_computed_block}
-1. DO NOT do a simple train_test_split for evaluation. Use GroupKFold (group by station/ID) or KFold
-   cross-validation on the full train.csv to estimate performance.
+KAGGLE COMPETITION MODE — MANDATORY RULES:
+{_computed_warning}1. DO NOT do a simple train_test_split. Use GroupKFold or KFold CV on full train.csv.
 2. After CV, retrain the FINAL model on ALL of train.csv (no holdout withheld).
 3. Load {repr(_kaggle_test)} separately — unlabelled test set. NEVER train on it.
-4. TARGET COLUMNS ARE: {_target_cols_str} — these are the columns in submission.csv. Train your model to predict EXACTLY these.
+4. YOUR SUBMISSION TARGETS ARE: {_target_cols_str} — predict EXACTLY these columns. Use domain knowledge and problem description to understand what they represent and how to produce them.
 5. Apply the EXACT same preprocessing pipeline (fitted on train only) to the test set.
 6. EVERY experiment MUST generate submission.csv NOW — mandatory, not deferred:
   import os

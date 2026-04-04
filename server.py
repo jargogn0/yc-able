@@ -2784,8 +2784,21 @@ async def discover(req: DiscoverRequest):
                             _samp_cols = list(_pd.read_csv(_samp_f, nrows=3).columns)
                             _id_cols_sub = [c for c in _samp_cols if c.lower() in ("id","row_id","rowid","station","station_id") or c.lower().endswith("_id")]
                             _pred_cols_sub = [c for c in _samp_cols if c not in _id_cols_sub]
-                            _col_desc = f"Non-identifier columns to predict: {_pred_cols_sub}." if _pred_cols_sub else f"Prediction columns: {_samp_cols}."
-                            _ctx_parts.append(f"Output must match {_samp_f.name} format: all columns={_samp_cols}. {_col_desc} IMPORTANT: identifier columns like {_id_cols_sub or ['ID']} are row/station identifiers — NEVER use them as the training target. Analyze {primary_p.name} to find the appropriate measurement/outcome column to predict.")
+                            _target_exist_in_train = all(
+                                c in profile.get("headers", []) for c in _pred_cols_sub
+                            ) if _pred_cols_sub else False
+                            _computed_note = (
+                                f" These columns DO NOT exist in {primary_p.name} — you must COMPUTE them "
+                                f"from the raw {primary_p.name} data (e.g. by aggregating measurements per "
+                                f"group/station/ID)."
+                                if _pred_cols_sub and not _target_exist_in_train else ""
+                            )
+                            _ctx_parts.append(
+                                f"YOUR PREDICTION TARGETS ARE EXACTLY {_pred_cols_sub} — "
+                                f"these are the non-identifier columns in {_samp_f.name} and define what you must output.{_computed_note} "
+                                f"NEVER predict raw row-level measurements and call them {_pred_cols_sub[0] if _pred_cols_sub else 'target'} — "
+                                f"that is wrong. The submission format requires all columns: {_samp_cols}."
+                            )
                             _ctx_parts.append(f"Save final predictions as submission.csv.")
                         except Exception:
                             _ctx_parts.append(f"Save final predictions as submission.csv matching {_samp_f.name}.")
