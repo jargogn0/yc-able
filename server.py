@@ -173,6 +173,15 @@ load_dotenv()
 def _resolve_db_path() -> Path:
     if os.environ.get("NINETEENLABS_DB"):
         return Path(os.environ["NINETEENLABS_DB"])
+    # STORAGE_DIR env var: explicit mount point set by user (e.g. Railway volume path)
+    _sd = os.environ.get("STORAGE_DIR", "").strip()
+    if _sd:
+        d = Path(_sd)
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            return d / "19labs.db"
+        except Exception as _e:
+            print(f"[db] WARNING: STORAGE_DIR={_sd} unusable: {_e}", flush=True)
     for candidate in [Path("/data"), Path("/app/run_models"), Path("/app/workspaces")]:
         if candidate.exists() and candidate.is_dir():
             try:
@@ -190,6 +199,18 @@ print(f"[db] Backend: {'PostgreSQL (DATABASE_URL)' if _pg_mode else f'SQLite at 
 
 # Models dir — check multiple candidate mount points in priority order
 def _resolve_models_dir() -> Path:
+    # STORAGE_DIR env var: explicit mount point (e.g. STORAGE_DIR=/data on Railway)
+    _sd = os.environ.get("STORAGE_DIR", "").strip()
+    if _sd:
+        d = Path(_sd) / "run_models"
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            test = d / ".write_test"
+            test.touch(); test.unlink()
+            print(f"[models] Using STORAGE_DIR: {d}", flush=True)
+            return d
+        except Exception as _e:
+            print(f"[models] WARNING: STORAGE_DIR={_sd}/run_models unusable: {_e}", flush=True)
     candidates = [
         Path("/data/run_models"),        # ideal: single /data volume
         Path("/app/run_models"),         # Railway volume mounted at /app/run_models
@@ -202,7 +223,8 @@ def _resolve_models_dir() -> Path:
             test = d / ".write_test"
             test.touch(); test.unlink()
             return d
-        except Exception:
+        except Exception as _e:
+            print(f"[models] candidate {d} failed: {_e}", flush=True)
             continue
     d = Path(tempfile.gettempdir()) / "19labs_run_models"
     d.mkdir(parents=True, exist_ok=True)
@@ -213,6 +235,16 @@ print(f"[models] Storage: {_MODELS_DIR}", flush=True)
 
 # Workspaces dir — check multiple candidate mount points in priority order
 def _resolve_workspaces_dir() -> Path:
+    _sd = os.environ.get("STORAGE_DIR", "").strip()
+    if _sd:
+        d = Path(_sd) / "workspaces"
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            test = d / ".write_test"
+            test.touch(); test.unlink()
+            return d
+        except Exception:
+            pass
     candidates = [
         Path("/data/workspaces"),        # ideal: single /data volume
         Path("/app/workspaces"),         # Railway volume mounted at /app/workspaces
@@ -224,7 +256,8 @@ def _resolve_workspaces_dir() -> Path:
             test = d / ".write_test"
             test.touch(); test.unlink()
             return d
-        except Exception:
+        except Exception as _e:
+            print(f"[workspaces] candidate {d} failed: {_e}", flush=True)
             continue
     return Path(tempfile.gettempdir())
 
