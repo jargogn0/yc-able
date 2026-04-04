@@ -3493,10 +3493,10 @@ function setMode(m){
   }
 }
 
-// Sync inline plan panel visibility
+// Sync inline plan panel visibility — shown in ALL modes once a plan exists
 function _syncPlanPanel(){
   const pp=document.getElementById('plan-panel');if(!pp)return;
-  if(S.mode==='plan'&&S.analyzed&&S.discovery){
+  if(S.analyzed&&S.discovery&&!S.running){
     _renderPlanPanel();
     pp.style.display='';
   } else {
@@ -3628,6 +3628,7 @@ async function send(){
     if(!S.file){chat('ai',"Drop a CSV first so I can analyze it.");return}
     if(lo.includes('setting')||lo.includes('api key')){openSettings();chat('sys','Settings opened.');return}
     const isExecute=/^(execute|run|go|launch|start|do it|confirm|yes|yep|yeah|approved|lgtm|ship it)$/i.test(lo.trim());
+    const isPlanUpdate=/^(plan|update plan|re-?analyze|replan|new plan|update the plan|revise plan)$/i.test(lo.trim());
     const isQuestion=/\?/.test(text)||/^(what|how|why|when|where|who|is|are|can|does|explain|tell me)/i.test(lo);
     // If agent is running → send hint, skip slow chatWithAI to avoid blocking sendLock
     if(S.running&&S.runId){
@@ -3643,6 +3644,8 @@ async function send(){
     if(isExecute&&S.analyzed){
       executePlan();return;
     }
+    // Explicit "plan" keyword → re-analyze with accumulated context
+    if(isPlanUpdate){S.hint=(S.hint?S.hint+'; '+text:text);await runDiscover(S.hint);return}
     // Questions about existing plan → chat response
     if(isQuestion&&S.analyzed){
       await chatWithAI(text);return;
@@ -3664,6 +3667,7 @@ async function send(){
   if(budgetMatch){const num=parseInt(budgetMatch[1]||budgetMatch[2]);if(num>=1&&num<=100){S.budget=num;toast(`Budget set to ${num} experiments`,'ok');chat('ai',`Got it — will run <strong>${num} experiments</strong>. Say <strong>"go"</strong> when ready.`);return}}
 
   const isGo=/^(go|do it|just do it|run|launch|start|execute|autopilot|analyze|let'?s go|ship it|run it|yolo)$/i.test(lo.trim());
+  const isPlan=/^(plan|update plan|re-?analyze|replan|new plan|update the plan|revise plan)$/i.test(lo.trim());
   const isContinuous=/never stop|run forever|continuous|don'?t stop|infinite|keep going|karpathy mode|beast mode/i.test(lo);
   const isYes=/^(yes|yep|yeah|sure|ok|okay|confirm|go ahead|looks good|perfect|lgtm|approved)$/i.test(lo.trim());
   const isNo=/^(no|nah|nope|change|different|wrong|redo|try again)$/i.test(lo.trim());
@@ -3717,6 +3721,7 @@ async function send(){
     await chatWithAI(text);return;
   }
 
+  if(isPlan){S.hint=(S.hint?S.hint+'; '+text:text);await runDiscover(S.hint);return}
   if(!S.analyzed){S.hint=text;if(isGo){await autoDiscover();if(S.analyzed){S.confirmed=true;await launchRun()}return}await runDiscover(text);return}
   if(S.analyzed&&!S.confirmed){
     if(isYes||isGo){
@@ -4182,12 +4187,11 @@ async function runDiscover(hint){
     }
 
     // Footer: what action to take next
+    const _planHint=`Say <strong style="color:#a5b4fc">go</strong> to run · <strong style="color:#a78bfa">plan</strong> to update the plan`;
     const _goInstr=_questions.length>0
-      ? `Answer above, then say <strong style="color:#a5b4fc">go</strong> — or just say <strong style="color:#a5b4fc">go</strong> if everything looks right.`
-      : `Say <strong style="color:#a5b4fc">go</strong> to start — or correct the target, task, or metric first.`;
-    if(S.mode==='chat'){
-      _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">${_goInstr}</div>`;
-    } else if(S.mode==='plan'){
+      ? `Answer above, then say <strong style="color:#a5b4fc">go</strong> — or just say <strong style="color:#a5b4fc">go</strong> if everything looks right. Say <strong style="color:#a78bfa">plan</strong> to update the plan with more context.`
+      : `${_planHint} — or correct the target / task / metric.`;
+    if(S.mode==='plan'){
       _html+=`<div style="margin-top:14px;padding-top:12px;border-top:1px solid #27272a;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button onclick="executePlan()" style="padding:7px 18px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">▶ Execute Plan</button><span style="font-size:11px;color:#52525b">${_goInstr}</span></div>`;
     } else {
       _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">${_goInstr}</div>`;
@@ -4199,10 +4203,8 @@ async function runDiscover(hint){
     setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
     toast('Plan ready — review and hit Execute Plan','ok');
-    // Show inline plan panel in plan mode
-    if(S.mode==='plan'){
-      _syncPlanPanel();
-    }
+    // Always sync plan panel after analysis completes (all modes)
+    _syncPlanPanel();
   }catch(e){
     clearInterval(_diTimer);
     _rpRemove();
