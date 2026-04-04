@@ -1199,9 +1199,19 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         "                _19_preds_all.to_csv('submission.csv', index=False)\n"
         "                print(f'[19Labs] Auto-generated submission.csv (multi-output) — {len(_19_preds_all)} rows')\n"
         "            else:\n"
-        "                _19_pred_col = (list(_19pd.read_csv(_19_sub_f).columns)[-1] if _19_sub_f else 'target')\n"
-        "                _19pd.DataFrame({_19_id_col: _19_raw[_19_id_col], _19_pred_col: _19_preds}).to_csv('submission.csv', index=False)\n"
-        "                print(f'[19Labs] Auto-generated submission.csv — {len(_19_preds)} rows')\n"
+        "                import numpy as _19np\n"
+        "                _19_preds_arr = _19np.array(_19_preds) if not isinstance(_19_preds, _19np.ndarray) else _19_preds\n"
+        "                _19_sub_cols = list(_19pd.read_csv(_19_sub_f).columns) if _19_sub_f else None\n"
+        "                _19_tgt_cols = _19_sub_cols[1:] if _19_sub_cols and len(_19_sub_cols) > 1 else ['target']\n"
+        "                if _19_preds_arr.ndim == 2 and len(_19_tgt_cols) > 1:\n"
+        "                    _19_sub_data = {_19_id_col: _19_raw[_19_id_col]}\n"
+        "                    for _19_i, _19_c in enumerate(_19_tgt_cols):\n"
+        "                        _19_sub_data[_19_c] = _19_preds_arr[:, _19_i] if _19_preds_arr.shape[1] > _19_i else _19_preds_arr[:, 0]\n"
+        "                    _19_sub_df = _19pd.DataFrame(_19_sub_data)\n"
+        "                else:\n"
+        "                    _19_sub_df = _19pd.DataFrame({_19_id_col: _19_raw[_19_id_col], _19_tgt_cols[0]: _19_preds_arr.ravel() if _19_preds_arr.ndim > 1 else _19_preds_arr})\n"
+        "                _19_sub_df.to_csv('submission.csv', index=False)\n"
+        "                print(f'[19Labs] Auto-generated submission.csv — {len(_19_sub_df)} rows, columns: {list(_19_sub_df.columns)}')\n"
         "        except Exception as _19_se:\n"
         "            print(f'[19Labs] WARNING: submission.csv auto-generation failed: {_19_se}')\n"
     )
@@ -1985,8 +1995,18 @@ KAGGLE COMPETITION MODE — MANDATORY RULES:
 {_sample_line}
   # Build submission using sample_submission column layout
   id_col = sample_sub.columns[0]
-  pred_col = sample_sub.columns[-1]
-  submission = pd.DataFrame({{id_col: test_df[id_col], pred_col: test_preds}})
+  target_cols = list(sample_sub.columns[1:])  # ALL target columns (handles multi-output)
+  import numpy as _np_sub
+  _preds_arr = _np_sub.array(test_preds) if not isinstance(test_preds, _np_sub.ndarray) else test_preds
+  if len(target_cols) == 1 or _preds_arr.ndim == 1:
+      # Single-output: simple 1D prediction
+      submission = pd.DataFrame({{id_col: test_df[id_col], target_cols[0]: _preds_arr.ravel() if _preds_arr.ndim > 1 else _preds_arr}})
+  else:
+      # Multi-output: test_preds is 2D array (n_samples, n_targets)
+      sub_data = {{id_col: test_df[id_col]}}
+      for _i, _col in enumerate(target_cols):
+          sub_data[_col] = _preds_arr[:, _i] if _preds_arr.ndim == 2 and _preds_arr.shape[1] > _i else _preds_arr[:, 0]
+      submission = pd.DataFrame(sub_data)
   submission.to_csv('submission.csv', index=False)
   print(f"submission.csv saved — {{len(submission)}} rows, columns: {{list(submission.columns)}}")
 DO NOT say "I will generate submission.csv in the next experiment". Generate it NOW.
