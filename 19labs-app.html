@@ -1770,7 +1770,7 @@ body.light .rp-live { background: #f4f3f8; border-color: rgba(0,0,0,.06) }
         <button class="mode-btn" id="mode-plan" onclick="setMode('plan')" data-tip="Analyze dataset and build a plan — review before running">Plan</button>
         <button class="mode-btn" id="mode-agent" onclick="setMode('agent')" data-tip="Autonomous ML research — runs experiments automatically">Agent</button>
       </div>
-      <div class="chat-dot" id="cdot"><img src="/ghost.svg" alt=""></div>
+      <div class="chat-dot" id="cdot"></div>
     </div>
     <!-- PLAN PANEL — shown inline when Plan mode is active and analysis is ready -->
     <div id="plan-panel" class="plan-panel" style="display:none">
@@ -2876,7 +2876,7 @@ function chat(role,text,raw){
   const e=document.createElement('div');
   const cls=role==='ai'?'ai':role==='user'?'user':role==='err'?'err':'sys';
   e.className=`cm ${cls}`;
-  const labels={ai:`<img src="/ghost.svg" alt="">19 Agent`,sys:'System',err:'Error'};
+  const labels={ai:`19 Agent`,sys:'System',err:'Error'};
   const lab=labels[role]||'';
   const body=raw?text:role==='user'?esc(text):safeHtml(text);
   const ts=`<div class="cm-time">${chatTime()}</div>`;
@@ -3681,7 +3681,7 @@ async function streamInsight(runId){
   // Stream AI-generated business insight as a special "insight" bubble
   const el=document.createElement('div');
   el.className='cm ai insight-bubble';
-  el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div><div class="insight-content" style="font-size:13px;line-height:1.7;color:var(--text-2)"><span class="insight-cursor">▊</span></div><div class="cm-time">${chatTime()}</div>`;
+  el.innerHTML=`<div class="cl">19 Agent</div><div class="insight-content" style="font-size:13px;line-height:1.7;color:var(--text-2)"><span class="insight-cursor">▊</span></div><div class="cm-time">${chatTime()}</div>`;
   const c=document.getElementById('msgs');
   c.appendChild(el);c.scrollTop=c.scrollHeight;
   const textEl=el.querySelector('.insight-content');
@@ -4525,7 +4525,7 @@ function procMsg(d){
     if(S._seenNarrations.has(msg))return;
     S._seenNarrations.add(msg);
     const el=_getNarrBubble();
-    el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div><div class="narr-lines" id="_narr_lines"></div><div class="cm-time">${chatTime()}</div>`;
+    el.innerHTML=`<div class="cl">19 Agent</div><div class="narr-lines" id="_narr_lines"></div><div class="cm-time">${chatTime()}</div>`;
     const lines=document.getElementById('_narr_lines');
     // Show all narrations so far as a compact log
     [...S._seenNarrations].forEach((m,i)=>{
@@ -6862,7 +6862,7 @@ async function chatGenerateChart(query){
     const el=document.createElement('div');el.className='cm ai';
     const title=spec.title||'Chart';
     const insight=spec.insight||'';
-    el.innerHTML=`<div class="cl"><img src="/ghost.svg" alt="">19 Agent</div><div class="cm-chart"><div class="cm-chart-title">${esc(title)}</div>${svg}${insight?`<div class="cm-chart-insight">${esc(insight)}</div>`:''}</div><div class="cm-time">${chatTime()}</div>`;
+    el.innerHTML=`<div class="cl">19 Agent</div><div class="cm-chart"><div class="cm-chart-title">${esc(title)}</div>${svg}${insight?`<div class="cm-chart-insight">${esc(insight)}</div>`:''}</div><div class="cm-time">${chatTime()}</div>`;
     const c=document.getElementById('msgs');c.appendChild(el);c.scrollTop=c.scrollHeight;
   }catch(e){typing(false);chat('err',`Chart error: ${esc(e.message)}`)}
 }
