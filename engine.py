@@ -1168,19 +1168,30 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
         "                for _19_c in _19_feat:\n"
         "                    if _19_c not in _19_test_df.columns: _19_test_df[_19_c] = 0\n"
         "                _19_test_df = _19_test_df[_19_feat]\n"
-        "            _19_preds = _19_mo.predict(_19_test_df)\n"
-        "            # Find ID column in test file\n"
-        "            _19_id_col = next((c for c in _19_test_df.columns if c.lower() in ('id','row_id','rowid')), _19_test_df.columns[0])\n"
-        "            _19_raw = _19pd.read_csv(_19_test_f)\n"
-        "            # Find target column name from sample_submission if available\n"
-        "            _19_sub_f = next((_19os.path.join(_19_data_dir,f) for f in _19os.listdir(_19_data_dir) if 'sample' in f.lower() and f.lower().endswith('.csv')), None)\n"
-        "            if _19_sub_f:\n"
-        "                _19_sub_sample = _19pd.read_csv(_19_sub_f)\n"
-        "                _19_pred_col = _19_sub_sample.columns[-1]\n"
+        "            # Handle dict-based models (multi-output: {'model_a':..,'model_b':..})\n"
+        "            if isinstance(_19_mo, dict) and not hasattr(_19_mo, 'predict'):\n"
+        "                _19_predictors = [v for v in _19_mo.values() if hasattr(v, 'predict')]\n"
+        "                if not _19_predictors: raise ValueError('dict model has no predictor values')\n"
+        "                _19_preds_all = _19pd.DataFrame({k: v.predict(_19_test_df) for k,v in _19_mo.items() if hasattr(v,'predict')})\n"
         "            else:\n"
-        "                _19_pred_col = 'target'\n"
-        "            _19pd.DataFrame({_19_id_col: _19_raw[_19_id_col], _19_pred_col: _19_preds}).to_csv('submission.csv', index=False)\n"
-        "            print(f'[19Labs] Auto-generated submission.csv — {len(_19_preds)} rows')\n"
+        "                _19_preds_all = None\n"
+        "                _19_preds = _19_mo.predict(_19_test_df)\n"
+        "            # Find ID column in test file\n"
+        "            _19_raw = _19pd.read_csv(_19_test_f)\n"
+        "            _19_id_col = next((c for c in _19_raw.columns if c.lower() in ('id','row_id','rowid')), _19_raw.columns[0])\n"
+        "            # Find target column names from sample_submission if available\n"
+        "            _19_sub_f = next((_19os.path.join(_19_data_dir,f) for f in _19os.listdir(_19_data_dir) if 'sample' in f.lower() and f.lower().endswith('.csv')), None)\n"
+        "            if _19_preds_all is not None:\n"
+        "                _19_preds_all.insert(0, _19_id_col, _19_raw[_19_id_col].values)\n"
+        "                if _19_sub_f:\n"
+        "                    _19_sub_cols = list(_19pd.read_csv(_19_sub_f).columns)\n"
+        "                    _19_preds_all.columns = _19_sub_cols[:len(_19_preds_all.columns)]\n"
+        "                _19_preds_all.to_csv('submission.csv', index=False)\n"
+        "                print(f'[19Labs] Auto-generated submission.csv (multi-output) — {len(_19_preds_all)} rows')\n"
+        "            else:\n"
+        "                _19_pred_col = (list(_19pd.read_csv(_19_sub_f).columns)[-1] if _19_sub_f else 'target')\n"
+        "                _19pd.DataFrame({_19_id_col: _19_raw[_19_id_col], _19_pred_col: _19_preds}).to_csv('submission.csv', index=False)\n"
+        "                print(f'[19Labs] Auto-generated submission.csv — {len(_19_preds)} rows')\n"
         "        except Exception as _19_se:\n"
         "            print(f'[19Labs] WARNING: submission.csv auto-generation failed: {_19_se}')\n"
     )
@@ -1848,6 +1859,7 @@ KARPATHY DISCIPLINE (MANDATORY):
 - train.py is the ONLY file you may edit. ALL code goes in train.py.
 - prepare.py is READ-ONLY. Never reference or modify it.
 - DATA_PATH and TIME_BUDGET are pre-defined variables injected at line 1. DO NOT redefine them. DO NOT use os.environ.
+- DATA_PATH points to the TRAINING CSV FILE (e.g. /workspace/Train.csv). To load other files in the same folder use: `data_dir = os.path.dirname(DATA_PATH)` then `pd.read_csv(os.path.join(data_dir, 'Test.csv'))`. NEVER do f"{DATA_PATH}Test.csv" — that appends to a filename, not a directory.
 - NEVER add pip/subprocess install calls inside train.py. Just write the import — the engine auto-installs any package before running your code.
 - TIME_BUDGET = {obj.get('time_budget', TIME_BUDGET)}s. Add wall-clock checks in training loops.
 - ALWAYS split data into train/test. Compute metrics on BOTH and report both.
