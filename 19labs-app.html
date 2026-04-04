@@ -2350,14 +2350,26 @@ async function _restoreRunHistory(){
       // For guests: only update status of runs already in local history (not add new ones).
       // This prevents other guests' server-side runs from polluting the sidebar.
       (d.runs||[]).forEach(run=>{
-        const label=run.filename||(run.best_model?`${run.best_model}`:'Run');
+        // Build server-side label: prefer hint-derived info over plain filename
+        const _fn=run.filename||'Run';
+        const _fnBase=_fn.replace(/\.(csv|xlsx|json|tsv|parquet)$/i,'');
+        const _model=run.best_model?run.best_model.replace(/_BAG_L\d+|_FULL/g,''):'';
+        const _metric=run.best_metric_val!=null&&run.best_metric_name
+          ?`${run.best_metric_name.toUpperCase()} ${typeof run.best_metric_val==='number'?run.best_metric_val.toFixed(3):''}`:'' ;
+        // Server label: "filename · BestModel" — still better than just filename
+        const label=_model?`${_fnBase} · ${_model}`:_fnBase;
         const status=run.status==='done'?'done':run.status==='error'?'error':'done';
         const _best=run.best_metric_val!=null&&run.best_metric_name
           ?{val:run.best_metric_val,name:run.best_metric_name}:null;
         const existing=runHistory.find(rh=>rh.id===run.id);
         if(existing){
           existing.status=status;
-          if(label&&label!==run.id)existing.label=label;
+          // Only overwrite label if existing one is just a plain filename or run ID
+          // (preserves nice labels like "Climate Forecast" set by _makeRunLabel())
+          const _existingIsDefault=!existing.label||existing.label===run.id
+            ||/\.(csv|xlsx|json|tsv|parquet)$/i.test(existing.label)
+            ||existing.label==='Failed'||existing.label==='Run';
+          if(_existingIsDefault&&label&&label!==run.id)existing.label=label;
           if(_best)existing.best=_best;
           if(run.started&&!existing.started)existing.started=run.started;
         } else if(_authUser){
@@ -5937,16 +5949,21 @@ function _makeRunLabel(){
   const domain=(d.domain||d.dataset_domain||'').replace(/[—–\-|]/g,'·').split('·')[0].trim();
   const target=(obj.target||d.target_column||'').replace(/[_()\[\]]/g,' ').trim();
   const task=(obj.task||'').toLowerCase();
-  // Build a short human label: domain keyword + task verb
-  const taskVerb={regression:'Forecast',classification:'Classifier',clustering:'Clustering',
-    'binary classification':'Classifier','multiclass':'Classifier','time series':'Forecast',
-    'anomaly detection':'Anomaly Detector','ranking':'Ranker'}[task]||'Model';
-  // Shorten domain to first 2-3 meaningful words
-  const domainWords=domain.split(/\s+/).filter(w=>w.length>2&&!/^(and|the|for|with|of|in|on|a|an)$/i.test(w)).slice(0,3).join(' ');
-  // Shorten target to first 2 words
-  const targetWords=target.split(/\s+/).slice(0,2).join(' ');
-  const base=domainWords||targetWords||S.file?.name?.replace(/\.csv$/i,'')||'Run';
-  return `${base} ${taskVerb}`.slice(0,40).trim();
+  const _stop=/^(and|the|for|with|of|in|on|a|an|or|to|at|by)$/i;
+  const domainWords=domain.split(/[\s,\-–—]+/).filter(w=>w.length>2&&!_stop.test(w)).slice(0,3).join(' ');
+  const targetClean=target.replace(/\(.*?\)/g,'').replace(/[_]/g,' ').trim();
+  const targetWords=targetClean.split(/\s+/).slice(0,2).join(' ');
+  const fileBase=(S.file?.name||'').replace(/\.(csv|xlsx|json|tsv|parquet)$/i,'');
+  // Combine: "Domain · target → task"
+  let base=domainWords||targetWords||fileBase||'Run';
+  if(domainWords&&targetWords&&domainWords.toLowerCase()!==targetWords.toLowerCase())
+    base=`${domainWords} · ${targetWords}`;
+  const taskArrow={regression:'→ regress',classification:'→ classify',
+    binaryclassification:'→ classify',multiclassclassification:'→ classify',
+    timeseriesforecasting:'→ forecast','time series':'→ forecast',
+    clustering:'→ cluster','anomaly detection':'→ detect',ranking:'→ rank'}
+    [task.replace(/\s/g,'')]||'';
+  return `${base}${taskArrow?` ${taskArrow}`:''}`.slice(0,52).trim();
 }
 function addRunHistory(id,status,label,meta){
   const existing=runHistory.find(r=>r.id===id);
