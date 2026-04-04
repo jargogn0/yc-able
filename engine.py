@@ -4493,6 +4493,7 @@ def run_research(
     workspace=None,
     budget=6,
     user_hint="",
+    pre_discovered_objective=None,  # validated obj dict from /api/discover — skips re-discovery
     api_key=None,
     log_callback=None,
     reliability_mode="balanced",
@@ -4579,43 +4580,68 @@ def run_research(
     (ws / "profile.json").write_text(json.dumps(profile, indent=2, default=str))
 
     # DOMAIN INTELLIGENCE — reason like a senior data scientist
-    log.engine("Analyzing domain and data quality...")
-    narrate(log_callback, "domain_analysis")
-    domain_analysis = analyze_domain(profile, user_hint)
-    # domain_analysis is now a dict (structured JSON) or legacy string — handle both
-    _da_text = _domain_analysis_text(domain_analysis)
-    (ws / "domain_analysis.md").write_text(_da_text)
-    # Extract domain/strategy for narration
-    domain_name = ""
-    strategy_name = ""
-    if isinstance(domain_analysis, dict):
-        domain_name = domain_analysis.get("industry", "")[:80]
-        strategy_name = domain_analysis.get("baseline_approach", "")[:80]
+    # Skip if caller already validated the objective (avoids double-discovery contradiction)
+    if pre_discovered_objective and pre_discovered_objective.get("target"):
+        log.engine("Using pre-validated objective from /api/discover — skipping re-discovery")
+        obj = dict(pre_discovered_objective)
+        # Ensure all required fields have defaults
+        obj.setdefault("task", "Regression")
+        obj.setdefault("metric", "rmse")
+        obj.setdefault("direction", "lower_is_better")
+        obj.setdefault("domain", "General")
+        obj.setdefault("confidence", 0.9)
+        obj.setdefault("good_enough", True)
+        obj.setdefault("user_hint", user_hint)
+        # Re-run domain analysis to get modeling strategy (lightweight, no target inference)
+        narrate(log_callback, "domain_analysis")
+        domain_analysis = analyze_domain(profile, user_hint)
+        _da_text = _domain_analysis_text(domain_analysis)
+        (ws / "domain_analysis.md").write_text(_da_text)
+        # Merge domain metadata but DO NOT override target/task/metric (user validated these)
+        if isinstance(domain_analysis, dict):
+            for _k in ("id_cols", "leakage_cols", "datetime_cols", "data_type"):
+                if domain_analysis.get(_k) is not None and _k not in obj:
+                    obj[_k] = domain_analysis[_k]
+        domain_name = (domain_analysis.get("industry", "") if isinstance(domain_analysis, dict) else "")[:80]
+        strategy_name = (domain_analysis.get("baseline_approach", "") if isinstance(domain_analysis, dict) else "")[:80]
+        narrate(log_callback, "domain_done", domain=domain_name or "General", strategy=strategy_name or "standard ML pipeline")
     else:
-        for line in _da_text.split("\n"):
-            line = line.strip()
-            if line.startswith("INDUSTRY:"): domain_name = line[len("INDUSTRY:"):].strip()[:80]
-            if line.startswith("MODELING_STRATEGY:"): strategy_name = line[len("MODELING_STRATEGY:"):].strip()[:80]
-    narrate(log_callback, "domain_done", domain=domain_name or "General", strategy=strategy_name or "standard ML pipeline")
+        log.engine("Analyzing domain and data quality...")
+        narrate(log_callback, "domain_analysis")
+        domain_analysis = analyze_domain(profile, user_hint)
+        # domain_analysis is now a dict (structured JSON) or legacy string — handle both
+        _da_text = _domain_analysis_text(domain_analysis)
+        (ws / "domain_analysis.md").write_text(_da_text)
+        # Extract domain/strategy for narration
+        domain_name = ""
+        strategy_name = ""
+        if isinstance(domain_analysis, dict):
+            domain_name = domain_analysis.get("industry", "")[:80]
+            strategy_name = domain_analysis.get("baseline_approach", "")[:80]
+        else:
+            for line in _da_text.split("\n"):
+                line = line.strip()
+                if line.startswith("INDUSTRY:"): domain_name = line[len("INDUSTRY:"):].strip()[:80]
+                if line.startswith("MODELING_STRATEGY:"): strategy_name = line[len("MODELING_STRATEGY:"):].strip()[:80]
+        narrate(log_callback, "domain_done", domain=domain_name or "General", strategy=strategy_name or "standard ML pipeline")
 
-    # INFER
-    log.engine("Inferring task from data...")
-    obj = infer_objective(profile, user_hint, domain_analysis=domain_analysis)
-    # ── Enrich obj with domain analysis metadata so it flows to the result ──
-    # id_cols / leakage_cols tell prediction time exactly which columns to keep as IDs
-    # and which to drop — no hardcoding, no guessing, works for any dataset
-    if isinstance(domain_analysis, dict):
-        if domain_analysis.get("id_cols") is not None:
-            obj["id_cols"] = domain_analysis["id_cols"]
-        if domain_analysis.get("leakage_cols") is not None:
-            obj["leakage_cols"] = domain_analysis["leakage_cols"]
-        if domain_analysis.get("datetime_cols") is not None:
-            obj["datetime_cols"] = domain_analysis["datetime_cols"]
-        if domain_analysis.get("data_type"):
-            obj["data_type"] = domain_analysis["data_type"]
+        # INFER
+        log.engine("Inferring task from data...")
+        obj = infer_objective(profile, user_hint, domain_analysis=domain_analysis)
+        # ── Enrich obj with domain analysis metadata so it flows to the result ──
+        if isinstance(domain_analysis, dict):
+            if domain_analysis.get("id_cols") is not None:
+                obj["id_cols"] = domain_analysis["id_cols"]
+            if domain_analysis.get("leakage_cols") is not None:
+                obj["leakage_cols"] = domain_analysis["leakage_cols"]
+            if domain_analysis.get("datetime_cols") is not None:
+                obj["datetime_cols"] = domain_analysis["datetime_cols"]
+            if domain_analysis.get("data_type"):
+                obj["data_type"] = domain_analysis["data_type"]
+
     log.claude(f"Task: {obj['task']} | Target: {obj['target']} | Metric: {obj['metric']} ({obj['direction']})")
-    log.claude(f"Domain: {obj['domain']} | Confidence: {obj['confidence']:.0%}")
-    log.claude(f"ID cols: {obj.get('id_cols',[])} | Leakage cols: {obj.get('leakage_cols',[])} | Good enough: {obj['good_enough']}")
+    log.claude(f"Domain: {obj.get('domain','?')} | Confidence: {obj.get('confidence',0):.0%}")
+    log.claude(f"ID cols: {obj.get('id_cols',[])} | Leakage cols: {obj.get('leakage_cols',[])} | Good enough: {obj.get('good_enough',True)}")
     log.claude(obj["reasoning"])
 
     # Validate target column exists in the dataset

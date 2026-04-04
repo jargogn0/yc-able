@@ -3902,7 +3902,7 @@ async function deployAsAPI(runId){
 // DISCOVERY
 // ═══════════════════════════════════════════
 async function autoDiscover(){
-  if(!S.file||S.analyzed)return;
+  if(!S.file||S.analyzed||S._discoverActive)return;
   await runDiscover(S.hint||'');
 }
 
@@ -4038,10 +4038,14 @@ function renderProfileCard(profile){
 
 async function runDiscover(hint){
   if(!S.file)return;
+  // Guard: if a discover is already in flight, drop this call (prevents double-bubble)
+  if(S._discoverActive){return;}
   setBadge('ANALYZING','run');
   sbUpdate({status:'Analyzing...',running:true});
   let key=C.key||gk(C.provider);
   S._discoverActive=true;
+  const _discoverToken=Date.now(); // unique token — only the last call's result is used
+  S._discoverToken=_discoverToken;
 
   // Show live progress in Exp tab (center panel)
   const _isReanalysis=S.analyzed&&document.getElementById('ana-term');
@@ -4085,6 +4089,8 @@ async function runDiscover(hint){
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     S._discoverActive=false;
     clearInterval(_diTimer);
+    // If a newer discover call was started while we were waiting, discard this stale result
+    if(S._discoverToken!==_discoverToken){return;}
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){
@@ -4116,11 +4122,14 @@ async function runDiscover(hint){
     // Parse signals into plain English sentences (no raw JSON/dicts)
     const _rawSigs=prof.signals||[];
     const _notes=[];
+    const _isClassTask=/(classif|classification|class|binary|multiclass)/i.test(obj.task||'');
     _rawSigs.forEach(s=>{
       if(s.includes('IMBALANCED_TARGET')){
-        // Extract column name and majority pct
+        // Only show imbalance warning for classification tasks — irrelevant for regression
+        if(!_isClassTask)return;
         const cm=s.match(/candidate '([^']+)'.*majority\s+(\d+)%/);
-        if(cm)_notes.push(`<strong>${esc(cm[1])}</strong> has a ${cm[2]}% class imbalance — model will be trained with class weighting to avoid bias toward the majority class.`);
+        // Only show if the imbalanced column matches the actual prediction target
+        if(cm&&cm[1]===_target)_notes.push(`<strong>${esc(cm[1])}</strong> has a ${cm[2]}% class imbalance — model will be trained with class weighting to avoid bias toward the majority class.`);
       } else if(s.includes('DATETIME')){
         _notes.push('Date/time column detected — this dataset has a time dimension, so the model will respect chronological order during training.');
       } else if(s.includes('HIGH_CARDINALITY')){
@@ -4302,20 +4311,22 @@ async function launchRun(){
   _initRunProgress();
   stab('exp');updStatus();
 
-  const obj=S.hint||S.discovery?.discovery?.recommended_objective||'';
+  // Pass the validated objective from /api/discover so the server never re-discovers with a different result.
+  // The user saw and approved this exact objective — it must be used verbatim.
+  const _preObj = S.discovery?.objective || null;
+  const _runHintStr=((S.hint||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
   // For guests: cap budget at server-enforced max
   const isGuest=!_authUser&&!C.key;
   const effectiveBudget=isGuest?Math.min(S.budget,_serverConfig.guest_max_budget||4):S.budget;
   try{
-    const _runHint=((obj||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
     // Use csv_cache_id if available to avoid re-sending large files on every run
     const _useCsvCacheForRun=S.csvCacheId&&S.analyzed;
     const _runExtraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:_useCsvCacheForRun?'':d.csv})):undefined;
     const _runBody=S.dataset_id
-      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+      ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_runHintStr,pre_discovered_objective:_preObj,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
       :_useCsvCacheForRun
-        ?{filename:S.file.name,csv:'',csv_cache_id:S.csvCacheId,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
-        :{filename:S.file.name,csv:S.csv,hint:_runHint,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
+        ?{filename:S.file.name,csv:'',csv_cache_id:S.csvCacheId,hint:_runHintStr,pre_discovered_objective:_preObj,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous}
+        :{filename:S.file.name,csv:S.csv,hint:_runHintStr,pre_discovered_objective:_preObj,budget:effectiveBudget,reliability_mode:S.rmode,extra_files:_runExtraFiles,api_key:C.key||gk(C.provider)||undefined,provider:C.provider,model:C.model||undefined,continuous:!!S.continuous};
     const sr=await apiFetch(`${BASE}/api/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_runBody)});
     if(!sr.ok){
       const errTxt=await sr.text();

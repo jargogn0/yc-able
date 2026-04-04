@@ -1386,6 +1386,7 @@ class RunRequest(BaseModel):
     csv_cache_id: str = "" # server-side CSV cache (avoids re-sending large files)
     csv_file_path: str = "" # server-local absolute path (MCP on same machine — avoids network transfer)
     hint: str = ""
+    pre_discovered_objective: dict | None = None  # validated objective from /api/discover — skip re-discovery
     budget: int = 6
     reliability_mode: str = "balanced"
     extra_files: list[dict] = []  # [{name, csv}] — additional datasets uploaded alongside primary
@@ -2494,6 +2495,7 @@ async def start_run(req: RunRequest, request: Request):
                 budget=req.budget,
                 reliability_mode=req.reliability_mode,
                 user_hint=req.hint,
+                pre_discovered_objective=req.pre_discovered_objective or None,
                 api_key=resolved_api_key,
                 log_callback=cb,
                 continuous=req.continuous,
