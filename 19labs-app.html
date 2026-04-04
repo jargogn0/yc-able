@@ -3954,11 +3954,28 @@ function renderProfileCard(profile){
 
 async function runDiscover(hint){
   if(!S.file)return;
-  typing(true);setBadge('ANALYZING','run');
+  setBadge('ANALYZING','run');
   sbUpdate({status:'Analyzing...',running:true});
   let key=C.key||gk(C.provider);
-
   S._discoverActive=true;
+
+  // Show animated analysis card in chat
+  const _anaId='ana-'+Date.now();
+  const _steps=['Profiling dataset…','Scanning columns & types…','Detecting domain & signals…','Inferring objective & target…','Building research plan…'];
+  let _stepIdx=0;
+  chat('ai',`<div id="${_anaId}" style="font-size:12px;color:var(--text-3)"><div id="${_anaId}-step" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1s infinite;flex-shrink:0"></span><span>${_steps[0]}</span></div><div id="${_anaId}-done" style="display:flex;flex-direction:column;gap:4px"></div></div>`);
+  const _anaTimer=setInterval(()=>{
+    _stepIdx=Math.min(_stepIdx+1,_steps.length-1);
+    const s=document.getElementById(`${_anaId}-step`);
+    const d=document.getElementById(`${_anaId}-done`);
+    if(s)s.querySelector('span:last-child').textContent=_steps[_stepIdx];
+    if(d&&_stepIdx>0){
+      const prev=document.createElement('div');
+      prev.style.cssText='display:flex;align-items:center;gap:8px;color:#34d399;font-size:11px';
+      prev.innerHTML=`<span>✓</span><span>${_steps[_stepIdx-1]}</span>`;
+      d.insertBefore(prev,d.firstChild);
+    }
+  },900);
 
   try{
     // Include the current objective so the LLM can interpret corrections in context
@@ -3972,6 +3989,10 @@ async function runDiscover(hint){
       :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     S._discoverActive=false;
+    clearInterval(_anaTimer);
+    // Remove animation card
+    const _anaEl=document.getElementById(_anaId);
+    if(_anaEl)_anaEl.closest('.msg')?.remove();
     const dj=await dr.json();typing(false);
     if(!dr.ok||!dj.ok){
       if(dj.requires_key){
@@ -4046,6 +4067,9 @@ async function runDiscover(hint){
       _syncPlanPanel();
     }
   }catch(e){
+    clearInterval(_anaTimer);
+    const _anaEl2=document.getElementById(_anaId);
+    if(_anaEl2)_anaEl2.closest('.msg')?.remove();
     S._discoverActive=false;
     typing(false);chat('err',`Analysis failed: ${esc(e.message)}`);setBadge('ERROR','err');
     sbUpdate({status:'Analysis failed',running:false,error:true});
