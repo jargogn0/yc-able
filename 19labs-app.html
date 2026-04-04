@@ -4601,22 +4601,85 @@ function _rpFinishDiscover(prof,obj,taskLabel,isReanalysis){
 function _updateRunProgress(d){
   if(!document.getElementById('ana-term'))return;
   const msg=d.msg,tag=d.tag;
-  if(tag==='engine'){
-    if(msg.includes('Profiling dataset')){_atLine('profiling dataset…');}
-    else if(msg.includes('Analyzing domain')){_atLine('analyzing domain…');}
-    else if(msg.includes('Inferring task')){_atLine('inferring task…');}
-    else if(msg.includes('Initialized project')){_atLine('project initialized');}
-    else if(msg.includes('Kaggle competition')){_atLine(msg.slice(0,90));}
-    else if(msg.match(/\d[\d,]+\s*rows\s*[×x]/i)){_atLine(msg.slice(0,120),'highlight');}
-    else if(msg.includes('train.py written')){
-      _atLine('train.py written — switching to code…');
-      setTimeout(()=>stab('code'),600); // auto-switch to Code tab
+
+  // ── sys: CSV source info ──────────────────────────────────────
+  if(tag==='sys'){
+    if(msg.includes('CSV from cache')||msg.includes('CSV →')){
+      // "CSV from cache → Train.csv + 2 companion files"
+      const parts=msg.split('→');
+      const detail=(parts[1]||'').trim().slice(0,60);
+      _atLine(`files    ${detail}`,'dim');
     }
-    else if(msg.includes('Fitting model')){_atLine(msg.slice(0,80));}
-    else if(msg.includes('EXPERIMENT ')){_atLine(msg.slice(0,80));}
   }
-  // Do NOT echo task/target from engine — those come from the agreed plan shown above
-  // Remove terminal and switch to Exp tab when first experiment result arrives
+
+  // ── engine: analysis pipeline ────────────────────────────────
+  if(tag==='engine'){
+    if(msg.includes('Profiling dataset')){_atLine('');}
+    else if(msg.match(/\d[\d,]+\s*rows\s*[×x]/i)){
+      // "642,175 rows × 13 cols | numeric=[...] | cat=[...]"
+      const rm=msg.match(/([\d,]+\s*rows\s*[×x]\s*\d+\s*cols)/i);
+      if(rm)_atLine(rm[1],'highlight');
+      const nm=msg.match(/numeric=\[([^\]]*)\]/);
+      const cm=msg.match(/cat(?:egorical)?=\[([^\]]*)\]/);
+      if(nm){const c=nm[1].split(',').map(s=>s.trim().replace(/['"]/g,'')).filter(Boolean).slice(0,4).join(', ');_atLine(`numeric  ${c}${nm[1].split(',').length>4?'…':''}`);}
+      if(cm){const c=cm[1].split(',').map(s=>s.trim().replace(/['"]/g,'')).filter(Boolean).slice(0,4).join(', ');_atLine(`categ    ${c}${cm[1].split(',').length>4?'…':''}`);}
+    }
+    else if(msg.includes('Signals:')){
+      // Extract leading signal type(s)
+      const sm=msg.match(/Signals:\s*([A-Z+_]+)/);
+      if(sm)_atLine(`signal   ${sm[1].replace(/_/g,' ').toLowerCase()}`,'dim');
+    }
+    else if(msg.includes('Analyzing domain')){_atLine('analyzing domain…','dim');}
+    else if(msg.includes('Inferring task')){_atLine('inferring task…','dim');}
+    else if(msg.includes('Kaggle competition')){
+      const km=msg.match(/test=(\S+?)(?:,|\s|$)/);
+      _atLine(`kaggle   ${km?'test='+km[1]:'competition detected'}`,'highlight');
+    }
+    else if(msg.includes('Initialized project')){_atLine('');}
+    else if(msg.includes('program.md written')){_atLine('plan written');}
+    else if(msg.includes('train.py written')){
+      _atLine('');
+      _atLine('train.py written ─────────────────────','highlight');
+      setTimeout(()=>stab('code'),600);
+    }
+    else if(msg.includes('EXPERIMENT ')){
+      const em=msg.match(/EXPERIMENT\s+(\d+)\/(\d+)/);
+      if(em){_atLine('');_atLine(`exp ${em[1]}/${em[2]} ─────────────────────────────────`);}
+    }
+    else if(msg.includes('Fitting model')){_atLine(msg.replace(/\[.*?\]/g,'').trim().slice(0,80),'dim');}
+    else if(msg.includes('Crash recovery')||msg.includes('auto-repair')){_atLine(`⚠ ${msg.slice(0,70)}`,'dim');}
+  }
+
+  // ── claude: LLM analysis results ─────────────────────────────
+  if(tag==='claude'){
+    // "Task: Regression | Target: radiation (W/m2) | Metric: rmse (lower_is_better)"
+    const tgt=msg.match(/Target:\s*([^|]+)/);
+    const tsk=msg.match(/Task:\s*([^|]+)/);
+    const met=msg.match(/Metric:\s*([^(|]+)/);
+    if(tgt&&tsk){
+      _atLine('');
+      _atLine(`target   ${tgt[1].trim()}`,'highlight');
+      _atLine(`task     ${tsk[1].trim().toLowerCase()}`,'highlight');
+      if(met)_atLine(`metric   ${met[1].trim().toUpperCase()}`,'highlight');
+    }
+    // "Domain: Climate/Renewable Energy — ..."
+    const dm=msg.match(/^Domain:\s*(.+)/);
+    if(dm){
+      const short=dm[1].replace(/—.*/,'').replace(/–.*/,'').trim().slice(0,55);
+      _atLine(`domain   ${short}`,'dim');
+    }
+    // "ID cols: ['X'] | Leakage cols: ['Y']"
+    const lk=msg.match(/Leakage cols:\s*(\[[^\]]+\])/);
+    if(lk&&lk[1]!=='[]')_atLine(`leakage  ${lk[1]}`,'dim');
+    // "Good enough: ..."
+    const ge=msg.match(/Good enough:\s*(.+)/);
+    if(ge)_atLine(`goal     ${ge[1].slice(0,60)}`,'dim');
+    // Confidence
+    const cf=msg.match(/Confidence:\s*(\d+)%/);
+    if(cf)_atLine(`confidence ${cf[1]}%`,'dim');
+  }
+
+  // ── result: first experiment done — switch to exp tab ────────
   if(tag==='result'&&msg.includes('Exp ')){
     _rpRemove();
     stab('exp');
