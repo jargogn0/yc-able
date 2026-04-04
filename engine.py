@@ -1971,6 +1971,9 @@ KAGGLE COMPETITION MODE — MANDATORY RULES:
 2. After CV, retrain the FINAL model on ALL of train.csv (no holdout withheld).
 3. Load {repr(_kaggle_test)} separately — unlabelled test set. NEVER train on it.
 4. Apply the EXACT same preprocessing pipeline (fitted on train only) to the test set.
+   CRITICAL: wrap ALL feature engineering + preprocessing + model into ONE joblib.dump-able Pipeline or object
+   so that model.predict(raw_test_df[feature_cols]) works without any extra code. This lets the safety net
+   regenerate submission.csv automatically if your inline code fails.
 5. EVERY experiment MUST generate submission.csv — this is not optional, not deferred to future experiments.
    Generate predictions on the test set in THIS experiment and save submission.csv NOW:
   import os
@@ -4316,7 +4319,22 @@ def run_research(
                         failure_reason = ""
                         consecutive_crashes = 0
                         train_py = repaired
-                        log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f} (recovered)")
+                        # Sentinel check: catch zero/impossible metrics even in recovery path
+                        _is_rcv_sentinel = (
+                            math.isnan(metric_val) or math.isinf(metric_val) or
+                            metric_val in (999, 999.0, 999.9, 999.99, 9999, 99999,
+                                           1000, 10000, -1, -999, -9999, 0) or
+                            (lower and metric_val >= 500) or
+                            (not lower and metric_val <= 0.001)
+                        )
+                        if _is_rcv_sentinel:
+                            log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f} (recovered) SENTINEL — treating as failure")
+                            res["success"] = False
+                            error = f"Sentinel metric {metric_val} in recovery — likely data leakage or silent failure"
+                            failure_reason = "bad_output_format"
+                            consecutive_crashes += 1
+                        else:
+                            log.result(f"Exp {n}: {model_name} → {metric_name}={metric_val:.6f} (recovered)")
                     else:
                         error = retry_res.get("error", error)
                         failure_reason = classify_failure_reason(error)
@@ -4558,12 +4576,29 @@ Output ONLY a complete ```python block.""", 4200)
 
     # ── Kaggle safety net: generate submission.csv if still missing ──────────
     if _is_kaggle and _kaggle_test_file and not (ws / "submission.csv").exists():
-        log.engine("Kaggle: submission.csv missing after all experiments — generating from best model...")
-        try:
-            _sub_script = f"""
+        log.engine("Kaggle: submission.csv missing after all experiments — regenerating from best exp...")
+        _best_num = best.get("num") if best else None
+        _best_exp_py = (ws / f"exp_{_best_num:02d}.py") if _best_num else None
+        # Strategy 1: re-run the best exp script — it has inline submission generation + feature engineering
+        if _best_exp_py and _best_exp_py.exists():
+            try:
+                import subprocess as _sp, sys as _sys
+                log.engine(f"Re-running exp_{_best_num:02d}.py to regenerate submission.csv...")
+                _res = _sp.run([_sys.executable, str(_best_exp_py)],
+                               capture_output=True, text=True, timeout=600, cwd=str(ws))
+                if (ws / "submission.csv").exists():
+                    log.engine(f"submission.csv regenerated from exp_{_best_num:02d}.py")
+                else:
+                    log.engine(f"Re-run completed but no submission.csv produced: {_res.stderr[-200:]}")
+            except Exception as _se:
+                log.engine(f"submission.csv re-run error: {_se}")
+        # Strategy 2: simple prediction script (works when model pipeline takes raw CSV columns)
+        if not (ws / "submission.csv").exists():
+            try:
+                _sub_script = f"""
 import os, sys, warnings
 warnings.filterwarnings('ignore')
-import pandas as pd
+import pandas as pd, numpy as np
 import joblib
 
 data_dir = {str(ws)!r}
@@ -4573,15 +4608,25 @@ model_path = os.path.join(data_dir, 'best_model.pkl')
 test_df = pd.read_csv(test_path)
 model = joblib.load(model_path)
 
-# Use model's known feature columns; fall back to numeric-only
+# Try to get expected feature names from model
 feat_cols = None
 if hasattr(model, 'feature_names_in_'):
     feat_cols = list(model.feature_names_in_)
+    # Add any missing columns with 0 (engineered features not in raw test)
+    for c in feat_cols:
+        if c not in test_df.columns:
+            test_df[c] = 0
+    X = test_df[feat_cols]
 elif hasattr(model, 'n_features_in_'):
     num_cols = test_df.select_dtypes(include='number').columns.tolist()
-    feat_cols = num_cols[:model.n_features_in_]
+    # Pad with zeros if test has fewer numeric cols than model expects
+    X = test_df[num_cols].copy()
+    while X.shape[1] < model.n_features_in_:
+        X[f'__pad_{{X.shape[1]}}'] = 0.0
+    X = X.iloc[:, :model.n_features_in_]
+else:
+    X = test_df.select_dtypes(include='number')
 
-X = test_df[feat_cols] if feat_cols else test_df.select_dtypes(include='number')
 preds = model.predict(X)
 
 # Use sample submission layout if available
@@ -4598,15 +4643,15 @@ sub = pd.DataFrame({{id_col: test_df[id_col], pred_col: preds}})
 sub.to_csv(os.path.join(data_dir, 'submission.csv'), index=False)
 print(f"submission.csv saved — {{len(sub)}} rows, columns: {{list(sub.columns)}}")
 """
-            import subprocess as _sp, sys as _sys
-            _res = _sp.run([_sys.executable, "-c", _sub_script],
-                           capture_output=True, text=True, timeout=120)
-            if _res.returncode == 0:
-                log.engine(_res.stdout.strip() or "submission.csv generated")
-            else:
-                log.engine(f"submission.csv generation failed: {_res.stderr[-300:]}")
-        except Exception as _se:
-            log.engine(f"submission.csv auto-generation error: {_se}")
+                import subprocess as _sp, sys as _sys
+                _res = _sp.run([_sys.executable, "-c", _sub_script],
+                               capture_output=True, text=True, timeout=120)
+                if _res.returncode == 0:
+                    log.engine(_res.stdout.strip() or "submission.csv generated (simple predict)")
+                else:
+                    log.engine(f"submission.csv simple predict failed: {_res.stderr[-300:]}")
+            except Exception as _se:
+                log.engine(f"submission.csv auto-generation error: {_se}")
 
     # ── REPORT + DEPLOY ──────────────────────────────────────────
     total_experiments = len(history)
