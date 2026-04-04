@@ -1072,12 +1072,19 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
             notes.append("fixed_mse_squared_kwarg")
 
     # Strip any DATA_PATH or TIME_BUDGET redefinitions — these are injected by execute()
+    # Match BOTH top-level and indented assignments to prevent overrides inside functions/loops
     for var in ("DATA_PATH", "TIME_BUDGET"):
-        pattern = rf'^{var}\s*=\s*.+$'
+        pattern = rf'^\s*{var}\s*=\s*.+$'  # \s* handles indented lines
         new_fixed = re.sub(pattern, f"# {var} injected by 19Labs (removed duplicate)", fixed, flags=re.MULTILINE)
         if new_fixed != fixed:
             fixed = new_fixed
             notes.append(f"stripped_{var.lower()}_override")
+    # Also strip `del DATA_PATH` — would remove the injected variable
+    del_pattern = r'^\s*del\s+DATA_PATH\b.*$'
+    new_fixed = re.sub(del_pattern, "# del DATA_PATH removed by 19Labs", fixed, flags=re.MULTILINE)
+    if new_fixed != fixed:
+        fixed = new_fixed
+        notes.append("stripped_del_data_path")
 
     # Catch os.environ.get('DATA_PATH', ...) pattern — replace with bare DATA_PATH usage
     env_pattern = r"os\.environ\.get\(\s*['\"]DATA_PATH['\"].*?\)"
@@ -1845,6 +1852,7 @@ def write_program_md(profile, obj, history, insights, domain_analysis=""):
 - Pre-installed: sklearn, xgboost, lightgbm, catboost, pandas, numpy, matplotlib, scipy, statsmodels, optuna, shap, joblib
 - Any missing package is auto-installed on demand via pip. Use whatever you need.
 - Use whatever is genuinely best for the task. Do NOT artificially limit yourself.
+- BANNED: AutoGluon / autogluon — too slow for iterative research. NEVER recommend it. Use LightGBM/XGBoost/CatBoost.
 
 KNOWN API BREAKAGES — avoid these exactly:
 - sklearn ≥1.4: mean_squared_error() has NO `squared` kwarg. Use np.sqrt(mean_squared_error(y,p)) for RMSE.
@@ -2121,6 +2129,7 @@ DO NOT say "I will generate submission.csv in the next experiment". Generate it 
 - Any missing package is auto-installed on demand via pip. Use whatever you need.
 - CRITICAL: Use what genuinely fits. For NLP → transformers (HuggingFace). For time series → prophet/statsmodels.
   For imbalanced → SMOTE+class weights. For tabular → gradient boosting + optuna. For images → torch/tensorflow.
+- BANNED: AutoGluon / autogluon — too slow for iterative research. NEVER use it. Use LightGBM/XGBoost/CatBoost for all tabular tasks.
 
 KNOWN API BREAKAGES — these will crash, avoid exactly:
 - mean_squared_error(y, p, squared=False) → WRONG. Use: np.sqrt(mean_squared_error(y, p))
@@ -2133,7 +2142,7 @@ EXPERT DOMAIN ANALYSIS (source of truth):
 DATA-TYPE ROUTING: {_dtype_routing}
 {_struct_block}
 
-EXPERIMENT: {exp_num} ({_tier} tier){" — write a clean, FAST LightGBM/XGBoost/CatBoost baseline. NEVER use GradientBoostingRegressor/GradientBoostingClassifier or RandomForest for exp 1 — they are 10-100x slower than LightGBM for zero benefit. Use LightGBM with n_jobs=-1, num_leaves=63, n_estimators=500. No Optuna, no stacking, no ensembles. Single model, solid preprocessing, correct metric." if exp_num == 1 else ""}
+EXPERIMENT: {exp_num} ({_tier} tier){" — write a clean, FAST LightGBM/XGBoost/CatBoost baseline. NEVER use AutoGluon, GradientBoostingRegressor, GradientBoostingClassifier or RandomForest for exp 1 — they are too slow. Use LightGBM with n_jobs=-1, num_leaves=63, n_estimators=500. No Optuna, no stacking, no ensembles. Single model, solid preprocessing, correct metric." if exp_num == 1 else ""}
 TASK: {obj.get('task', 'Regression')} | TARGET: {obj.get('target', '')}
 METRIC: {obj.get('metric', 'rmse')} ({obj.get('direction', 'lower_is_better')})
 
