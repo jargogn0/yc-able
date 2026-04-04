@@ -2590,6 +2590,18 @@ async def start_run(req: RunRequest, request: Request):
                         # AG reference pkl — model is in _MODELS_DIR/_ag; count as saved
                         _model_saved = True
                         result["model_saved"] = True
+                    # ── Embed model as base64 in result_json for small/medium models ──
+                    # This third persistence layer survives even ephemeral storage loss,
+                    # since result_json lives in the SQLite DB / PostgreSQL.
+                    _B64_LIMIT = 10 * 1024 * 1024  # 10 MB
+                    if not _is_ag_ref and len(_blob) <= _B64_LIMIT:
+                        try:
+                            import base64 as _b64enc
+                            result["model_b64"] = _b64enc.b64encode(_blob).decode()
+                            result["model_ext"] = _model_ext
+                            print(f"[models] Embedded model as base64 ({len(_blob)//1024}KB) in result_json", flush=True)
+                        except Exception as _b64e:
+                            print(f"[models] base64 embed failed: {_b64e}", flush=True)
                 except Exception as _mbe:
                     print(f"[models] model save failed: {_mbe}", flush=True)
                     cb("warn", f"⚠ Model save failed: {_mbe}")
