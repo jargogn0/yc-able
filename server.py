@@ -2760,6 +2760,49 @@ async def push_code(run_id: str, req: PushCodeRequest, request: Request):
     train_py.write_text(req.code)
     return {"ok": True, "msg": "train.py updated in workspace"}
 
+@app.post("/api/run/{run_id}/exec-code")
+async def exec_code(run_id: str, req: PushCodeRequest, request: Request):
+    """Save code to train.py and stream execution output via SSE."""
+    if run_id not in RUNS:
+        raise HTTPException(404, "Run not found")
+    run = RUNS[run_id]
+    caller_token = _token_from_request(request)
+    caller_user = _get_user(caller_token)
+    caller_ip = _trial_ip(request)
+    run_owner_id = run.get("owner_id")
+    run_owner_ip = run.get("owner_ip")
+    if run_owner_id and (not caller_user or caller_user["id"] != run_owner_id):
+        raise HTTPException(403, "Not your run")
+    if not run_owner_id and run_owner_ip and caller_ip != run_owner_ip:
+        raise HTTPException(403, "Not your run")
+    ws = Path(run.get("ws", ""))
+    if not ws.exists():
+        raise HTTPException(404, "Workspace not found")
+    # Save code
+    train_py = ws / "train.py"
+    train_py.write_text(req.code)
+
+    async def _stream():
+        yield "data: {\"t\":\"start\"}\n\n"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, str(train_py),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(ws),
+            )
+            async for raw in proc.stdout:
+                line = raw.decode("utf-8", errors="replace").rstrip("\n")
+                yield f"data: {json.dumps({'t':'out','line':line})}\n\n"
+            await proc.wait()
+            rc = proc.returncode
+            yield f"data: {json.dumps({'t':'done','rc':rc})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'t':'err','msg':str(e)})}\n\n"
+
+    return StreamingResponse(_stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
 # ── AI BUSINESS INSIGHT ────────────────────────────────────────
 @app.get("/api/run/{run_id}/interpret")
 async def interpret_run(run_id: str, request: Request):
