@@ -1846,7 +1846,9 @@ RULES:
 - Final line: print(json.dumps(metrics)) — MUST include "model", plus train_ and test_ prefixed metrics.
 - If the error is a missing package, keep the import — the engine auto-installs it before the next run. NEVER add subprocess/os.system install calls inside the code.
 
-Fix the error. Keep the model/approach if possible. Output ONLY fixed ```python code.""", 6000))
+Fix the error. Keep the model/approach if possible.
+IMPORTANT: NEVER introduce GradientBoostingRegressor, GradientBoostingClassifier, RandomForestRegressor, or RandomForestClassifier — use LightGBM/XGBoost/CatBoost instead.
+Output ONLY fixed ```python code.""", 6000))
     fixed, _ = apply_code_guardrails(fixed)
     return fixed
 
@@ -1984,45 +1986,59 @@ def write_train_py(program_md, profile, obj, exp_num, history, domain_analysis="
     _is_kaggle = bool(obj.get('is_kaggle'))
     _kaggle_test = obj.get('kaggle_test_file') or ''
     _kaggle_sample = obj.get('kaggle_sample_file') or ''
+    _kaggle_target_cols = obj.get('kaggle_target_cols') or []
+    _kaggle_id_col = obj.get('kaggle_id_col') or 'ID'
+    _kaggle_targets_computed = obj.get('kaggle_targets_computed', False)
     if _is_kaggle and _kaggle_test:
         _sample_line = (
             f"  sample_sub = pd.read_csv(os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_sample)}))"
             if _kaggle_sample else
             "  # Read sample_submission.csv to get the required output column names"
         )
+        # Build computed-targets block: explain how to derive targets when they don't exist in Train.csv
+        _computed_block = ""
+        if _kaggle_targets_computed and _kaggle_target_cols:
+            _computed_block = f"""
+⚠️  CRITICAL — COMPUTED TARGETS: The submission requires {_kaggle_target_cols} but these columns DO NOT exist in Train.csv.
+You MUST COMPUTE them from the raw training data. Common patterns:
+- Group Train.csv by the ID column ({repr(_kaggle_id_col)}) — this creates one row per submission ID
+- Compute aggregated statistics (mean, std, RMSE, bias) from the raw measurements within each group
+- Use these aggregated values as your training targets
+- For test set: use the trained model to predict the aggregated statistics per test ID
+NEVER predict raw row-level values and call them {_kaggle_target_cols[0]} — that is WRONG.
+"""
+        _target_cols_str = repr(_kaggle_target_cols) if _kaggle_target_cols else "sample_sub.columns[1:]"
+        _id_col_str = repr(_kaggle_id_col)
         _kaggle_train_block = f"""
-KAGGLE COMPETITION MODE — MANDATORY RULES:
-1. DO NOT do a simple train_test_split for evaluation. Use StratifiedKFold (classification)
-   or KFold (regression) cross-validation on the full train.csv to estimate performance.
+KAGGLE COMPETITION MODE — MANDATORY RULES:{_computed_block}
+1. DO NOT do a simple train_test_split for evaluation. Use GroupKFold (group by station/ID) or KFold
+   cross-validation on the full train.csv to estimate performance.
 2. After CV, retrain the FINAL model on ALL of train.csv (no holdout withheld).
 3. Load {repr(_kaggle_test)} separately — unlabelled test set. NEVER train on it.
-4. Apply the EXACT same preprocessing pipeline (fitted on train only) to the test set.
-   CRITICAL: wrap ALL feature engineering + preprocessing + model into ONE joblib.dump-able Pipeline or object
-   so that model.predict(raw_test_df[feature_cols]) works without any extra code. This lets the safety net
-   regenerate submission.csv automatically if your inline code fails.
-5. EVERY experiment MUST generate submission.csv — this is not optional, not deferred to future experiments.
-   Generate predictions on the test set in THIS experiment and save submission.csv NOW:
+4. TARGET COLUMNS ARE: {_target_cols_str} — these are the columns in submission.csv. Train your model to predict EXACTLY these.
+5. Apply the EXACT same preprocessing pipeline (fitted on train only) to the test set.
+6. EVERY experiment MUST generate submission.csv NOW — mandatory, not deferred:
   import os
   test_path = os.path.join(os.path.dirname(DATA_PATH), {repr(_kaggle_test)})
   test_df = pd.read_csv(test_path)
+{_sample_line}
+  id_col = sample_sub.columns[0]  # {_kaggle_id_col}
+  target_cols = list(sample_sub.columns[1:])  # {_kaggle_target_cols}
   # Apply same feature engineering / preprocessing as for train (fitted on train, transform test)
   test_features = <apply_same_pipeline_as_train>(test_df)
   test_preds = final_model.predict(test_features)
-{_sample_line}
-  # Build submission using sample_submission column layout
-  id_col = sample_sub.columns[0]
-  target_cols = list(sample_sub.columns[1:])  # ALL target columns (handles multi-output)
+  # Build submission DataFrame with ALL required columns
   import numpy as _np_sub
   _preds_arr = _np_sub.array(test_preds) if not isinstance(test_preds, _np_sub.ndarray) else test_preds
-  if len(target_cols) == 1 or _preds_arr.ndim == 1:
-      # Single-output: simple 1D prediction
-      submission = pd.DataFrame({{id_col: test_df[id_col], target_cols[0]: _preds_arr.ravel() if _preds_arr.ndim > 1 else _preds_arr}})
+  if _preds_arr.ndim == 1 and len(target_cols) == 1:
+      submission = pd.DataFrame({{id_col: test_df[id_col], target_cols[0]: _preds_arr}})
   else:
-      # Multi-output: test_preds is 2D array (n_samples, n_targets)
+      # Multi-output: _preds_arr shape (n_samples, n_targets)
       sub_data = {{id_col: test_df[id_col]}}
       for _i, _col in enumerate(target_cols):
-          sub_data[_col] = _preds_arr[:, _i] if _preds_arr.ndim == 2 and _preds_arr.shape[1] > _i else _preds_arr[:, 0]
+          sub_data[_col] = _preds_arr[:, _i] if _preds_arr.ndim == 2 and _preds_arr.shape[1] > _i else _preds_arr.ravel()
       submission = pd.DataFrame(sub_data)
+  assert list(submission.columns) == list(sample_sub.columns[:len(submission.columns)]), f"Column mismatch: {{list(submission.columns)}} vs {{list(sample_sub.columns)}}"
   submission.to_csv('submission.csv', index=False)
   print(f"submission.csv saved — {{len(submission)}} rows, columns: {{list(submission.columns)}}")
 DO NOT say "I will generate submission.csv in the next experiment". Generate it NOW.
@@ -4150,6 +4166,40 @@ def run_research(
     _kaggle_sample_file = next((n for n in _kaggle_files if "sample" in n.lower() or "submission" in n.lower()), None)
     if _is_kaggle:
         log.engine(f"Kaggle competition detected — test={_kaggle_test_file}, sample={_kaggle_sample_file}")
+
+    # ── For Kaggle competitions: override target from SampleSubmission.csv ──
+    # The actual competition targets live in SampleSubmission, NOT in Train.csv.
+    # Train.csv may have raw measurements that need to be AGGREGATED to produce the targets.
+    if _is_kaggle and _kaggle_sample_file:
+        _sample_path = _ws / _kaggle_sample_file
+        try:
+            import pandas as _spd
+            _sample_df = _spd.read_csv(_sample_path, nrows=0)
+            _sample_cols = list(_sample_df.columns)
+            _sample_targets = _sample_cols[1:]  # all non-ID columns
+            if _sample_targets:
+                obj["kaggle_target_cols"] = _sample_targets
+                obj["kaggle_id_col"] = _sample_cols[0]
+                if len(_sample_targets) == 1:
+                    obj["target"] = _sample_targets[0]
+                else:
+                    # Multi-output: set first target as primary, store all
+                    obj["target"] = _sample_targets[0]
+                    obj["task"] = "Regression"  # multi-output regression
+                    obj["metric"] = "rmse"
+                    obj["direction"] = "lower_is_better"
+                # Check if target columns actually exist in Train.csv — if not, mark as computed
+                _train_hdrs = set(profile.get("headers", []))
+                _missing_in_train = [t for t in _sample_targets if t not in _train_hdrs]
+                if _missing_in_train:
+                    obj["kaggle_targets_computed"] = True
+                    obj["kaggle_targets_missing"] = _missing_in_train
+                    log.engine(f"Kaggle targets {_sample_targets} not in Train.csv — must be COMPUTED from raw data")
+                else:
+                    obj["kaggle_targets_computed"] = False
+                log.engine(f"Kaggle targets from SampleSubmission: {_sample_targets} | id_col: {_sample_cols[0]}")
+        except Exception as _ske:
+            log.engine(f"Warning: couldn't read SampleSubmission columns: {_ske}")
 
     # ── INIT: program.md (mutable spec) + train.py (the ONLY file AI edits) ──
     history = []
