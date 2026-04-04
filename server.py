@@ -4057,6 +4057,29 @@ def get_forecast(run_id: str, request: Request, limit: int = 1000):
                 raise HTTPException(500, f"Could not parse forecast: {e}")
     raise HTTPException(404, "No forecast data yet — run an experiment first")
 
+# ── RESEARCH WIKI ──────────────────────────────────────────────
+@app.get("/api/run/{run_id}/wiki")
+def get_wiki(run_id: str, request: Request):
+    """Return the compiled research wiki for this run as JSON {index, articles}."""
+    run_check = _get_run_or_404(run_id)
+    _assert_run_owner(run_check, request)
+    ws_str = (RUNS.get(run_id) or {}).get("ws") or run_check.get("ws")
+    if not ws_str:
+        raise HTTPException(404, "Run workspace not found")
+    wiki_dir = Path(ws_str) / "wiki"
+    if not wiki_dir.exists():
+        return {"ok": True, "articles": [], "index": ""}
+    index_txt = ""
+    if (wiki_dir / "index.md").exists():
+        index_txt = (wiki_dir / "index.md").read_text(errors="ignore")
+    articles = []
+    for art in sorted(wiki_dir.glob("exp_*.md"), key=lambda f: f.name):
+        articles.append({
+            "name": art.stem,
+            "content": art.read_text(errors="ignore"),
+        })
+    return {"ok": True, "index": index_txt, "articles": articles}
+
 # ── TRAIN.PY CONTENT (text endpoint) ──────────────────────────
 @app.get("/api/run/{run_id}/train-py")
 def get_train_py(run_id: str, request: Request):

@@ -157,6 +157,22 @@ body.desktop-mac .topbar{padding-left:84px}
 .lb-best td{color:var(--text);font-weight:600}
 .lb-best td:nth-child(2){color:var(--accent)}
 
+/* Research Wiki */
+.wiki-section{margin:20px 0;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.wiki-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--border)}
+.wiki-articles{padding:0}
+.wiki-article{border-bottom:1px solid rgba(255,255,255,.04)}
+.wiki-article:last-child{border-bottom:none}
+.wiki-art-title{display:flex;align-items:center;gap:6px;padding:10px 18px;cursor:pointer;user-select:none;transition:background var(--t)}
+.wiki-art-title:hover{background:rgba(255,255,255,.03)}
+.wiki-art-body{padding:0 18px 14px;font-size:12px;color:var(--text-2);line-height:1.7;display:block}
+.wiki-art-body h1,.wiki-art-body h2,.wiki-art-body h3{color:var(--text);font-size:12px;font-weight:700;margin:10px 0 4px}
+.wiki-art-body table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono);margin:8px 0}
+.wiki-art-body th{color:var(--text-3);font-weight:600;text-align:left;padding:3px 8px;border-bottom:1px solid var(--border)}
+.wiki-art-body td{padding:3px 8px;color:var(--text-2);border-bottom:1px solid rgba(255,255,255,.03)}
+.wiki-art-body code{background:rgba(255,255,255,.06);border-radius:3px;padding:1px 5px;font-family:var(--mono);font-size:11px}
+.wiki-art-body pre{background:rgba(0,0,0,.3);border-radius:6px;padding:10px 14px;overflow-x:auto;font-size:11px;font-family:var(--mono)}
+
 /* Deploy prompt card */
 .deploy-prompt{background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(167,139,250,.05));border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:16px 18px;margin:4px 0}
 .deploy-prompt h4{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}
@@ -5387,6 +5403,40 @@ async function loadForecastTable(runId){
         });
         lh+=`</tbody></table></div>`;
         el.insertAdjacentHTML('beforeend',lh);
+      }
+    }catch(_){}
+    // Append Research Wiki if experiments have run
+    try{
+      const wr=await apiFetch(`${BASE}/api/run/${runId}/wiki`);
+      if(wr.ok){
+        const wd=await wr.json();
+        if(wd.ok&&wd.articles?.length){
+          let wh=`<div class="wiki-section">
+            <div class="wiki-header">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:var(--text)">📚 Research Wiki</div>
+                <div style="font-size:11px;color:var(--text-3);margin-top:2px">${wd.articles.length} experiment articles · auto-compiled by agent</div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button onclick="this.closest('.wiki-section').querySelector('.wiki-articles').style.display=this.closest('.wiki-section').querySelector('.wiki-articles').style.display==='none'?'block':'none';this.textContent=this.textContent==='▼ Collapse'?'▶ Expand':'▼ Collapse'" style="padding:5px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-size:11px;cursor:pointer">▼ Collapse</button>
+              </div>
+            </div>
+            <div class="wiki-articles">`;
+          wd.articles.slice().reverse().forEach(art=>{
+            const isKeep=art.content.includes('✅ KEEP');
+            const statusColor=isKeep?'#34d399':'#f87171';
+            wh+=`<div class="wiki-article">
+              <div class="wiki-art-title" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+                <span style="color:${statusColor};font-size:11px;margin-right:6px">${isKeep?'✅':'❌'}</span>
+                <span style="font-weight:600;color:var(--text)">${esc(art.name)}</span>
+                <span style="margin-left:auto;color:var(--text-3);font-size:10px">▼</span>
+              </div>
+              <div class="wiki-art-body">${md(art.content)}</div>
+            </div>`;
+          });
+          wh+=`</div></div>`;
+          el.insertAdjacentHTML('beforeend',wh);
+        }
       }
     }catch(_){}
   }catch(e){

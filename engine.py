@@ -255,6 +255,122 @@ SECONDARY_METRICS = ["r2", "mape", "mae", "rmse", "nse"]  # always request these
 MAX_CONTINUOUS_EXPERIMENTS = 200   # hard cap for continuous mode safety
 
 
+# ── KNOWLEDGE BASE (Karpathy-style LLM wiki) ─────────────────
+# Each KEEP writes a structured .md article to ws/wiki/exp_N.md.
+# revise_after_iteration injects the wiki summary so every experiment
+# builds on compiled research intelligence — knowledge compounds.
+
+def _kb_write_article(ws: pathlib.Path, n: int, score: dict, keep: bool,
+                      reasoning: str, what_next: str, obj: dict, model_name: str):
+    """Write a knowledge article for this experiment to ws/wiki/exp_N.md."""
+    try:
+        wiki_dir = ws / "wiki"
+        wiki_dir.mkdir(exist_ok=True)
+        obj = obj or {}
+        metric_name = obj.get("metric", "metric")
+        metric_val  = score.get(metric_name) or score.get(f"test_{metric_name}") if score else None
+        what_worked = score.get("what_worked", "") if score else ""
+        train_r2    = score.get("train_r2") if score else None
+        test_r2     = score.get("test_r2") if score else None
+        train_rmse  = score.get("train_rmse") if score else None
+        test_rmse   = score.get("test_rmse") if score else None
+
+        # Key numeric metrics for the article
+        _metric_lines = []
+        for k, v in (score or {}).items():
+            if isinstance(v, float) and k not in ("what_worked",):
+                _metric_lines.append(f"| {k} | {v:.6f} |")
+
+        article = f"""# Exp {n:02d} — {model_name}
+
+**Status**: {"✅ KEEP" if keep else "❌ DISCARD"}
+**Target**: `{obj.get('target','?')}` · **Task**: {obj.get('task','?')} · **Metric**: {metric_name.upper()}
+
+## Result
+{f"**{metric_name.upper()}** = `{metric_val:.6f}`" if isinstance(metric_val, float) else f"**{metric_name.upper()}** = {metric_val}"}
+{f"Train R² = {train_r2:.4f}  |  Test R² = {test_r2:.4f}" if train_r2 is not None and test_r2 is not None else ""}
+{f"Train RMSE = {train_rmse:.4f}  |  Test RMSE = {test_rmse:.4f}" if train_rmse is not None and test_rmse is not None else ""}
+
+## What Worked
+{what_worked or "(not recorded)"}
+
+## Reasoning
+{reasoning}
+
+## What to Try Next
+{what_next or "(not recorded)"}
+
+## Full Metrics
+| Metric | Value |
+|--------|-------|
+{"".join(_metric_lines) or "| (none) | — |"}
+"""
+        (wiki_dir / f"exp_{n:02d}.md").write_text(article.strip())
+        _kb_update_index(wiki_dir)
+    except Exception:
+        pass  # wiki is non-critical
+
+
+def _kb_update_index(wiki_dir: pathlib.Path):
+    """Recompile wiki/index.md from all exp_*.md articles."""
+    try:
+        articles = sorted(wiki_dir.glob("exp_*.md"), key=lambda f: f.name)
+        summaries = []
+        for art in articles:
+            txt = art.read_text(errors="ignore")
+            # Extract first Result line and What Worked
+            result_line = next((l.strip() for l in txt.splitlines() if l.strip().startswith("**") and ("=" in l or "KEEP" in l or "DISCARD" in l)), "")
+            worked_lines = []
+            in_worked = False
+            for line in txt.splitlines():
+                if line.startswith("## What Worked"):
+                    in_worked = True; continue
+                if in_worked:
+                    if line.startswith("##"): break
+                    if line.strip(): worked_lines.append(line.strip())
+            what_worked = " ".join(worked_lines)[:120]
+            summaries.append(f"- **{art.stem}**: {result_line} — {what_worked}")
+
+        index = f"""# Research Wiki — Index
+
+{chr(10).join(summaries) if summaries else "*(no experiments yet)*"}
+
+---
+*Auto-compiled by 19Labs knowledge base. Each experiment writes here on KEEP.*
+"""
+        (wiki_dir / "index.md").write_text(index.strip())
+    except Exception:
+        pass
+
+
+def _kb_read_context(ws: pathlib.Path, max_articles: int = 5) -> str:
+    """Return a compact wiki summary for injection into the next experiment prompt."""
+    try:
+        wiki_dir = ws / "wiki"
+        if not wiki_dir.exists():
+            return ""
+        index_path = wiki_dir / "index.md"
+        idx = index_path.read_text(errors="ignore").strip() if index_path.exists() else ""
+        # Also grab the last N articles in full
+        articles = sorted(wiki_dir.glob("exp_*.md"), key=lambda f: f.name)[-max_articles:]
+        art_txt = "\n\n---\n\n".join(
+            f"### {a.stem}\n" + a.read_text(errors="ignore").strip()
+            for a in articles
+        )
+        if not idx and not art_txt:
+            return ""
+        return f"""
+╔══════════════════════════════════════════════════════════════╗
+║  RESEARCH WIKI (accumulated experiment knowledge)            ║
+╠══════════════════════════════════════════════════════════════╣
+{idx}
+
+{art_txt}
+╚══════════════════════════════════════════════════════════════╝""".strip()
+    except Exception:
+        return ""
+
+
 def _detect_model_family(code: str) -> str:
     """Return the primary model family used in a train.py script."""
     if not code:
@@ -2647,7 +2763,7 @@ Output ONLY a complete ```python block.""",
                 clean = clean3
     return clean
 
-def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis="", obj=None):
+def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis="", obj=None, ws=None):
     hist_txt = "\n".join(
         f"- Exp {h.get('num', 0):02d}: {h.get('status', 'unknown')} "
         f"{h.get('metric_name', 'metric')}={h.get('metric_val', 0):.6f} "
@@ -2686,6 +2802,9 @@ def revise_after_iteration(program_md, train_py, score, error, history, domain_a
     _direction = _obj.get('direction', 'lower_is_better')
     _user_hint_extra = _obj.get('user_hint', '')
 
+    # Inject accumulated wiki knowledge so each experiment builds on prior research
+    _wiki_ctx = _kb_read_context(ws) if ws else ""
+
     review = ask(
         "You are an autonomous ML researcher and senior data scientist. "
         "You make sharp KEEP/DISCARD decisions and rewrite experiments with genuine domain expertise.",
@@ -2697,6 +2816,7 @@ AGREED OBJECTIVE (validated with user — DO NOT change):
   Target: {_target}
   Metric: {_metric.upper()} ({_direction}) ← optimize FOR THIS, nothing else
 ══════════════════════════════════════════════════════
+{_wiki_ctx}
 {('ADDITIONAL USER INSTRUCTION: "' + _user_hint_extra + '"') if _user_hint_extra else ""}
 {_family_saturation_directive}
 
@@ -4877,7 +4997,7 @@ def run_research(
             break
 
         # ── KEEP / DISCARD DECISION ──────────────────────────────
-        revision = revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=domain_analysis, obj=obj)
+        revision = revise_after_iteration(program_md, train_py, score, error, history, domain_analysis=domain_analysis, obj=obj, ws=ws)
         keep = bool(revision["keep"] and res["success"])
         program_md = revision["new_program_md"]
         train_py_candidate = revision["new_train_py"]
@@ -4995,6 +5115,9 @@ def run_research(
                     _pct = ((metric_val - _prev_best) / abs(_prev_best)) * 100
                     narrate(log_callback, "improvement", metric=metric_name, prev=_prev_best, curr=metric_val, pct=_pct)
 
+            # Knowledge base: write article for this kept experiment
+            _kb_write_article(ws, n, all_metrics or score, True, reasoning, _what_next, obj, model_name)
+
             # GIT: commit this winning state (branch advances)
             if git_ok:
                 sha = git_commit_experiment(ws, n, f"KEEP {model_name} {metric_name}={metric_val:.6f}")
@@ -5006,6 +5129,8 @@ def run_research(
                 no_improve_rounds += 1
             insights.append(f"Exp {n}: DISCARD — {reasoning}")
             narrate(log_callback, "discard_decision", reason=reasoning[:120])
+            # Knowledge base: also record discarded experiments (useful context)
+            _kb_write_article(ws, n, all_metrics or score, False, reasoning, _what_next, obj, model_name)
 
             # GIT: revert to last known good state (Karpathy: git reset --hard)
             if git_ok and best_train_py:
