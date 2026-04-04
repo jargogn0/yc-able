@@ -1881,7 +1881,7 @@ KARPATHY DISCIPLINE (MANDATORY):
 - train.py is the ONLY file you may edit. ALL code goes in train.py.
 - prepare.py is READ-ONLY. Never reference or modify it.
 - DATA_PATH and TIME_BUDGET are pre-defined variables injected at line 1. DO NOT redefine them. DO NOT use os.environ.
-- DATA_PATH points to the TRAINING CSV FILE (e.g. /workspace/Train.csv). To load other files in the same folder use: `data_dir = os.path.dirname(DATA_PATH)` then `pd.read_csv(os.path.join(data_dir, 'Test.csv'))`. NEVER do f"{DATA_PATH}Test.csv" — that appends to a filename, not a directory.
+- DATA_PATH points to the TRAINING CSV FILE (e.g. /workspace/Train.csv). To load other files in the same folder use: `data_dir = os.path.dirname(DATA_PATH)` then `pd.read_csv(os.path.join(data_dir, 'Test.csv'))`. NEVER do f"{{DATA_PATH}}Test.csv" — that appends to a filename, not a directory.
 - NEVER add pip/subprocess install calls inside train.py. Just write the import — the engine auto-installs any package before running your code.
 - TIME_BUDGET = {obj.get('time_budget', TIME_BUDGET)}s. Add wall-clock checks in training loops.
 - ALWAYS split data into train/test. Compute metrics on BOTH and report both.
