@@ -148,10 +148,14 @@ load_dotenv()
 def _resolve_db_path() -> Path:
     if os.environ.get("NINETEENLABS_DB"):
         return Path(os.environ["NINETEENLABS_DB"])
-    # Railway mounts persistent volumes at /data — use it automatically if present
-    railway_data = Path("/data")
-    if railway_data.exists() and railway_data.is_dir():
-        return railway_data / "19labs.db"
+    for candidate in [Path("/data"), Path("/app/run_models"), Path("/app/workspaces")]:
+        if candidate.exists() and candidate.is_dir():
+            try:
+                test = candidate / ".write_test"
+                test.touch(); test.unlink()
+                return candidate / "19labs.db"
+            except Exception:
+                continue
     return Path(__file__).parent / "19labs.db"
 
 DB_PATH = _resolve_db_path()
@@ -159,35 +163,45 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists before SQ
 _pg_mode = bool(os.environ.get("DATABASE_URL", "").strip())
 print(f"[db] Backend: {'PostgreSQL (DATABASE_URL)' if _pg_mode else f'SQLite at {DB_PATH}'}", flush=True)
 
-# Models dir: use same /data persistent volume when available (mirrors DB path logic)
+# Models dir — check multiple candidate mount points in priority order
 def _resolve_models_dir() -> Path:
-    railway_data = Path("/data")
-    if railway_data.exists() and railway_data.is_dir():
-        d = railway_data / "run_models"
-    else:
-        d = Path(__file__).parent / "run_models"
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        d = Path(tempfile.gettempdir()) / "19labs_run_models"
-        d.mkdir(parents=True, exist_ok=True)
+    candidates = [
+        Path("/data/run_models"),        # ideal: single /data volume
+        Path("/app/run_models"),         # Railway volume mounted at /app/run_models
+        Path(__file__).parent / "run_models",  # local / fallback
+    ]
+    for d in candidates:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            # Verify it's writable
+            test = d / ".write_test"
+            test.touch(); test.unlink()
+            return d
+        except Exception:
+            continue
+    d = Path(tempfile.gettempdir()) / "19labs_run_models"
+    d.mkdir(parents=True, exist_ok=True)
     return d
 
 _MODELS_DIR = _resolve_models_dir()
 print(f"[models] Storage: {_MODELS_DIR}", flush=True)
 
-# Workspaces dir: persistent on Railway /data, local fallback to sibling dir then /tmp
+# Workspaces dir — check multiple candidate mount points in priority order
 def _resolve_workspaces_dir() -> Path:
-    railway_data = Path("/data")
-    if railway_data.exists() and railway_data.is_dir():
-        d = railway_data / "workspaces"
-    else:
-        d = Path(__file__).parent / "workspaces"
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-    except Exception:
-        return Path(tempfile.gettempdir())
+    candidates = [
+        Path("/data/workspaces"),        # ideal: single /data volume
+        Path("/app/workspaces"),         # Railway volume mounted at /app/workspaces
+        Path(__file__).parent / "workspaces",  # local / fallback
+    ]
+    for d in candidates:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            test = d / ".write_test"
+            test.touch(); test.unlink()
+            return d
+        except Exception:
+            continue
+    return Path(tempfile.gettempdir())
 
 _WS_DIR = _resolve_workspaces_dir()
 print(f"[workspaces] Storage: {_WS_DIR}", flush=True)
