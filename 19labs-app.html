@@ -434,6 +434,33 @@ input[type=file]{display:none}
 .exp-tag.fail{color:var(--red);background:var(--red-soft);border:1px solid rgba(239,68,68,.15)}
 .exp-tag.ok{color:var(--text-3);background:var(--surface-2);border:1px solid var(--border)}
 
+/* ── Run progress panel (shown in Exp tab before experiments start) ── */
+.run-progress{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:20px 22px;animation:si .3s ease;display:flex;flex-direction:column;gap:16px}
+.rp-header{display:flex;align-items:center;gap:12px}
+.rp-icon{width:38px;height:38px;border-radius:10px;background:var(--accent-soft);border:1px solid rgba(59,130,246,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px}
+.rp-title{font-size:15px;font-weight:700;color:var(--text);line-height:1.2}
+.rp-sub{font-size:11px;color:var(--text-3);margin-top:1px}
+.rp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.rp-stat{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center}
+.rp-stat-val{font-size:18px;font-weight:700;font-family:var(--mono);color:var(--text);line-height:1}
+.rp-stat-lbl{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-top:4px}
+.rp-stat.highlight .rp-stat-val{color:var(--accent)}
+.rp-stat.highlight{border-color:rgba(59,130,246,.2);background:var(--accent-soft)}
+.rp-phases{display:flex;flex-direction:column;gap:6px}
+.rp-phase{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;border:1px solid transparent;transition:all .25s;font-size:12px;color:var(--text-3)}
+.rp-phase.active{background:rgba(59,130,246,.06);border-color:rgba(59,130,246,.15);color:var(--text)}
+.rp-phase.done{color:var(--text-3)}
+.rp-phase-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--border-2);transition:all .25s}
+.rp-phase.done .rp-phase-dot{background:#34d399}
+.rp-phase.active .rp-phase-dot{background:var(--accent);animation:pulse 1.2s infinite}
+.rp-phase-check{font-size:10px;color:#34d399;flex-shrink:0;width:8px}
+.rp-phase-lbl{flex:1}
+.rp-phase-time{font-family:var(--mono);font-size:9px;color:var(--text-3);margin-left:auto}
+.rp-live{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 13px;font-size:11px;font-family:var(--mono);color:var(--text-3);min-height:24px;line-height:1.5;transition:all .2s}
+.rp-live-line{display:flex;align-items:flex-start;gap:7px;margin-bottom:2px}
+.rp-live-tag{color:#6366f1;font-size:10px;flex-shrink:0;margin-top:1px}
+@keyframes rp-pulse{0%,100%{opacity:.4}50%{opacity:1}}
+
 /* Live metric chart */
 .metric-chart{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;animation:si .3s ease}
 .metric-chart-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
@@ -1328,6 +1355,11 @@ body.light .toast.info { background: rgba(255,255,255,.95); color: #52525b; bord
 body.light .side-scroll::-webkit-scrollbar-thumb,
 body.light .chat-msgs::-webkit-scrollbar-thumb,
 body.light .ws-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,.1) }
+body.light .run-progress { background: #fff; border-color: rgba(0,0,0,.08) }
+body.light .rp-stat { background: #faf9fe; border-color: rgba(0,0,0,.06) }
+body.light .rp-stat.highlight { background: rgba(59,130,246,.06) }
+body.light .rp-stat-val { color: #18181b }
+body.light .rp-live { background: #f4f3f8; border-color: rgba(0,0,0,.06) }
 </style>
 </head>
 <body>
@@ -4174,6 +4206,7 @@ async function launchRun(){
   document.getElementById('run-stat').style.display='';
   document.getElementById('stop-btn').style.display='';
   S.runId=null;
+  _initRunProgress();
   stab('exp');updStatus();
 
   const obj=S.hint||S.discovery?.discovery?.recommended_objective||'';
@@ -4413,8 +4446,117 @@ function _sealNarrBubble(){
   if(el)el.removeAttribute('id');
 }
 
+// ── Run Progress Panel ──────────────────────────────────────────
+const _RP_PHASES=[
+  {id:'profile', label:'Profiling dataset', icon:'📊', done:false},
+  {id:'domain',  label:'Domain & signal analysis', icon:'🔍', done:false},
+  {id:'infer',   label:'Inferring task & target', icon:'🎯', done:false},
+  {id:'plan',    label:'Planning experiments', icon:'🧪', done:false},
+  {id:'train',   label:'Training models', icon:'⚡', done:false},
+];
+let _rpPhase=0; // index of active phase
+
+function _initRunProgress(){
+  const c=document.getElementById('p-exp');
+  _rpPhase=0;
+  _RP_PHASES.forEach(p=>p.done=false);
+  const fname=S.file?.name||'dataset';
+  c.innerHTML=`<div class="run-progress" id="run-progress-card">
+    <div class="rp-header">
+      <div class="rp-icon">🚀</div>
+      <div><div class="rp-title">${esc(fname)}</div><div class="rp-sub" id="rp-sub">Initializing…</div></div>
+    </div>
+    <div class="rp-stats" id="rp-stats">
+      <div class="rp-stat"><div class="rp-stat-val" id="rp-rows">—</div><div class="rp-stat-lbl">Rows</div></div>
+      <div class="rp-stat"><div class="rp-stat-val" id="rp-cols">—</div><div class="rp-stat-lbl">Columns</div></div>
+      <div class="rp-stat highlight"><div class="rp-stat-val" id="rp-target" style="font-size:13px">—</div><div class="rp-stat-lbl">Target</div></div>
+      <div class="rp-stat"><div class="rp-stat-val" id="rp-task" style="font-size:13px">—</div><div class="rp-stat-lbl">Task</div></div>
+    </div>
+    <div class="rp-phases" id="rp-phases">${_RP_PHASES.map((p,i)=>`
+      <div class="rp-phase${i===0?' active':''}" id="rp-phase-${p.id}">
+        <span class="rp-phase-dot"></span>
+        <span class="rp-phase-lbl">${p.icon} ${p.label}</span>
+        <span class="rp-phase-time" id="rp-pt-${p.id}"></span>
+      </div>`).join('')}
+    </div>
+    <div class="rp-live" id="rp-live"><span style="color:var(--border-2)">Waiting for engine…</span></div>
+  </div>`;
+}
+
+function _rpAdvance(phaseId){
+  const idx=_RP_PHASES.findIndex(p=>p.id===phaseId);
+  if(idx<0||idx<=_rpPhase&&_RP_PHASES[_rpPhase].done)return;
+  // Mark all phases up to idx-1 as done
+  for(let i=0;i<idx;i++){
+    if(!_RP_PHASES[i].done){
+      _RP_PHASES[i].done=true;
+      const el=document.getElementById(`rp-phase-${_RP_PHASES[i].id}`);
+      if(el){el.className='rp-phase done';el.querySelector('.rp-phase-dot').style.background='#34d399';}
+    }
+  }
+  _rpPhase=idx;
+  const el=document.getElementById(`rp-phase-${phaseId}`);
+  if(el)el.className='rp-phase active';
+}
+
+function _rpLive(msg){
+  const el=document.getElementById('rp-live');
+  if(!el)return;
+  el.innerHTML=`<span style="color:#6366f1;font-size:10px">[ENGINE]</span> ${esc(msg.slice(0,120))}`;
+}
+
+function _rpStat(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
+function _rpSub(msg){const el=document.getElementById('rp-sub');if(el)el.textContent=msg;}
+
+function _rpRemove(){
+  const card=document.getElementById('run-progress-card');
+  if(card){card.style.transition='opacity .4s';card.style.opacity='0';setTimeout(()=>card.remove(),400);}
+}
+
+function _updateRunProgress(d){
+  if(!document.getElementById('run-progress-card'))return;
+  const msg=d.msg,tag=d.tag;
+  // ── Phase transitions ──
+  if(msg.includes('Profiling dataset')){_rpAdvance('profile');_rpSub('Reading & profiling data…');}
+  else if(msg.includes('Analyzing domain')){_rpAdvance('domain');_rpSub('Identifying domain & signals…');}
+  else if(msg.includes('Inferring task')){_rpAdvance('infer');_rpSub('Inferring task type & target column…');}
+  else if(msg.includes('objective.md')||msg.includes('Initialized project')){_rpAdvance('plan');_rpSub('Planning experiment strategy…');}
+  else if(msg.includes('EXPERIMENT ')||msg.includes('train.py written')||msg.includes('Fitting model')){
+    _rpAdvance('train');_rpSub('Training models…');
+  }
+  // ── Dataset stats from profile log ──
+  const rowsM=msg.match(/(\d[\d,]+)\s*rows?\s*[×x]\s*(\d+)\s*cols?/i);
+  if(rowsM){
+    _rpStat('rp-rows',parseInt(rowsM[1].replace(/,/g,'')).toLocaleString());
+    _rpStat('rp-cols',rowsM[2]);
+  }
+  // ── Task & target from CLAUDE log ──
+  const taskM=msg.match(/Task:\s*(\w+)\s*\|\s*Target:\s*([^|]+)\s*\|/);
+  if(taskM&&tag==='claude'){
+    _rpStat('rp-task',taskM[1]);
+    _rpStat('rp-target',taskM[2].trim().slice(0,20));
+    _rpSub(`${taskM[1]} → ${taskM[2].trim()}`);
+  }
+  // ── Domain label ──
+  const domM=msg.match(/Domain:\s*([^|]+)/);
+  if(domM&&tag==='claude'){
+    const icon=document.getElementById('run-progress-card')?.querySelector('.rp-icon');
+    if(icon)icon.textContent='🌍';
+    _rpSub(domM[1].trim().slice(0,60));
+  }
+  // ── Live message in bottom strip ──
+  if(tag==='engine'&&msg.length>8&&!msg.includes('Profiling')&&!msg.includes('Signals:')){
+    _rpLive(msg);
+  }
+  // ── Remove card when first experiment result arrives ──
+  if(tag==='result'&&msg.includes('Exp ')){_rpRemove();}
+}
+
 function procMsg(d){
   const msg=d.msg,tag=d.tag;
+
+  // Update run progress panel
+  _updateRunProgress(d);
 
   // Narration messages → update the SAME bubble in place (one evolving status, not a flood)
   if(tag==='narrate'){
