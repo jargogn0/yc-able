@@ -437,7 +437,7 @@ input[type=file]{display:none}
 /* ── Run progress panel (shown in Exp tab before experiments start) ── */
 .run-progress{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:20px 22px;animation:si .3s ease;display:flex;flex-direction:column;gap:16px}
 .rp-header{display:flex;align-items:center;gap:12px}
-.rp-icon{width:38px;height:38px;border-radius:10px;background:var(--accent-soft);border:1px solid rgba(59,130,246,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px}
+.rp-icon{display:none}
 .rp-title{font-size:15px;font-weight:700;color:var(--text);line-height:1.2}
 .rp-sub{font-size:11px;color:var(--text-3);margin-top:1px}
 .rp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
@@ -4447,35 +4447,31 @@ function _initDiscoverProgress(){
   clearEmpty('p-exp');
   c.innerHTML=`<div class="run-progress" id="run-progress-card">
     <div class="rp-header">
-      <div class="rp-icon" style="animation:cwIconFloat 3s ease-in-out infinite">🔬</div>
-      <div>
-        <div class="rp-title">${esc(fname)}</div>
-        <div class="rp-sub" id="rp-sub">Profiling dataset…</div>
-      </div>
+      <div><div class="rp-title">${esc(fname)}</div><div class="rp-sub" id="rp-sub">Analyzing…</div></div>
     </div>
-    <div class="rp-stats" id="rp-stats">
+    <div class="rp-stats">
       <div class="rp-stat"><div class="rp-stat-val" id="rp-rows">—</div><div class="rp-stat-lbl">Rows</div></div>
       <div class="rp-stat"><div class="rp-stat-val" id="rp-cols">—</div><div class="rp-stat-lbl">Columns</div></div>
       <div class="rp-stat highlight"><div class="rp-stat-val" id="rp-target" style="font-size:13px">—</div><div class="rp-stat-lbl">Target</div></div>
       <div class="rp-stat"><div class="rp-stat-val" id="rp-task" style="font-size:13px">—</div><div class="rp-stat-lbl">Task</div></div>
     </div>
-    <div class="rp-phases" id="rp-phases">${_RP_PHASES.slice(0,4).map((p,i)=>`
+    <div class="rp-phases">${_RP_PHASES.slice(0,4).map((p,i)=>`
       <div class="rp-phase${i===0?' active':''}" id="rp-phase-${p.id}">
         <span class="rp-phase-dot"></span>
-        <span class="rp-phase-lbl">${p.icon} ${p.label}</span>
+        <span class="rp-phase-lbl">${p.label}</span>
       </div>`).join('')}
     </div>
-    <div class="rp-live" id="rp-live"><span style="color:var(--border-2)">Starting analysis…</span></div>
+    <div class="rp-live" id="rp-live"><span style="color:var(--border-2)">Starting…</span></div>
   </div>`;
 }
 
 // ── Run Progress Panel ──────────────────────────────────────────
 const _RP_PHASES=[
-  {id:'profile', label:'Profiling dataset', icon:'📊', done:false},
-  {id:'domain',  label:'Domain & signal analysis', icon:'🔍', done:false},
-  {id:'infer',   label:'Inferring task & target', icon:'🎯', done:false},
-  {id:'plan',    label:'Planning experiments', icon:'🧪', done:false},
-  {id:'train',   label:'Training models', icon:'⚡', done:false},
+  {id:'profile', label:'Profiling dataset', icon:'', done:false},
+  {id:'domain',  label:'Domain & signal analysis', icon:'', done:false},
+  {id:'infer',   label:'Inferring task & target', icon:'', done:false},
+  {id:'plan',    label:'Planning experiments', icon:'', done:false},
+  {id:'train',   label:'Training models', icon:'', done:false},
 ];
 let _rpPhase=0; // index of active phase
 
@@ -4486,20 +4482,18 @@ function _initRunProgress(){
   const fname=S.file?.name||'dataset';
   c.innerHTML=`<div class="run-progress" id="run-progress-card">
     <div class="rp-header">
-      <div class="rp-icon">🚀</div>
       <div><div class="rp-title">${esc(fname)}</div><div class="rp-sub" id="rp-sub">Initializing…</div></div>
     </div>
-    <div class="rp-stats" id="rp-stats">
+    <div class="rp-stats">
       <div class="rp-stat"><div class="rp-stat-val" id="rp-rows">—</div><div class="rp-stat-lbl">Rows</div></div>
       <div class="rp-stat"><div class="rp-stat-val" id="rp-cols">—</div><div class="rp-stat-lbl">Columns</div></div>
       <div class="rp-stat highlight"><div class="rp-stat-val" id="rp-target" style="font-size:13px">—</div><div class="rp-stat-lbl">Target</div></div>
       <div class="rp-stat"><div class="rp-stat-val" id="rp-task" style="font-size:13px">—</div><div class="rp-stat-lbl">Task</div></div>
     </div>
-    <div class="rp-phases" id="rp-phases">${_RP_PHASES.map((p,i)=>`
+    <div class="rp-phases">${_RP_PHASES.map((p,i)=>`
       <div class="rp-phase${i===0?' active':''}" id="rp-phase-${p.id}">
         <span class="rp-phase-dot"></span>
-        <span class="rp-phase-lbl">${p.icon} ${p.label}</span>
-        <span class="rp-phase-time" id="rp-pt-${p.id}"></span>
+        <span class="rp-phase-lbl">${p.label}</span>
       </div>`).join('')}
     </div>
     <div class="rp-live" id="rp-live"><span style="color:var(--border-2)">Waiting for engine…</span></div>
@@ -4554,8 +4548,7 @@ function _rpFinishDiscover(prof,obj,taskLabel){
     const numeric=(prof.numeric||[]).length;
     const cat=(prof.categorical||[]).length;
     card.innerHTML=`<div class="rp-header">
-      <div class="rp-icon">✅</div>
-      <div><div class="rp-title">Analysis complete</div><div class="rp-sub" id="rp-sub">${esc(taskLabel)} · optimizing ${esc(metric)}</div></div>
+      <div><div class="rp-title">Analysis complete</div><div class="rp-sub">${esc(taskLabel)} · optimizing ${esc(metric)}</div></div>
     </div>
     <div class="rp-stats">
       <div class="rp-stat"><div class="rp-stat-val">${rows}</div><div class="rp-stat-lbl">Rows</div></div>
@@ -4594,8 +4587,6 @@ function _updateRunProgress(d){
   // ── Domain label ──
   const domM=msg.match(/Domain:\s*([^|]+)/);
   if(domM&&tag==='claude'){
-    const icon=document.getElementById('run-progress-card')?.querySelector('.rp-icon');
-    if(icon)icon.textContent='🌍';
     _rpSub(domM[1].trim().slice(0,60));
   }
   // ── Live message in bottom strip ──
@@ -7504,7 +7495,7 @@ document.getElementById('cin').addEventListener('keydown',e=>{if(e.key==='Enter'
 warmKey();spUI(C.provider);
 setBadge(C.key?'READY':'IDLE','');
 // Apply saved mode on load (without showing the welcome toast)
-{const m=S.mode||'agent';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
+{const m=S.mode||'chat';['chat','plan','agent'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});document.getElementById('cin').placeholder=MODE_PLACEHOLDERS[m];}
 initMonaco();
 ['p-exp','p-art','p-results','p-predict','p-explain','p-rpt','p-log'].forEach(id=>showEmpty(id));
 // Do NOT render run history before auth resolves — clears on unauthenticated load inside initAuth
