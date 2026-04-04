@@ -1003,6 +1003,9 @@ def classify_failure_reason(error_text: str) -> str:
         return "data_path"
     if "train.csv" in e or "test.csv" in e:
         return "data_path"
+    # DATA_PATH variable missing in subprocess — inject issue, not code logic issue
+    if "name 'data_path' is not defined" in e or "nameerror" in e and "data_path" in e:
+        return "data_path_inject"
     if "validate_parameter_constraints" in e or "invalid parameter" in e:
         return "invalid_hyperparameter"
     if "absolute_deviation" in e:
@@ -1722,6 +1725,9 @@ def execute(code, csv_path, ws, exp_num, data_sep=",", cancel_event=None):
     run_log = ws / "run.log"
     full = f"DATA_PATH = {repr(str(csv_path))}\nDATA_SEP = {repr(data_sep)}\nTIME_BUDGET = {TIME_BUDGET}\n\n{code}"
     script.write_text(full)
+    # Diagnostic: log first line to confirm DATA_PATH is injected
+    first_line = full.split("\n", 1)[0]
+    print(f"[execute] exp_{exp_num:02d} | {first_line} | script={script}", flush=True)
 
     # Also save numbered copy for audit trail
     (ws / f"exp_{exp_num:02d}.py").write_text(full)
@@ -1754,8 +1760,16 @@ def execute(code, csv_path, ws, exp_num, data_sep=",", cancel_event=None):
         stdout = run_log.read_text() if run_log.exists() else ""
 
         if proc.returncode != 0:
-            tail = "\n".join(stdout.split("\n")[-50:])
-            return dict(success=False, error=tail[-600:], elapsed=elapsed, stdout=stdout)
+            lines = stdout.split("\n")
+            tail = "\n".join(lines[-60:])
+            # For DATA_PATH NameError: log script header to diagnose why variable is missing
+            if "DATA_PATH" in tail and "not defined" in tail.lower():
+                try:
+                    hdr = "\n".join(full.split("\n")[:5])
+                    print(f"[execute] DATA_PATH NameError — script header:\n{hdr}", flush=True)
+                except Exception:
+                    pass
+            return dict(success=False, error=tail[-2000:], elapsed=elapsed, stdout=stdout)
 
         # Grep metrics from log
         for line in reversed(stdout.strip().split("\n")):
@@ -4242,6 +4256,20 @@ def run_research(
                 consecutive_crashes += 1
 
             # ── CRASH RECOVERY (Karpathy: trivial fix → rerun, fundamental → skip) ──
+            # DATA_PATH injection failure: execute() always injects it, but something stripped it.
+            # Simple fix: just re-run execute() with the same code — it will re-inject.
+            if failure_reason == "data_path_inject":
+                log.engine(f"DATA_PATH NameError — re-executing with fresh header injection")
+                retry_res = execute(train_py, csv_path, ws, n, data_sep=profile.get("detected_sep", ","))
+                if retry_res.get("success"):
+                    res = retry_res
+                    failure_reason = ""
+                    error = None
+                    consecutive_crashes = 0
+                else:
+                    error = retry_res.get("error", error)
+                    failure_reason = "runtime_error"  # escalate to normal repair
+                    log.engine(f"DATA_PATH retry also failed: {error[:200]}")
             if failure_reason in {"data_path", "invalid_hyperparameter", "bad_output_format", "missing_package", "runtime_error"}:
                 narrate(log_callback, "crash_recovery", reason=failure_reason)
                 repaired = auto_fix(train_py, error)

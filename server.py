@@ -2379,6 +2379,12 @@ async def start_run(req: RunRequest, request: Request):
         cancel_event=cancel_event,
         live_hints=[],  # appended by /api/run/{id}/hint during the run
     )
+    # Log CSV source into run stream so it appears in the Exp tab
+    _csv_src_msg = (
+        f"CSV from cache → {csv_path.name} + {len(list(ws.glob('*.csv')))-1} companion files"
+        if req.csv_cache_id else f"CSV → {csv_path.name}"
+    )
+    RUNS[run_id]["logs"].append({"tag": "sys", "msg": _csv_src_msg, "ts": time.strftime("%H:%M:%S")})
     # Persist immediately so the run survives a server restart
     _save_run_to_db(run_id, RUNS[run_id])
     _evict_old_runs()
