@@ -3971,12 +3971,26 @@ async function runDiscover(hint){
   let key=C.key||gk(C.provider);
   S._discoverActive=true;
 
-  // Show live progress in Exp tab (center panel) instead of chat bubble
-  _initDiscoverProgress();
-  stab('exp');
+  // Show live progress in Exp tab (center panel)
+  const _isReanalysis=S.analyzed&&document.getElementById('ana-term');
+  if(_isReanalysis){
+    // Append to existing terminal — don't reset
+    stab('exp');
+    _atLine('');
+    if(hint&&hint.length>2){
+      _atLine(`plan change: "${hint.slice(0,80)}"`,'highlight');
+    } else {
+      _atLine('re-analyzing plan…','highlight');
+    }
+  } else {
+    _initDiscoverProgress();
+    stab('exp');
+  }
 
   // Timer to show activity lines in terminal during discovery (no SSE during discover)
-  const _diMsgs=['reading columns and types…','computing statistics…','detecting signals…','building profile…'];
+  const _diMsgs=_isReanalysis
+    ?['querying AI…','updating objective…','re-scoring candidates…']
+    :['reading columns and types…','computing statistics…','detecting signals…','building profile…'];
   let _diIdx=0;
   const _diTimer=setInterval(()=>{
     if(_diIdx<_diMsgs.length){_atLine(_diMsgs[_diIdx++],'dim');}
@@ -4060,8 +4074,8 @@ async function runDiscover(hint){
       _html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #27272a;font-size:12px;color:#52525b">Say <strong style="color:#a5b4fc">go</strong> to start training — or tell me if you want to change the target column, task type, or metric.</div>`;
     }
     _html+=`</div>`;
-    // Replace progress panel with the profile summary stat card, then switch to chat
-    _rpFinishDiscover(prof,obj,_task);
+    // Update terminal with agreed plan
+    _rpFinishDiscover(prof,obj,_task,_isReanalysis);
     chat('ai',_html);
     setBadge('PLAN READY','');
     sbUpdate({status:'Plan ready',running:false});
@@ -4486,14 +4500,28 @@ function _rpRemove(){
   document.querySelectorAll('.ana-term-cursor').forEach(el=>el.remove());
 }
 
-function _rpFinishDiscover(prof,obj,taskLabel){
+function _rpFinishDiscover(prof,obj,taskLabel,isReanalysis){
+  const target=obj.target||'—';
+  const metric=(obj.metric||'').toUpperCase()||'—';
+
+  if(isReanalysis){
+    // Just append the updated plan — don't repeat profile stats
+    _atLine('');
+    _atLine('── plan updated ────────────────────────');
+    _atLine(`predict  ${target}`,'highlight');
+    _atLine(`task     ${taskLabel}`,'highlight');
+    _atLine(`metric   ${metric}`,'highlight');
+    _atLine('');
+    _atLine('say go in chat to start →');
+    _rpRemove();
+    return;
+  }
+
   const rows=(prof.rows||0).toLocaleString();
   const cols=prof.cols||'?';
   const numeric=(prof.numeric||[]).length;
   const cat=(prof.categorical||[]).length;
   const dt=(prof.datetime||[]).length;
-  const target=obj.target||'—';
-  const metric=(obj.metric||'').toUpperCase()||'—';
 
   // ── Data profile ──
   _atLine('');
@@ -4506,17 +4534,17 @@ function _rpFinishDiscover(prof,obj,taskLabel){
   const sigs=prof.signals||[];
   const sigLines=[];
   sigs.forEach(s=>{
-    if(s.includes('DATETIME'))       sigLines.push('time-series structure detected');
+    if(s.includes('DATETIME'))          sigLines.push('time-series structure detected');
     if(s.includes('IMBALANCED_TARGET')){const m=s.match(/majority\s+(\d+)%/);if(m)sigLines.push(`class imbalance ${m[1]}% majority`);}
     if(s.includes('HIGH_CARDINALITY')){const m=s.match(/col '([^']+)'/);if(m)sigLines.push(`high cardinality: ${m[1]}`);}
-    if(s.includes('TARGET_CANDIDATE')){const m=s.match(/candidate '([^']+)'/);if(m)sigLines.push(`prediction candidate: ${m[1]}`);}
+    if(s.includes('TARGET_CANDIDATE')){const m=s.match(/candidate '([^']+)'/);if(m)sigLines.push(`best candidate: ${m[1]}`);}
   });
   if(sigLines.length){
     _atLine('');
     sigLines.slice(0,4).forEach(l=>_atLine(`  ⚑ ${l}`,'dim'));
   }
 
-  // ── Agreed plan (from chat/LLM, not raw engine) ──
+  // ── Agreed plan ──
   _atLine('');
   _atLine('── plan ────────────────────────────────');
   _atLine(`predict  ${target}`,'highlight');

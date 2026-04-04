@@ -2647,7 +2647,18 @@ async def discover(req: DiscoverRequest):
         if req.dataset_id:
             media = _MEDIA_DATASETS.get(req.dataset_id)
             if not media:
-                return {"ok": False, "error": "Dataset not found. Please re-upload."}
+                # Server may have restarted — try to recover from disk
+                _ds_dir = _WS_DIR / f"dataset_{req.dataset_id}"
+                if _ds_dir.exists():
+                    import glob as _g
+                    _tabular = sorted([Path(p) for p in _g.glob(str(_ds_dir / "*.csv"))], key=lambda p: p.stat().st_size, reverse=True)
+                    if _tabular:
+                        _primary = _tabular[0]
+                        media = {"type": "tabular_dir", "path": str(_ds_dir), "primary": str(_primary), "all_files": [str(p) for p in _tabular]}
+                        _MEDIA_DATASETS[req.dataset_id] = media
+                        print(f"[discover] recovered dataset {req.dataset_id} from disk", flush=True)
+                if not media:
+                    return {"ok": False, "error": "Dataset not found after server restart — please re-upload your files."}
             if media.get("type") == "tabular_dir":
                 # Copy primary CSV to temp workspace for profiling
                 primary_p = Path(media["primary"])
