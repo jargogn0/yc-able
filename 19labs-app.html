@@ -5332,6 +5332,46 @@ async function loadForecastTable(runId){
     });
     h+=`</tbody></table></div></div>`;
     el.innerHTML=h;
+    // Append forecast table (predictions on unseen data) if available
+    try{
+      const fr=await apiFetch(`${BASE}/api/run/${runId}/forecast`);
+      if(fr.ok){
+        const fd=await fr.json();
+        if(fd.ok&&fd.rows?.length){
+          const fcols=fd.columns;
+          const frows=fd.rows;
+          const fsrc=fd.source||'forecast.csv';
+          let fh=`<div style="margin-top:24px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:var(--text)">Forecast — Predictions on New Data</div>
+                <div style="font-size:11px;color:var(--text-3);margin-top:2px">${frows.length} rows · source: ${esc(fsrc)}</div>
+              </div>
+              <button onclick="dlForecast('${runId}')" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-size:11px;cursor:pointer">↓ CSV</button>
+            </div>
+            <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)">
+              <thead><tr style="background:var(--surface-2,#18181b)">`;
+          const fColDisplay={'date':'Date','id':'ID','predicted':'Predicted','forecast':'Forecast'};
+          fcols.forEach(c=>{fh+=`<th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--text-2);white-space:nowrap;border-bottom:1px solid var(--border)">${fColDisplay[c]||c}</th>`});
+          fh+=`</tr></thead><tbody>`;
+          frows.forEach((row,i)=>{
+            fh+=`<tr style="background:${i%2===0?'transparent':'rgba(255,255,255,.015)'}">`;
+            fcols.forEach(c=>{
+              let val=row[c];
+              let style='padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap;color:var(--text-2)';
+              if(c==='predicted'||c==='forecast') style+='color:#34d399';
+              if(c==='date'||c==='id'||c==='ID') style+='color:var(--text-3)';
+              if(val==null||val===''||val==='null') val='—';
+              fh+=`<td style="${style}">${esc(String(val))}</td>`;
+            });
+            fh+=`</tr>`;
+          });
+          fh+=`</tbody></table></div></div>`;
+          el.insertAdjacentHTML('beforeend',fh);
+        }
+      }
+    }catch(_){}
     // Append AutoGluon leaderboard if available
     try{
       const lr=await apiFetch(`${BASE}/api/run/${runId}/leaderboard`);
@@ -5355,6 +5395,9 @@ async function loadForecastTable(runId){
 }
 async function dlPredictions(rid){
   try{const r=await apiFetch(`${BASE}/api/run/${rid}/predictions?limit=100000`);const d=await r.json();if(!d.rows)return;const cols=d.columns;const csv=[cols.join(','),...d.rows.map(r=>cols.map(c=>{const v=r[c];return v==null?'':String(v).includes(',')?`"${v}"`:v}).join(','))].join('\n');const b=new Blob([csv],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`predictions_${rid}.csv`;a.click();URL.revokeObjectURL(u);toast('Predictions downloaded','ok')}catch(e){toast('Download failed','err')}
+}
+async function dlForecast(rid){
+  try{const r=await apiFetch(`${BASE}/api/run/${rid}/forecast?limit=100000`);const d=await r.json();if(!d.rows)return;const cols=d.columns;const csv=[cols.join(','),...d.rows.map(r=>cols.map(c=>{const v=r[c];return v==null?'':String(v).includes(',')?`"${v}"`:v}).join(','))].join('\n');const b=new Blob([csv],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`forecast_${rid}.csv`;a.click();URL.revokeObjectURL(u);toast('Forecast downloaded','ok')}catch(e){toast('Download failed','err')}
 }
 
 // ═══════════════════════════════════════════
