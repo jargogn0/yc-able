@@ -1223,6 +1223,22 @@ def apply_code_guardrails(code: str) -> tuple[str, list[str]]:
 
     return fixed, notes
 
+
+_BANNED_SLOW_MODELS = re.compile(
+    r'\b(GradientBoostingRegressor|GradientBoostingClassifier|'
+    r'RandomForestRegressor|RandomForestClassifier|'
+    r'ExtraTreesRegressor|ExtraTreesClassifier)\s*\(',
+)
+
+def enforce_fast_model_ban(code: str, exp_num: int) -> tuple[str, bool]:
+    """For exp 1, detect slow banned models and return (code, was_banned).
+    Returns (code, True) if a banned model was found — caller should request a rewrite."""
+    if exp_num != 1:
+        return code, False
+    if _BANNED_SLOW_MODELS.search(code):
+        return code, True
+    return code, False
+
 def normalize_reliability_mode(mode: str | None) -> str:
     m = (mode or "balanced").strip().lower().replace("-", "_").replace(" ", "_")
     aliases = {
@@ -2337,6 +2353,32 @@ Output ONLY ```python block.""",
         clean2, _ = apply_code_guardrails(extract_code(code2))
         if clean2 and re.search(r'print\s*\(\s*json\.dumps', clean2):
             clean = clean2
+    # Hard model ban enforcement for exp 1: if LLM still used GBR/RF, force a targeted rewrite
+    clean, _was_banned = enforce_fast_model_ban(clean, exp_num)
+    if _was_banned:
+        import sys as _sys
+        print("[engine] write_train_py: exp 1 used banned slow model (GBR/RF). Forcing rewrite with LightGBM.", file=_sys.stderr)
+        _banned_found = _BANNED_SLOW_MODELS.findall(clean)
+        code3 = ask(
+            "You write fast, correct Python ML training scripts. Every script MUST end with print(json.dumps(metrics)).",
+            f"""REJECT: Your previous train.py used {_banned_found} which is BANNED for experiment 1.
+BANNED models for exp 1: GradientBoostingRegressor, GradientBoostingClassifier, RandomForestRegressor, RandomForestClassifier, ExtraTreesRegressor, ExtraTreesClassifier.
+These are 10-100x slower than gradient boosting libraries.
+
+MANDATORY: Rewrite using LightGBM (lgb.LGBMRegressor or lgb.LGBMClassifier) with n_jobs=-1, num_leaves=63, n_estimators=500, learning_rate=0.05.
+
+TASK: {obj.get('task')} | TARGET: {obj.get('target')} | METRIC: {obj.get('metric')}
+DATA: DATA_PATH (pre-defined), {profile.get('rows')} rows, cols: {', '.join(profile.get('headers',[])[:15])}
+{_kaggle_train_block if _is_kaggle else ""}
+Rules: load from DATA_PATH, train/test split, joblib.dump(model,'model.pkl'), end with print(json.dumps(metrics)).
+Output ONLY a complete ```python block.""",
+            7000
+        )
+        clean3, _ = apply_code_guardrails(extract_code(code3))
+        if clean3 and re.search(r'print\s*\(\s*json\.dumps', clean3) and not _BANNED_SLOW_MODELS.search(clean3):
+            clean = clean3
+        elif clean3 and not _BANNED_SLOW_MODELS.search(clean3):
+            clean = clean3
     return clean
 
 def revise_after_iteration(program_md, train_py, score, error, history, domain_analysis="", obj=None):
@@ -4531,7 +4573,8 @@ def run_research(
                     f"""The current train.py keeps producing the same result: {metric_name}={metric_val:.4f}.
 
 MANDATORY: Write a COMPLETELY different train.py using a DIFFERENT model/algorithm.
-If the previous used Ridge/Linear, try: GradientBoosting, RandomForest, XGBoost, SVR, or ensemble.
+If the previous used Ridge/Linear, try: LightGBM, XGBoost, CatBoost, SVR, or neural net (MLP/TabNet).
+NEVER suggest GradientBoostingRegressor, GradientBoostingClassifier, RandomForestRegressor, or RandomForestClassifier — use LightGBM/XGBoost/CatBoost instead (10-100x faster).
 If it used tree methods, try: neural net, elastic net, stacking, or a radically different preprocessing.
 
 DO NOT copy any part of the old code. Start fresh.
