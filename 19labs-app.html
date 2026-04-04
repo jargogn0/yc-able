@@ -3570,6 +3570,28 @@ async function send(){
     }
     // Normal questions → chatWithAI; also trigger analysis on first message if not yet done
     if(S.file&&!S.analyzed&&!S._discoverActive)autoDiscover();
+    // While analysis is running: instant reply for casual messages, queue data questions
+    if(S._discoverActive){
+      const _isGreeting=/^(hi|hey|hello|sup|yo|what'?s? up|howdy|hiya|wassup|whats|whatup)/i.test(lo);
+      const _isDataQ=/\b(column|row|predict|target|feature|model|train|csv|data|result|accuracy|metric)\b/i.test(lo);
+      if(_isGreeting&&!_isDataQ){
+        // Instant conversational reply — no API call needed
+        typing(true);
+        await new Promise(r=>setTimeout(r,400+Math.random()*300));
+        typing(false);
+        const _rows=S.totalRows?S.totalRows.toLocaleString():'';
+        chat('ai',`Hey! Analyzing your dataset${_rows?' ('+_rows+' rows)':''} right now. Ask me anything — I'll have full context in a few seconds.`);
+        return;
+      }
+      // Data questions while analyzing: queue and answer after analysis done
+      chat('sys','<span style="font-size:11px;color:var(--text-3)">Profiling data — will answer with full context once ready…</span>');
+      const _waitReply=async()=>{
+        while(S._discoverActive)await new Promise(r=>setTimeout(r,300));
+        await chatWithAI(text);
+      };
+      _waitReply();
+      return;
+    }
     await chatWithAI(text);return;
   }
 
