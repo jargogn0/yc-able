@@ -1367,6 +1367,7 @@ class DiscoverRequest(BaseModel):
     filename: str
     csv: str = ""
     dataset_id: str = ""   # pre-uploaded media dataset
+    csv_cache_id: str = "" # server-side CSV cache (avoids re-sending large files)
     hint: str = ""
     previous_objective: dict | None = None  # what the agent was proposing before the user corrected it
     extra_files: list[dict] = []  # [{name, csv}] — additional datasets uploaded alongside primary
@@ -2710,10 +2711,44 @@ async def discover(req: DiscoverRequest):
                 profile = profile_media_dataset(data_path)
             cleanup_ws = False  # don't delete the media dataset dir
         else:
-            csv_path = ws / req.filename
-            csv_path.write_text(req.csv, encoding="utf-8")
-            data_path = str(csv_path)
-            profile = profile_dataset(data_path)
+            # Use server-side CSV cache to avoid re-sending large files on re-analysis
+            _cache_id = req.csv_cache_id or ""
+            _cache_dir = _WS_DIR / f"csvcache_{_cache_id}" if _cache_id else None
+            if _cache_dir and _cache_dir.exists():
+                # Reuse cached CSV files — no re-upload needed
+                csv_path = _cache_dir / req.filename
+                if not csv_path.exists():
+                    # Primary might have been saved under slightly different name
+                    _csvs = list(_cache_dir.glob("*.csv"))
+                    csv_path = _csvs[0] if _csvs else csv_path
+                data_path = str(csv_path)
+                profile = profile_dataset(data_path)
+                # Rebuild companion profiles from cache
+                for _cp in _cache_dir.glob("*.csv"):
+                    if str(_cp) == data_path:
+                        continue
+                    try:
+                        import pandas as _pd
+                        _cdf = _pd.read_csv(_cp, nrows=5)
+                        with open(_cp) as _fh:
+                            _nrows = sum(1 for _ in _fh) - 1
+                        _cn = _cp.name.lower()
+                        _role = "submission" if "submission" in _cn or "sample" in _cn else "test" if "test" in _cn else "extra"
+                        _companion_profiles[_cp.name] = {"rows": _nrows, "cols": len(_cdf.columns), "headers": list(_cdf.columns), "role": _role}
+                    except Exception:
+                        pass
+                print(f"[discover] using CSV cache {_cache_id}", flush=True)
+            else:
+                # First time — write CSVs and save to persistent cache
+                _new_cache_id = str(uuid.uuid4())[:12]
+                _new_cache_dir = _WS_DIR / f"csvcache_{_new_cache_id}"
+                _new_cache_dir.mkdir(parents=True, exist_ok=True)
+                csv_path = _new_cache_dir / req.filename
+                csv_path.write_text(req.csv, encoding="utf-8")
+                data_path = str(csv_path)
+                profile = profile_dataset(data_path)
+                _cache_id = _new_cache_id
+                _cache_dir = _new_cache_dir
 
         # Profile extra uploaded datasets and add to companion_profiles
         for _ef in (req.extra_files or []):
@@ -2722,8 +2757,11 @@ async def discover(req: DiscoverRequest):
             if not _ef_csv or not _ef_name:
                 continue
             try:
-                _ef_path = ws / _ef_name
-                _ef_path.write_text(_ef_csv, encoding="utf-8")
+                # Save to cache dir if available, else workspace
+                _ef_save_dir = _cache_dir if _cache_dir and _cache_dir.exists() else ws
+                _ef_path = _ef_save_dir / _ef_name
+                if not _ef_path.exists():  # don't overwrite cached copy
+                    _ef_path.write_text(_ef_csv, encoding="utf-8")
                 import pandas as _pd
                 _edf = _pd.read_csv(_ef_path, nrows=5)
                 _enrows = max(0, sum(1 for _ in open(_ef_path)) - 1)
@@ -2751,6 +2789,9 @@ async def discover(req: DiscoverRequest):
 
         result = discover_user_need(data_path, user_hint=_effective_hint, previous_objective=req.previous_objective, api_key=resolved_api_key, provider=req.provider or "claude", model=req.model or None, companion_profiles=_companion_profiles or None)
         result["used_fallback"] = False
+        # Return cache ID so frontend skips re-sending CSV on next call
+        if _cache_id:
+            result["csv_cache_id"] = _cache_id
         return {"ok": True, **result}
     except Exception as e:
         import traceback as _tb

@@ -4003,9 +4003,13 @@ async function runDiscover(hint){
     const _prevObj = S.discovery?.objective || null;
     const _effectiveHint=((hint||'')+(S.kaggleContext?' '+S.kaggleContext:'')).trim();
     const _extraFiles=_extraDatasets.length?_extraDatasets.map(d=>({name:d.name,csv:d.csv})):undefined;
+    // Use server-side cache on re-analysis to avoid re-sending large CSVs
+    const _useCsvCache=S.csvCacheId&&S.analyzed;
     const _discoverBody=S.dataset_id
       ?{filename:S.file?.name||'dataset',csv:'',dataset_id:S.dataset_id,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined}
-      :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
+      :_useCsvCache
+        ?{filename:S.file.name,csv:'',csv_cache_id:S.csvCacheId,hint:_effectiveHint,previous_objective:_prevObj,extra_files:[],api_key:key||undefined,provider:C.provider,model:C.model||undefined}
+        :{filename:S.file.name,csv:S.csv,hint:_effectiveHint,previous_objective:_prevObj,extra_files:_extraFiles,api_key:key||undefined,provider:C.provider,model:C.model||undefined};
     const dr=await apiFetch(`${BASE}/api/discover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_discoverBody)});
     S._discoverActive=false;
     clearInterval(_diTimer);
@@ -4017,6 +4021,7 @@ async function runDiscover(hint){
       throw new Error(dj.error||'Discovery failed');
     }
     S.discovery=dj;S.analyzed=true;S.confirmed=false;
+    if(dj.csv_cache_id)S.csvCacheId=dj.csv_cache_id;
     // Render data profile card in Artifacts tab
     if(dj.profile)renderProfileCard(dj.profile);
     const d=dj.discovery||{};
@@ -7319,7 +7324,7 @@ async function handleFile(f,preloadedText,_opts={}){
     }
     return;
   }
-  S.file=f;S.dataset_id=null;S.media_info=null;S.allFiles=null;S.previewFile=null;S.kaggleContext=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
+  S.file=f;S.dataset_id=null;S.csvCacheId=null;S.media_info=null;S.allFiles=null;S.previewFile=null;S.kaggleContext=null;S.analyzed=false;S.confirmed=false;S.best=null;S.exps=[];S.artifacts=null;S.report=null;S.logs=[];S.m={exp:0,fail:0,best:'--'};S._chatHistory=[];S._seenNarrations=new Set();
   _extraDatasets.length=0;_previewIdx=-1;
   document.getElementById('dz-icon').innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="22" height="22"><rect x="1" y="1" width="14" height="14" rx="1.5"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="6" y1="5" x2="6" y2="15"/></svg>';
   document.getElementById('dz-title').textContent=f.name;
