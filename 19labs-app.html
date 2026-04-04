@@ -4453,7 +4453,11 @@ function _initDiscoverProgress(){
   _atInit(allNames.join('  ·  '));
   allNames.forEach(n=>_atLine(n,'dim'));
   _atLine('');
-  _atLine('Profiling dataset…');
+  _atLine('profiling dataset…');
+  // Show quick local stats from already-parsed CSV
+  if(S.totalRows&&S.cols){
+    _atLine(`${S.totalRows.toLocaleString()} rows  ×  ${S.cols.length} columns`,'highlight');
+  }
 }
 
 function _initRunProgress(){
@@ -4483,19 +4487,43 @@ function _rpRemove(){
 }
 
 function _rpFinishDiscover(prof,obj,taskLabel){
-  // Show AGREED plan from analysis (what chat decided, not raw engine guess)
-  const target=obj.target||'—';
-  const metric=(obj.metric||'').toUpperCase()||'—';
+  const rows=(prof.rows||0).toLocaleString();
+  const cols=prof.cols||'?';
   const numeric=(prof.numeric||[]).length;
   const cat=(prof.categorical||[]).length;
+  const dt=(prof.datetime||[]).length;
+  const target=obj.target||'—';
+  const metric=(obj.metric||'').toUpperCase()||'—';
+
+  // ── Data profile ──
   _atLine('');
-  _atLine('── agreed plan ──────────────────────');
+  _atLine(`${rows} rows  ×  ${cols} columns`,'highlight');
+  if(numeric) _atLine(`  numeric     ${numeric} — ${(prof.numeric||[]).slice(0,5).join(', ')}${numeric>5?'…':''}`);
+  if(cat)     _atLine(`  categorical ${cat} — ${(prof.categorical||[]).slice(0,4).join(', ')}${cat>4?'…':''}`);
+  if(dt)      _atLine(`  datetime    ${dt} — ${(prof.datetime||[]).join(', ')}`);
+
+  // ── Key signals ──
+  const sigs=prof.signals||[];
+  const sigLines=[];
+  sigs.forEach(s=>{
+    if(s.includes('DATETIME'))       sigLines.push('time-series structure detected');
+    if(s.includes('IMBALANCED_TARGET')){const m=s.match(/majority\s+(\d+)%/);if(m)sigLines.push(`class imbalance ${m[1]}% majority`);}
+    if(s.includes('HIGH_CARDINALITY')){const m=s.match(/col '([^']+)'/);if(m)sigLines.push(`high cardinality: ${m[1]}`);}
+    if(s.includes('TARGET_CANDIDATE')){const m=s.match(/candidate '([^']+)'/);if(m)sigLines.push(`prediction candidate: ${m[1]}`);}
+  });
+  if(sigLines.length){
+    _atLine('');
+    sigLines.slice(0,4).forEach(l=>_atLine(`  ⚑ ${l}`,'dim'));
+  }
+
+  // ── Agreed plan (from chat/LLM, not raw engine) ──
+  _atLine('');
+  _atLine('── plan ────────────────────────────────');
   _atLine(`predict  ${target}`,'highlight');
   _atLine(`task     ${taskLabel}`,'highlight');
   _atLine(`metric   ${metric}`,'highlight');
-  if(numeric||cat) _atLine(`features ${numeric} numeric · ${cat} categorical`);
   _atLine('');
-  _atLine('say go in chat to start training');
+  _atLine('say go in chat to start →');
   _rpRemove();
 }
 
