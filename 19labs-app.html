@@ -2563,7 +2563,7 @@ async function saveBedrockKey(){
   }catch(e){toast('Network error','err');}
 }
 
-const S={file:null,csv:null,dataset_id:null,media_info:null,allFiles:null,kaggleContext:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'agent',_seenNarrations:new Set(),_chatHistory:[]};
+const S={file:null,csv:null,dataset_id:null,media_info:null,allFiles:null,kaggleContext:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'chat',_seenNarrations:new Set(),_chatHistory:[]};
 
 // ═══════════════════════════════════════════
 // SETTINGS
@@ -3423,7 +3423,7 @@ const MODE_PLACEHOLDERS={
   agent:'Describe what you want to build...'
 };
 const MODE_WELCOME={
-  chat:'<strong>Chat mode.</strong> Ask me anything — explain a model, interpret results, suggest next steps. No training will run.',
+  chat:'<strong>Chat mode.</strong> Drop a CSV and ask anything — I\'ll profile it instantly. When ready, say <strong>go</strong> to start training.',
   plan:'<strong>Plan mode.</strong> Describe your goal and I\'ll analyze the dataset and build a research plan. Review it before anything runs.',
   agent:'<strong>Agent mode.</strong> I\'ll autonomously profile your data, plan experiments, run them, and iterate until I find the best model.'
 };
