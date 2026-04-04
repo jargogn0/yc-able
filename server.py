@@ -2800,9 +2800,14 @@ async def exec_code(run_id: str, req: PushCodeRequest, request: Request):
     ws = Path(run.get("ws", ""))
     if not ws.exists():
         raise HTTPException(404, "Workspace not found")
-    # Save code
+    # Save code — inject DATA_PATH/DATA_SEP/TIME_BUDGET if not already present
+    code = req.code
+    csv_path = run.get("csv", "") or str(ws / "train.csv")
+    header = ""
+    if "DATA_PATH" not in code:
+        header += f"DATA_PATH = {csv_path!r}\nDATA_SEP = ','\nTIME_BUDGET = 720\n"
     train_py = ws / "train.py"
-    train_py.write_text(req.code)
+    train_py.write_text(header + code)
 
     async def _stream():
         yield "data: {\"t\":\"start\"}\n\n"
