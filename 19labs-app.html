@@ -3821,10 +3821,12 @@ async function chatWithAI(message){
       return;
     }
     // Track conversation history for multi-turn context
+    const _resp=j.response||'';
+    if(!_resp){chat('err','No response from the AI — the model may have returned an empty reply. Try again.');return;}
     S._chatHistory.push({role:'user',content:message});
-    S._chatHistory.push({role:'assistant',content:j.response});
+    S._chatHistory.push({role:'assistant',content:_resp});
     if(S._chatHistory.length>40)S._chatHistory=S._chatHistory.slice(-40);
-    chat('ai',j.response);
+    chat('ai',_resp);
 
     // ── If agent is running, inject actionable messages as live hints ──
     // Questions (contain ? or start with question words) → chat only, no hint

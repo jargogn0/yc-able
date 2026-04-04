@@ -5541,13 +5541,17 @@ GUARDRAILS — you must never violate these:
     try:
         if _provider in ("openai", "gemini"):
             _model = _active_gemini_model if _provider == "gemini" else _active_openai_model
+            # Use max_tokens for standard models; max_completion_tokens only for o1/o3 reasoning models
+            _is_reasoning = any(x in (_model or "") for x in ("o1", "o3", "o4"))
+            _tok_kwarg = {"max_completion_tokens": 1000} if _is_reasoning else {"max_tokens": 1000}
             r = _client.chat.completions.create(
                 model=_model,
-                max_completion_tokens=1000,
+                **_tok_kwarg,
                 messages=[{"role": "system", "content": system}] + messages,
                 timeout=120,
             )
-            return r.choices[0].message.content
+            content = r.choices[0].message.content if r.choices else None
+            return content or "I couldn't generate a response — the model returned an empty reply. Try rephrasing."
         else:
             model_id = BEDROCK_MODEL if _provider == "bedrock" else _active_claude_model
             if _provider == "bedrock" and not model_id.startswith(("us.", "eu.", "ap.")):
@@ -5558,7 +5562,7 @@ GUARDRAILS — you must never violate these:
                 messages=messages,
                 timeout=120,
             )
-            return r.content[0].text
+            return (r.content[0].text if r.content else None) or "Empty response from model — try again."
     except Exception as e:
         clean = _classify_api_error(e)
         if clean:
