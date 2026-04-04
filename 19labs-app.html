@@ -434,32 +434,12 @@ input[type=file]{display:none}
 .exp-tag.fail{color:var(--red);background:var(--red-soft);border:1px solid rgba(239,68,68,.15)}
 .exp-tag.ok{color:var(--text-3);background:var(--surface-2);border:1px solid var(--border)}
 
-/* ── Run progress panel (shown in Exp tab before experiments start) ── */
-.run-progress{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:20px 22px;animation:si .3s ease;display:flex;flex-direction:column;gap:16px}
-.rp-header{display:flex;align-items:center;gap:12px}
-.rp-icon{display:none}
-.rp-title{font-size:15px;font-weight:700;color:var(--text);line-height:1.2}
-.rp-sub{font-size:11px;color:var(--text-3);margin-top:1px}
-.rp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.rp-stat{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center}
-.rp-stat-val{font-size:18px;font-weight:700;font-family:var(--mono);color:var(--text);line-height:1}
-.rp-stat-lbl{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);margin-top:4px}
-.rp-stat.highlight .rp-stat-val{color:var(--accent)}
-.rp-stat.highlight{border-color:rgba(59,130,246,.2);background:var(--accent-soft)}
-.rp-phases{display:flex;flex-direction:column;gap:6px}
-.rp-phase{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;border:1px solid transparent;transition:all .25s;font-size:12px;color:var(--text-3)}
-.rp-phase.active{background:rgba(59,130,246,.06);border-color:rgba(59,130,246,.15);color:var(--text)}
-.rp-phase.done{color:var(--text-3)}
-.rp-phase-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--border-2);transition:all .25s}
-.rp-phase.done .rp-phase-dot{background:#34d399}
-.rp-phase.active .rp-phase-dot{background:var(--accent);animation:pulse 1.2s infinite}
-.rp-phase-check{font-size:10px;color:#34d399;flex-shrink:0;width:8px}
-.rp-phase-lbl{flex:1}
-.rp-phase-time{font-family:var(--mono);font-size:9px;color:var(--text-3);margin-left:auto}
-.rp-live{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 13px;font-size:11px;font-family:var(--mono);color:var(--text-3);min-height:24px;line-height:1.5;transition:all .2s}
-.rp-live-line{display:flex;align-items:flex-start;gap:7px;margin-bottom:2px}
-.rp-live-tag{color:#6366f1;font-size:10px;flex-shrink:0;margin-top:1px}
-@keyframes rp-pulse{0%,100%{opacity:.4}50%{opacity:1}}
+/* ── Analysis terminal (shown in Exp tab during analysis/training) ── */
+.ana-term{padding:20px 24px;font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--text-3);animation:si .2s ease}
+.ana-term-line{display:flex;gap:8px;align-items:baseline}
+.ana-term-line.highlight{color:var(--text)}
+.ana-term-line.dim{opacity:.45}
+.ana-term-cursor{display:inline-block;width:7px;height:13px;background:var(--accent);opacity:.8;animation:blink 1s infinite;vertical-align:text-bottom;margin-left:2px;border-radius:1px}
 
 /* Live metric chart */
 .metric-chart{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;animation:si .3s ease}
@@ -1786,9 +1766,9 @@ body.light .rp-live { background: #f4f3f8; border-color: rgba(0,0,0,.06) }
   <div class="chat">
     <div class="chat-h">
       <div class="mode-switcher">
-        <button class="mode-btn" id="mode-chat" onclick="setMode('chat')" data-tip="Ask questions about your data — no execution">Chat</button>
+        <button class="mode-btn active" id="mode-chat" onclick="setMode('chat')" data-tip="Ask questions about your data — no execution">Chat</button>
         <button class="mode-btn" id="mode-plan" onclick="setMode('plan')" data-tip="Analyze dataset and build a plan — review before running">Plan</button>
-        <button class="mode-btn active" id="mode-agent" onclick="setMode('agent')" data-tip="Autonomous ML research — runs experiments automatically">Agent</button>
+        <button class="mode-btn" id="mode-agent" onclick="setMode('agent')" data-tip="Autonomous ML research — runs experiments automatically">Agent</button>
       </div>
       <div class="chat-dot" id="cdot"><img src="/ghost.svg" alt=""></div>
     </div>
@@ -2595,7 +2575,7 @@ async function saveBedrockKey(){
   }catch(e){toast('Network error','err');}
 }
 
-const S={file:null,csv:null,dataset_id:null,media_info:null,allFiles:null,kaggleContext:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:localStorage.getItem('19labs_mode')||'chat',_seenNarrations:new Set(),_chatHistory:[]};
+const S={file:null,csv:null,dataset_id:null,media_info:null,allFiles:null,kaggleContext:null,cols:null,rows:null,running:false,runId:null,exps:[],best:null,discovery:null,analyzed:false,confirmed:false,budget:parseInt(localStorage.getItem('19labs_budget'))||6,rmode:localStorage.getItem('19labs_rmode')||'balanced',artifacts:null,report:null,logs:[],m:{exp:0,fail:0,best:'--'},hint:'',continuous:false,mode:'chat',_seenNarrations:new Set(),_chatHistory:[]};
 
 // ═══════════════════════════════════════════
 // SETTINGS
@@ -3995,12 +3975,12 @@ async function runDiscover(hint){
   _initDiscoverProgress();
   stab('exp');
 
-  // Fake SSE-style timer to advance Exp panel phases during discovery
-  const _diPhases=['profile','domain','infer','plan'];
+  // Timer to show activity lines in terminal during discovery (no SSE during discover)
+  const _diMsgs=['reading columns and types…','computing statistics…','detecting signals…','inferring objective…'];
   let _diIdx=0;
   const _diTimer=setInterval(()=>{
-    if(_diIdx<_diPhases.length){_rpAdvance(_diPhases[_diIdx++]);}
-  },2800);
+    if(_diIdx<_diMsgs.length){_atLine(_diMsgs[_diIdx++],'dim');}
+  },3000);
 
   try{
     // Include the current objective so the LLM can interpret corrections in context
@@ -4437,163 +4417,97 @@ function _sealNarrBubble(){
   if(el)el.removeAttribute('id');
 }
 
-// ── Discover Progress Panel (shown in Exp tab during analysis) ──
-function _initDiscoverProgress(){
+// ── Analysis Terminal (Exp tab during discovery + training) ──────
+let _rpPhase=0;
+const _RP_PHASES=[
+  {id:'profile'},{id:'domain'},{id:'infer'},{id:'plan'},{id:'train'}
+];
+
+function _atInit(title){
   const c=document.getElementById('p-exp');
   if(!c)return;
-  _rpPhase=0;
-  _RP_PHASES.forEach(p=>p.done=false);
-  const fname=S.file?.name||'dataset';
   clearEmpty('p-exp');
-  c.innerHTML=`<div class="run-progress" id="run-progress-card">
-    <div class="rp-header">
-      <div><div class="rp-title">${esc(fname)}</div><div class="rp-sub" id="rp-sub">Analyzing…</div></div>
-    </div>
-    <div class="rp-stats">
-      <div class="rp-stat"><div class="rp-stat-val" id="rp-rows">—</div><div class="rp-stat-lbl">Rows</div></div>
-      <div class="rp-stat"><div class="rp-stat-val" id="rp-cols">—</div><div class="rp-stat-lbl">Columns</div></div>
-      <div class="rp-stat highlight"><div class="rp-stat-val" id="rp-target" style="font-size:13px">—</div><div class="rp-stat-lbl">Target</div></div>
-      <div class="rp-stat"><div class="rp-stat-val" id="rp-task" style="font-size:13px">—</div><div class="rp-stat-lbl">Task</div></div>
-    </div>
-    <div class="rp-phases">${_RP_PHASES.slice(0,4).map((p,i)=>`
-      <div class="rp-phase${i===0?' active':''}" id="rp-phase-${p.id}">
-        <span class="rp-phase-dot"></span>
-        <span class="rp-phase-lbl">${p.label}</span>
-      </div>`).join('')}
-    </div>
-    <div class="rp-live" id="rp-live"><span style="color:var(--border-2)">Starting…</span></div>
-  </div>`;
+  c.innerHTML=`<div class="ana-term" id="ana-term"></div>`;
+  _atLine(title,'highlight');
+  _atLine('');
 }
 
-// ── Run Progress Panel ──────────────────────────────────────────
-const _RP_PHASES=[
-  {id:'profile', label:'Profiling dataset', icon:'', done:false},
-  {id:'domain',  label:'Domain & signal analysis', icon:'', done:false},
-  {id:'infer',   label:'Inferring task & target', icon:'', done:false},
-  {id:'plan',    label:'Planning experiments', icon:'', done:false},
-  {id:'train',   label:'Training models', icon:'', done:false},
-];
-let _rpPhase=0; // index of active phase
+function _atLine(msg,cls=''){
+  const t=document.getElementById('ana-term');
+  if(!t)return;
+  // Remove cursor from last line
+  t.querySelectorAll('.ana-term-cursor').forEach(el=>el.remove());
+  const d=document.createElement('div');
+  d.className='ana-term-line'+(cls?' '+cls:'');
+  d.textContent=msg;
+  // Add blinking cursor after last line
+  const cur=document.createElement('span');
+  cur.className='ana-term-cursor';
+  d.appendChild(cur);
+  t.appendChild(d);
+  t.scrollTop=t.scrollHeight;
+}
+
+function _initDiscoverProgress(){
+  _atInit(S.file?.name||'dataset');
+  _atLine('Profiling dataset…');
+}
 
 function _initRunProgress(){
-  const c=document.getElementById('p-exp');
-  _rpPhase=0;
-  _RP_PHASES.forEach(p=>p.done=false);
-  const fname=S.file?.name||'dataset';
-  c.innerHTML=`<div class="run-progress" id="run-progress-card">
-    <div class="rp-header">
-      <div><div class="rp-title">${esc(fname)}</div><div class="rp-sub" id="rp-sub">Initializing…</div></div>
-    </div>
-    <div class="rp-stats">
-      <div class="rp-stat"><div class="rp-stat-val" id="rp-rows">—</div><div class="rp-stat-lbl">Rows</div></div>
-      <div class="rp-stat"><div class="rp-stat-val" id="rp-cols">—</div><div class="rp-stat-lbl">Columns</div></div>
-      <div class="rp-stat highlight"><div class="rp-stat-val" id="rp-target" style="font-size:13px">—</div><div class="rp-stat-lbl">Target</div></div>
-      <div class="rp-stat"><div class="rp-stat-val" id="rp-task" style="font-size:13px">—</div><div class="rp-stat-lbl">Task</div></div>
-    </div>
-    <div class="rp-phases">${_RP_PHASES.map((p,i)=>`
-      <div class="rp-phase${i===0?' active':''}" id="rp-phase-${p.id}">
-        <span class="rp-phase-dot"></span>
-        <span class="rp-phase-lbl">${p.label}</span>
-      </div>`).join('')}
-    </div>
-    <div class="rp-live" id="rp-live"><span style="color:var(--border-2)">Waiting for engine…</span></div>
-  </div>`;
+  _atInit(S.file?.name||'dataset');
+  _atLine('Initializing run…');
 }
 
-function _rpAdvance(phaseId){
-  const idx=_RP_PHASES.findIndex(p=>p.id===phaseId);
-  if(idx<0||idx<=_rpPhase&&_RP_PHASES[_rpPhase].done)return;
-  // Mark all phases up to idx-1 as done
-  for(let i=0;i<idx;i++){
-    if(!_RP_PHASES[i].done){
-      _RP_PHASES[i].done=true;
-      const el=document.getElementById(`rp-phase-${_RP_PHASES[i].id}`);
-      if(el){el.className='rp-phase done';el.querySelector('.rp-phase-dot').style.background='#34d399';}
-    }
-  }
-  _rpPhase=idx;
-  const el=document.getElementById(`rp-phase-${phaseId}`);
-  if(el)el.className='rp-phase active';
-}
-
-function _rpLive(msg){
-  const el=document.getElementById('rp-live');
-  if(!el)return;
-  el.innerHTML=`<span style="color:#6366f1;font-size:10px">[ENGINE]</span> ${esc(msg.slice(0,120))}`;
-}
-
-function _rpStat(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
-function _rpSub(msg){const el=document.getElementById('rp-sub');if(el)el.textContent=msg;}
+function _rpAdvance(){}  // no-op, terminal uses _atLine directly
+function _rpLive(msg){_atLine(msg,'dim');}
+function _rpStat(){}
+function _rpSub(){}
 
 function _rpRemove(){
-  const card=document.getElementById('run-progress-card');
-  if(card){card.style.transition='opacity .4s';card.style.opacity='0';setTimeout(()=>card.remove(),400);}
+  // Remove blinking cursor when done
+  document.querySelectorAll('.ana-term-cursor').forEach(el=>el.remove());
 }
 
 function _rpFinishDiscover(prof,obj,taskLabel){
-  // Mark all phases done
-  _RP_PHASES.slice(0,4).forEach(p=>{
-    p.done=true;
-    const el=document.getElementById(`rp-phase-${p.id}`);
-    if(el){el.className='rp-phase done';}
-  });
-  // Swap to a static summary card after short delay
-  setTimeout(()=>{
-    const card=document.getElementById('run-progress-card');
-    if(!card)return;
-    const rows=(prof.rows||0).toLocaleString();
-    const cols=prof.cols||'?';
-    const target=obj.target||'—';
-    const metric=(obj.metric||'').toUpperCase()||'—';
-    const numeric=(prof.numeric||[]).length;
-    const cat=(prof.categorical||[]).length;
-    card.innerHTML=`<div class="rp-header">
-      <div><div class="rp-title">Analysis complete</div><div class="rp-sub">${esc(taskLabel)} · optimizing ${esc(metric)}</div></div>
-    </div>
-    <div class="rp-stats">
-      <div class="rp-stat"><div class="rp-stat-val">${rows}</div><div class="rp-stat-lbl">Rows</div></div>
-      <div class="rp-stat"><div class="rp-stat-val">${cols}</div><div class="rp-stat-lbl">Columns</div></div>
-      <div class="rp-stat highlight"><div class="rp-stat-val" style="font-size:13px">${esc(target.slice(0,18))}</div><div class="rp-stat-lbl">Target</div></div>
-      <div class="rp-stat"><div class="rp-stat-val" style="font-size:11px">${numeric}N · ${cat}C</div><div class="rp-stat-lbl">Features</div></div>
-    </div>
-    <div style="text-align:center;padding:12px 0 4px;font-size:12px;color:var(--text-3)">Type <strong style="color:var(--accent)">go</strong> in chat to start training →</div>`;
-  }, 600);
+  _rpRemove();
+  const rows=(prof.rows||0).toLocaleString();
+  const cols=prof.cols||'?';
+  const target=obj.target||'—';
+  const metric=(obj.metric||'').toUpperCase()||'—';
+  _atLine('');
+  _atLine(`${rows} rows · ${cols} columns`);
+  _atLine(`target   ${target}`,'highlight');
+  _atLine(`task     ${taskLabel}`,'highlight');
+  _atLine(`metric   ${metric}`,'highlight');
+  _atLine('');
+  _atLine('type go in chat to start training');
+  _rpRemove();
 }
 
 function _updateRunProgress(d){
-  if(!document.getElementById('run-progress-card'))return;
+  if(!document.getElementById('ana-term'))return;
   const msg=d.msg,tag=d.tag;
-  // ── Phase transitions ──
-  if(msg.includes('Profiling dataset')){_rpAdvance('profile');_rpSub('Reading & profiling data…');}
-  else if(msg.includes('Analyzing domain')){_rpAdvance('domain');_rpSub('Identifying domain & signals…');}
-  else if(msg.includes('Inferring task')){_rpAdvance('infer');_rpSub('Inferring task type & target column…');}
-  else if(msg.includes('objective.md')||msg.includes('Initialized project')){_rpAdvance('plan');_rpSub('Planning experiment strategy…');}
-  else if(msg.includes('EXPERIMENT ')||msg.includes('train.py written')||msg.includes('Fitting model')){
-    _rpAdvance('train');_rpSub('Training models…');
+  // Key engine messages → terminal lines
+  if(tag==='engine'){
+    if(msg.includes('Profiling dataset')){_atLine('profiling dataset…');}
+    else if(msg.includes('Analyzing domain')){_atLine('analyzing domain and data quality…');}
+    else if(msg.includes('Inferring task')){_atLine('inferring task from data…');}
+    else if(msg.includes('Initialized project')){_atLine('initializing project artifacts…');}
+    else if(msg.includes('Kaggle competition')){_atLine(msg.slice(0,80));}
+    else if(msg.match(/\d[\d,]+\s*rows/i)){_atLine(msg.slice(0,120),'highlight');}
+    else if(msg.includes('Signals:')){_atLine(msg.slice(0,120),'dim');}
+    else if(msg.includes('train.py written')){_atLine('train.py written');}
+    else if(msg.includes('Fitting model')){_atLine(msg.slice(0,80));}
+    else if(msg.includes('EXPERIMENT ')){_atLine(msg.slice(0,80));}
   }
-  // ── Dataset stats from profile log ──
-  const rowsM=msg.match(/(\d[\d,]+)\s*rows?\s*[×x]\s*(\d+)\s*cols?/i);
-  if(rowsM){
-    _rpStat('rp-rows',parseInt(rowsM[1].replace(/,/g,'')).toLocaleString());
-    _rpStat('rp-cols',rowsM[2]);
+  if(tag==='claude'){
+    const taskM=msg.match(/Task:\s*(\w+)\s*\|\s*Target:\s*([^|]+)\s*\|/);
+    if(taskM){_atLine(`task: ${taskM[1]}  target: ${taskM[2].trim()}`,'highlight');}
+    const domM=msg.match(/Domain:\s*([^|]+)/);
+    if(domM){_atLine(`domain: ${domM[1].trim().slice(0,80)}`);}
+    if(msg.includes('ID cols:')){_atLine(msg.slice(0,120),'dim');}
   }
-  // ── Task & target from CLAUDE log ──
-  const taskM=msg.match(/Task:\s*(\w+)\s*\|\s*Target:\s*([^|]+)\s*\|/);
-  if(taskM&&tag==='claude'){
-    _rpStat('rp-task',taskM[1]);
-    _rpStat('rp-target',taskM[2].trim().slice(0,20));
-    _rpSub(`${taskM[1]} → ${taskM[2].trim()}`);
-  }
-  // ── Domain label ──
-  const domM=msg.match(/Domain:\s*([^|]+)/);
-  if(domM&&tag==='claude'){
-    _rpSub(domM[1].trim().slice(0,60));
-  }
-  // ── Live message in bottom strip ──
-  if(tag==='engine'&&msg.length>8&&!msg.includes('Profiling')&&!msg.includes('Signals:')){
-    _rpLive(msg);
-  }
-  // ── Remove card when first experiment result arrives ──
+  // Remove terminal when first experiment card arrives
   if(tag==='result'&&msg.includes('Exp ')){_rpRemove();}
 }
 
