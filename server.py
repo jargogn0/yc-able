@@ -7,8 +7,30 @@
 - GET  /api/run/{id}/deploy → download deploy.zip
 - GET  /                 → serves 19labs-app.html
 """
-import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secrets, signal, shutil, sqlite3, tempfile, threading, time, uuid, zipfile
+import asyncio, base64, glob, hashlib, hmac as _hmac, json, os, secrets as _secrets, signal, shutil, sqlite3, sys, tempfile, threading, time, uuid, zipfile
 import urllib.request, urllib.parse, urllib.error
+from collections import deque
+
+# ── Real-time log capture ──────────────────────────────────────────────────
+_LOG_BUF: deque = deque(maxlen=500)   # ring buffer — last 500 lines
+_LOG_SUBS: list  = []                  # active SSE subscriber queues
+
+class _LogTee:
+    """Tees stdout to original fd + in-memory buffer + SSE subscribers."""
+    def __init__(self, orig): self._orig = orig
+    def write(self, s):
+        self._orig.write(s)
+        for line in s.splitlines():
+            line = line.strip()
+            if not line: continue
+            _LOG_BUF.append(line)
+            for q in list(_LOG_SUBS):
+                try: q.put_nowait(line)
+                except Exception: pass
+    def flush(self): self._orig.flush()
+    def fileno(self): return self._orig.fileno()
+
+sys.stdout = _LogTee(sys.stdout)
 
 # ── libgomp: force-load OpenMP with correct SONAME before any ML package ──
 # manylinux wheels bundle libgomp-HASH.so.1.0.0 with that hash baked into the
@@ -5657,6 +5679,33 @@ def favicon():
 @app.get("/health")
 def health():
     return {"status": "ok", "runs": len(RUNS)}
+
+@app.get("/api/logs/stream")
+async def stream_logs(request: Request):
+    """SSE: stream server stdout in real-time. Sends buffered history then live lines."""
+    import asyncio as _aio, queue as _q
+    q: _q.SimpleQueue = _q.SimpleQueue()
+    _LOG_SUBS.append(q)
+    async def _gen():
+        try:
+            # Send buffered history first
+            for line in list(_LOG_BUF):
+                yield f"data: {json.dumps({'line': line, 'hist': True})}\n\n"
+            yield f"data: {json.dumps({'line': '── live ──', 'hist': True})}\n\n"
+            # Stream new lines
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    line = q.get_nowait()
+                    yield f"data: {json.dumps({'line': line})}\n\n"
+                except Exception:
+                    await _aio.sleep(0.2)
+        finally:
+            try: _LOG_SUBS.remove(q)
+            except ValueError: pass
+    return StreamingResponse(_gen(), media_type="text/event-stream",
+                             headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
 
 @app.get("/api/provider-status")
 def provider_status():
